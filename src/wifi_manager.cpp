@@ -2,11 +2,10 @@
 
 WiFiManager wifi_manager;
 
-WiFiManager::WiFiManager() : current_mode(MODE_OFF) {
-    prefs.begin("wifi", false);
-}
+WiFiManager::WiFiManager() : current_mode(MODE_OFF) {}
 
 void WiFiManager::init() {
+    prefs.begin("wifi", false);
     WiFi.mode(WIFI_MODE_STA);
     startAP();
 }
