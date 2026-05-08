@@ -2,13 +2,15 @@
 
 Touch touch_obj;
 
-Touch::Touch() {
+Touch::Touch() : i2c(nullptr) {
     current_point = {0, 0, false};
 }
 
 void Touch::init(TwoWire *wire) {
     i2c = wire;
-    pinMode(TOUCH_INT, INPUT);
+    if (TOUCH_INT >= 0) {
+        pinMode(TOUCH_INT, INPUT);
+    }
 }
 
 TouchPoint Touch::read() {
@@ -17,6 +19,11 @@ TouchPoint Touch::read() {
 }
 
 void Touch::readRaw() {
+    if (i2c == nullptr) {
+        current_point.pressed = false;
+        return;
+    }
+
     i2c->beginTransmission(TOUCH_ADDR);
     i2c->write(0x00);
     if (i2c->endTransmission(false) != 0) {

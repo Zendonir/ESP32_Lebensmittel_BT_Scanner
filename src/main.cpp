@@ -12,9 +12,19 @@ TwoWire *i2c_bus = nullptr;
 void *server = nullptr;
 
 void initBacklight() {
-    ledcAttach(LCD_BL, 5000, 8);
-    ledcWrite(LCD_BL, 255);
-    Serial.println("[Display] Backlight ON (GPIO 46)");
+    if (LCD_BL < 0) {
+        Serial.println("[Display] Backlight pin disabled");
+        return;
+    }
+
+    pinMode(LCD_BL, OUTPUT);
+    if (ledcAttach(LCD_BL, 5000, 8)) {
+        ledcWrite(LCD_BL, 255);
+    } else {
+        digitalWrite(LCD_BL, HIGH);
+        Serial.println("[Display] PWM attach failed; using digital backlight ON");
+    }
+    Serial.printf("[Display] Backlight ON (GPIO %d)\n", LCD_BL);
 }
 
 /*void setupWebServer() {
