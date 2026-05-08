@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <ESPAsyncWebServer.h>
+//#include <ESPAsyncWebServer.h>
 #include "config.h"
 #include "audio.h"
 #include "wifi_manager.h"
@@ -8,7 +8,8 @@
 #include "display.h"
 
 TwoWire *i2c_bus = nullptr;
-AsyncWebServer *server = nullptr;
+//AsyncWebServer *server = nullptr;
+void *server = nullptr;
 
 void initBacklight() {
     ledcAttach(LCD_BL, 5000, 8);
@@ -16,7 +17,7 @@ void initBacklight() {
     Serial.println("[Display] Backlight ON (GPIO 46)");
 }
 
-void setupWebServer() {
+/*void setupWebServer() {
     if (server == nullptr) return;
     server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         String html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP32 Scanner</title><style>";
@@ -94,7 +95,7 @@ void setupWebServer() {
 
     server->begin();
     Serial.println("[Server] Web Server started on 192.168.4.1");
-}
+}*/
 
 void setup() {
     Serial.begin(115200);
@@ -131,9 +132,9 @@ void setup() {
     display_obj.showWiFiStatus(wifi_manager.getSSID().c_str(), wifi_manager.getIPAddress().c_str(), wifi_manager.isConnected());
 
     // Web Server
-    Serial.println("[Server] Initializing...");
-    server = new AsyncWebServer(80);
-    setupWebServer();
+    //Serial.println("[Server] Initializing...");
+    //server = new AsyncWebServer(80);
+    //setupWebServer();
 
     Serial.println("\n=== Ready ===");
     Serial.println("AP: 192.168.4.1");
