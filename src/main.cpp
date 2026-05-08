@@ -8,7 +8,7 @@
 #include "display.h"
 
 TwoWire *i2c_bus = nullptr;
-AsyncWebServer server(80);
+AsyncWebServer *server = nullptr;
 
 void initBacklight() {
     ledcAttach(LCD_BL, 5000, 8);
@@ -17,7 +17,8 @@ void initBacklight() {
 }
 
 void setupWebServer() {
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (server == nullptr) return;
+    server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         String html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP32 Scanner</title><style>";
         html += "body { font-family: Arial; margin: 20px; background: #f0f0f0; }";
         html += ".container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
@@ -49,19 +50,19 @@ void setupWebServer() {
         request->send(200, "text/html", html);
     });
 
-    server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         String json = "{\"connected\":" + String(wifi_manager.isConnected() ? "true" : "false") +
                       ",\"ssid\":\"" + wifi_manager.getSSID() +
                       "\",\"ip\":\"" + wifi_manager.getIPAddress() + "\"}";
         request->send(200, "application/json", json);
     });
 
-    server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
         wifi_manager.scan();
         request->send(200, "text/plain", "Scanning...");
     });
 
-    server.on("/networks", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/networks", HTTP_GET, [](AsyncWebServerRequest *request) {
         String json = "[";
         int n = WiFi.scanNetworks(false, false, false, 100);
         for (int i = 0; i < n && i < 10; i++) {
@@ -72,7 +73,7 @@ void setupWebServer() {
         request->send(200, "application/json", json);
     });
 
-    server.on("/connect", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server->on("/connect", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (request->hasParam("ssid", true) && request->hasParam("password", true)) {
             String ssid = request->getParam("ssid", true)->value();
             String pass = request->getParam("password", true)->value();
@@ -81,17 +82,17 @@ void setupWebServer() {
         request->send(200, "text/plain", "Connecting...");
     });
 
-    server.on("/ap", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/ap", HTTP_GET, [](AsyncWebServerRequest *request) {
         wifi_manager.startAP();
         request->send(200, "text/plain", "AP Mode");
     });
 
-    server.on("/beep", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/beep", HTTP_GET, [](AsyncWebServerRequest *request) {
         audio_obj.playTone(1000, 100);
         request->send(200, "text/plain", "Beep!");
     });
 
-    server.begin();
+    server->begin();
     Serial.println("[Server] Web Server started on 192.168.4.1");
 }
 
@@ -130,6 +131,8 @@ void setup() {
     display_obj.showWiFiStatus(wifi_manager.getSSID().c_str(), wifi_manager.getIPAddress().c_str(), wifi_manager.isConnected());
 
     // Web Server
+    Serial.println("[Server] Initializing...");
+    server = new AsyncWebServer(80);
     setupWebServer();
 
     Serial.println("\n=== Ready ===");
