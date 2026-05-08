@@ -5,6 +5,7 @@
 #include "audio.h"
 #include "wifi_manager.h"
 #include "touch.h"
+#include "display.h"
 
 TwoWire i2c_bus(0);
 AsyncWebServer server(80);
@@ -103,6 +104,11 @@ void setup() {
     // Backlight
     initBacklight();
 
+    // Display
+    Serial.println("[Display] Initializing ST7796...");
+    display_obj.init();
+    display_obj.showSplash();
+
     // I2C
     Serial.println("[I2C] Initializing...");
     i2c_bus.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
@@ -114,11 +120,13 @@ void setup() {
     // Audio
     Serial.println("[Audio] Initializing...");
     audio_obj.init();
+    delay(500);
     audio_obj.playTone(1000, 200);
 
     // WiFi
     Serial.println("[WiFi] Initializing...");
     wifi_manager.init();
+    display_obj.showWiFiStatus(wifi_manager.getSSID().c_str(), wifi_manager.getIPAddress().c_str(), wifi_manager.isConnected());
 
     // Web Server
     setupWebServer();
