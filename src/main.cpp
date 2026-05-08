@@ -18,95 +18,34 @@ void initBacklight() {
 
 void setupWebServer() {
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        String html = R"(
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ESP32 Scanner</title>
-    <style>
-        body { font-family: Arial; margin: 20px; background: #f0f0f0; }
-        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; }
-        .status { padding: 10px; margin: 10px 0; background: #e8f5e9; border-radius: 4px; }
-        .error { background: #ffebee; }
-        button { padding: 10px 20px; margin: 5px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #45a049; }
-        input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
-        select { width: 100%; padding: 8px; margin: 5px 0; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>ESP32-S3 Scanner</h1>
-        <div id="status" class="status">Loading...</div>
-
-        <h2>WiFi Settings</h2>
-        <label>Network:</label>
-        <select id="networks"></select>
-
-        <label>Password:</label>
-        <input type="password" id="password" placeholder="Enter WiFi password">
-
-        <button onclick="connect()">Connect</button>
-        <button onclick="scan()">Scan Networks</button>
-        <button onclick="apMode()">Start AP Mode</button>
-        <button onclick="beep()">Beep</button>
-        <button onclick="location.reload()">Refresh</button>
-    </div>
-    <script>
-        function updateStatus() {
-            fetch('/status')
-                .then(r => r.json())
-                .then(d => {
-                    document.getElementById('status').innerHTML =
-                        '<b>WiFi:</b> ' + (d.connected ? '✓ Connected' : '✗ Offline') + '<br>' +
-                        '<b>SSID:</b> ' + (d.ssid || 'None') + '<br>' +
-                        '<b>IP:</b> ' + d.ip;
-                });
-        }
-
-        function scan() {
-            fetch('/scan').then(() => {
-                setTimeout(() => {
-                    fetch('/networks').then(r => r.json()).then(nets => {
-                        let sel = document.getElementById('networks');
-                        sel.innerHTML = '';
-                        nets.forEach(n => {
-                            let opt = document.createElement('option');
-                            opt.value = n;
-                            opt.text = n;
-                            sel.appendChild(opt);
-                        });
-                    });
-                }, 2000);
-            });
-        }
-
-        function connect() {
-            let ssid = document.getElementById('networks').value;
-            let pass = document.getElementById('password').value;
-            fetch('/connect', {method: 'POST', body: 'ssid=' + ssid + '&password=' + pass});
-            setTimeout(updateStatus, 3000);
-        }
-
-        function apMode() {
-            fetch('/ap').then(() => {
-                setTimeout(updateStatus, 1000);
-            });
-        }
-
-        function beep() {
-            fetch('/beep');
-        }
-
-        updateStatus();
-        setInterval(updateStatus, 5000);
-    </script>
-</body>
-</html>
-        )";
+        String html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP32 Scanner</title><style>";
+        html += "body { font-family: Arial; margin: 20px; background: #f0f0f0; }";
+        html += ".container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
+        html += "h1 { color: #333; }";
+        html += ".status { padding: 10px; margin: 10px 0; background: #e8f5e9; border-radius: 4px; }";
+        html += "button { padding: 10px 20px; margin: 5px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }";
+        html += "button:hover { background: #45a049; }";
+        html += "input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }";
+        html += "select { width: 100%; padding: 8px; margin: 5px 0; }";
+        html += "</style></head><body><div class=\"container\">";
+        html += "<h1>ESP32-S3 Scanner</h1>";
+        html += "<div id=\"status\" class=\"status\">Loading...</div>";
+        html += "<h2>WiFi Settings</h2>";
+        html += "<label>Network:</label><select id=\"networks\"></select>";
+        html += "<label>Password:</label><input type=\"password\" id=\"password\" placeholder=\"Enter WiFi password\">";
+        html += "<button onclick=\"connect()\">Connect</button>";
+        html += "<button onclick=\"scan()\">Scan Networks</button>";
+        html += "<button onclick=\"apMode()\">Start AP Mode</button>";
+        html += "<button onclick=\"beep()\">Beep</button>";
+        html += "<button onclick=\"location.reload()\">Refresh</button>";
+        html += "</div><script>";
+        html += "function updateStatus(){fetch('/status').then(r=>r.json()).then(d=>{document.getElementById('status').innerHTML='<b>WiFi:</b> '+(d.connected?'Connected':'Offline')+'<br><b>SSID:</b> '+(d.ssid||'None')+'<br><b>IP:</b> '+d.ip;});}";
+        html += "function scan(){fetch('/scan').then(()=>{setTimeout(()=>{fetch('/networks').then(r=>r.json()).then(nets=>{let sel=document.getElementById('networks');sel.innerHTML='';nets.forEach(n=>{let opt=document.createElement('option');opt.value=n;opt.text=n;sel.appendChild(opt);});});},2000);});}";
+        html += "function connect(){let ssid=document.getElementById('networks').value;let pass=document.getElementById('password').value;fetch('/connect',{method:'POST',body:'ssid='+ssid+'&password='+pass});setTimeout(updateStatus,3000);}";
+        html += "function apMode(){fetch('/ap').then(()=>{setTimeout(updateStatus,1000);});}";
+        html += "function beep(){fetch('/beep');}";
+        html += "updateStatus();setInterval(updateStatus,5000);";
+        html += "</script></body></html>";
         request->send(200, "text/html", html);
     });
 
