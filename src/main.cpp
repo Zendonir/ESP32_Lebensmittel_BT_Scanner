@@ -10,9 +10,8 @@ TwoWire i2c_bus(0);
 AsyncWebServer server(80);
 
 void initBacklight() {
-    ledcSetup(0, 5000, 8);
-    ledcAttachPin(LCD_BL, 0);
-    ledcWrite(0, 255);
+    ledcAttach(LCD_BL, 5000, 8);
+    ledcWrite(LCD_BL, 255);
     Serial.println("[Display] Backlight ON (GPIO 46)");
 }
 

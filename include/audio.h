@@ -2,7 +2,6 @@
 #define AUDIO_H
 
 #include <Arduino.h>
-#include <driver/i2s.h>
 #include "config.h"
 
 class Audio {
