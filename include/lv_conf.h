@@ -22,6 +22,8 @@
 // ============ RENDERING ============
 #define LV_DRAW_COMPLEX         1
 #define LV_DRAW_GRADIENT        1
+#define LV_USE_DRAW_SW          1
+#define LV_DRAW_SW_ASM          0
 
 // ============ LOGGING ============
 #define LV_USE_LOG              1
