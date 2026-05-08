@@ -9,6 +9,8 @@ Display::Display() : backlight_level(255) {}
 
 void Display::init() {
     pinMode(LCD_BL, OUTPUT);
+    ledcSetup(0, 5000, 8);
+    ledcAttachPin(LCD_BL, 0);
     setBacklight(255);
 
     initSPI();
@@ -35,14 +37,16 @@ void Display::initLVGL() {
 
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2, DISPLAY_WIDTH * DISPLAY_HEIGHT / 10);
 
+    static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = DISPLAY_WIDTH;
     disp_drv.ver_res = DISPLAY_HEIGHT;
     disp_drv.draw_buf = &draw_buf;
     disp_drv.flush_cb = Display::flushCB;
     disp_drv.user_data = this;
-    lv_disp_drv_register(&disp_drv);
+    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
 
+    static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = Display::readCB;
@@ -53,8 +57,6 @@ void Display::initLVGL() {
 void Display::flushCB(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
     Display *this_ptr = (Display *)disp->user_data;
 
-    // Write color data to display
-    // This is a simplified version - actual implementation depends on ST7796 driver
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
     uint32_t len = w * h;
@@ -82,7 +84,6 @@ void Display::flushCB(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *co
 }
 
 void Display::readCB(lv_indev_drv_t *indev_drv, lv_indev_data_t *data) {
-    // Touch reading is handled by Touch class
     data->point.x = 0;
     data->point.y = 0;
     data->state = LV_INDEV_STATE_REL;

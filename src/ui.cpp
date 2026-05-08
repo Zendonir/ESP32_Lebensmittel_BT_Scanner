@@ -34,7 +34,7 @@ void UI::createMainScreen() {
     lv_obj_align_to(label_ssid, label_wifi_status, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 15);
 
     // WiFi Button
-    lv_obj_t *btn_wifi = lv_btn_create(scr_main);
+    lv_obj_t *btn_wifi = lv_button_create(scr_main);
     lv_obj_set_width(btn_wifi, 280);
     lv_obj_set_height(btn_wifi, 50);
     lv_obj_align_to(btn_wifi, label_ssid, LV_ALIGN_OUT_BOTTOM_MID, 0, 30);
@@ -47,7 +47,7 @@ void UI::createMainScreen() {
     lv_obj_add_event_cb(btn_wifi, onWiFiConnectClick, LV_EVENT_CLICKED, NULL);
 
     // AP Mode Button
-    lv_obj_t *btn_ap = lv_btn_create(scr_main);
+    lv_obj_t *btn_ap = lv_button_create(scr_main);
     lv_obj_set_width(btn_ap, 280);
     lv_obj_set_height(btn_ap, 50);
     lv_obj_align_to(btn_ap, btn_wifi, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
@@ -60,7 +60,7 @@ void UI::createMainScreen() {
     lv_obj_add_event_cb(btn_ap, onAPModeClick, LV_EVENT_CLICKED, NULL);
 
     // Settings Button
-    lv_obj_t *btn_settings = lv_btn_create(scr_main);
+    lv_obj_t *btn_settings = lv_button_create(scr_main);
     lv_obj_set_width(btn_settings, 280);
     lv_obj_set_height(btn_settings, 50);
     lv_obj_align_to(btn_settings, btn_ap, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
@@ -78,7 +78,7 @@ void UI::createWiFiScreen() {
     lv_obj_set_style_bg_color(scr_wifi, lv_color_hex(0x1a1a2e), 0);
 
     // Back button
-    lv_obj_t *btn_back = lv_btn_create(scr_wifi);
+    lv_obj_t *btn_back = lv_button_create(scr_wifi);
     lv_obj_set_width(btn_back, 60);
     lv_obj_set_height(btn_back, 40);
     lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 10, 10);
@@ -111,7 +111,7 @@ void UI::createWiFiScreen() {
     lv_obj_align(textarea_password, LV_ALIGN_TOP_MID, 0, 190);
 
     // Connect Button
-    btn_wifi_connect = lv_btn_create(scr_wifi);
+    btn_wifi_connect = lv_button_create(scr_wifi);
     lv_obj_set_width(btn_wifi_connect, 280);
     lv_obj_set_height(btn_wifi_connect, 50);
     lv_obj_align(btn_wifi_connect, LV_ALIGN_CENTER, 0, 120);
