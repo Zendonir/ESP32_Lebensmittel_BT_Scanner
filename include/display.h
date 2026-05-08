@@ -8,6 +8,7 @@
 class Display {
 public:
     Display();
+    ~Display();
     void init();
     void drawText(int x, int y, const char *text, uint16_t color = TFT_WHITE);
     void fillScreen(uint16_t color);
@@ -16,7 +17,7 @@ public:
     void clear();
 
 private:
-    TFT_eSPI tft;
+    TFT_eSPI *tft;
 };
 
 extern Display display_obj;

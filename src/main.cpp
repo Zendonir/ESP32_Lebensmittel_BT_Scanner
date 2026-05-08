@@ -7,7 +7,7 @@
 #include "touch.h"
 #include "display.h"
 
-TwoWire i2c_bus(0);
+TwoWire *i2c_bus = nullptr;
 AsyncWebServer server(80);
 
 void initBacklight() {
@@ -111,11 +111,12 @@ void setup() {
 
     // I2C
     Serial.println("[I2C] Initializing...");
-    i2c_bus.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
+    i2c_bus = new TwoWire(0);
+    i2c_bus->begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
 
     // Touch
     Serial.println("[Touch] Initializing...");
-    touch_obj.init(&i2c_bus);
+    touch_obj.init(i2c_bus);
 
     // Audio
     Serial.println("[Audio] Initializing...");
