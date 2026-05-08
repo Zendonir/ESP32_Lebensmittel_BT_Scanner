@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <lvgl.h>
 #include "config.h"
 
 struct TouchPoint {
