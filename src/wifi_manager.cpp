@@ -107,8 +107,5 @@ void WiFiManager::disconnect() {
 }
 
 void WiFiManager::startWebServer() {
-    // Simple HTTP server for WiFi settings
-    // This would typically use ESP Async WebServer
-    Serial.println("[WiFi] Web server would be started here");
-    // Implementation details depend on AsyncWebServer setup
+    Serial.println("[WiFi] Web server optional - implement if needed");
 }
