@@ -1,0 +1,37 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "PlatformIO Debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/build/firmware.elf",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "arm-none-eabi-gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "PlatformIO: Build",
+            "internalConsoleOptions": "openOnSessionStart"
+        },
+        {
+            "name": "Serial Monitor (115200)",
+            "type": "cppdbg",
+            "request": "launch",
+            "preLaunchTask": "PlatformIO: Upload and Monitor",
+            "program": "${command:platformio.projectTaskCommand}",
+            "args": ["run", "-t", "upload", "--", "-b", "115200"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": true,
+            "MIMode": "gdb"
+        }
+    ]
+}
