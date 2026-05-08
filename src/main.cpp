@@ -139,7 +139,10 @@ void setup() {
     // WiFi
     Serial.println("[WiFi] Initializing...");
     wifi_manager.init();
-    display_obj.showWiFiStatus(wifi_manager.getSSID().c_str(), wifi_manager.getIPAddress().c_str(), wifi_manager.isConnected());
+    String wifi_ssid = wifi_manager.getSSID();
+    String wifi_ip = wifi_manager.getIPAddress();
+    bool wifi_connected = wifi_manager.isConnected();
+    display_obj.showWiFiStatus(wifi_ssid, wifi_ip, wifi_connected);
 
     // Web Server
     //Serial.println("[Server] Initializing...");

@@ -55,7 +55,7 @@ void Display::showSplash() {
     delay(2000);
 }
 
-void Display::showWiFiStatus(const char *ssid, const char *ip, bool connected) {
+void Display::showWiFiStatus(const String &ssid, const String &ip, bool connected) {
     if (tft == nullptr) return;
     tft->fillScreen(TFT_BLACK);
 
@@ -74,13 +74,21 @@ void Display::showWiFiStatus(const char *ssid, const char *ip, bool connected) {
     tft->setCursor(20, 130);
     tft->print("SSID: ");
     tft->setTextColor(TFT_CYAN);
-    tft->print(ssid ? ssid : "None");
+    if (ssid.isEmpty()) {
+        tft->print("None");
+    } else {
+        tft->print(ssid.c_str());
+    }
 
     tft->setTextColor(TFT_WHITE);
     tft->setCursor(20, 160);
     tft->print("IP: ");
     tft->setTextColor(TFT_YELLOW);
-    tft->print(ip ? ip : "0.0.0.0");
+    if (ip.isEmpty()) {
+        tft->print("0.0.0.0");
+    } else {
+        tft->print(ip.c_str());
+    }
 
     tft->setTextColor(TFT_WHITE);
     tft->setTextSize(1);

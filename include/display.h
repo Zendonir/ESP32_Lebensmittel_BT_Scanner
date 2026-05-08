@@ -13,7 +13,7 @@ public:
     void drawText(int x, int y, const char *text, uint16_t color = TFT_WHITE);
     void fillScreen(uint16_t color);
     void showSplash();
-    void showWiFiStatus(const char *ssid, const char *ip, bool connected);
+    void showWiFiStatus(const String &ssid, const String &ip, bool connected);
     void clear();
 
 private:

@@ -6,20 +6,24 @@ WiFiManager::WiFiManager() : current_mode(MODE_OFF) {}
 
 void WiFiManager::init() {
     WiFi.mode(WIFI_MODE_APSTA);
-    WiFi.softAP("ESP32-Scanner", "12345678");
+    current_ssid = AP_SSID;
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
     current_mode = MODE_AP_STA;
 
     Serial.println("\n[WiFi] AP Mode started:");
-    Serial.print("SSID: ESP32-Scanner");
+    Serial.print("SSID: ");
+    Serial.println(current_ssid);
     Serial.print("IP: ");
     Serial.println(WiFi.softAPIP());
 }
 
 void WiFiManager::startAP(const char *ssid, const char *password) {
     WiFi.mode(WIFI_MODE_APSTA);
-    WiFi.softAP(ssid, password);
+    current_ssid = ssid ? ssid : AP_SSID;
+    WiFi.softAP(current_ssid.c_str(), password ? password : AP_PASSWORD);
     current_mode = MODE_AP_STA;
-    Serial.println("[WiFi] AP Mode: " + String(ssid));
+    Serial.print("[WiFi] AP Mode: ");
+    Serial.println(current_ssid);
 }
 
 void WiFiManager::connectToWiFi(const char *ssid, const char *password) {
@@ -50,7 +54,7 @@ String WiFiManager::getIPAddress() {
 }
 
 String WiFiManager::getSSID() {
-    return "ESP32-Scanner";
+    return current_ssid.isEmpty() ? String(AP_SSID) : current_ssid;
 }
 
 bool WiFiManager::isConnected() {
