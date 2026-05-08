@@ -58,10 +58,12 @@ platformio.ini  - PlatformIO Setup
 
 | Funktion | GPIO |
 |----------|------|
-| Display (SPI) | 9-13, 46 |
-| Touch (I2C) | 7, 8, 4 |
-| Audio (I2S) | 2, 41-42, 45 |
-| UART | 43, 44 |
+| Display (SPI) | MOSI 1, MISO 2, DC 3, SCLK 5, BL 6 |
+| Display via TCA9554 | RST (expander), CS not direct GPIO |
+| Touch (I2C) | SDA 8, SCL 7, INT via TCA9554 |
+| Audio (ES8311/I2S) | MCLK 12, BCLK 13, DOUT 14, LRCK 15, DIN 16 |
+| SD (SPI) | MISO 9, MOSI 10, SCLK 11, CS via TCA9554 |
+| UART | TX 43, RX 44 |
 | Frei | 35, 36, 37 |
 
 ## Serial Commands
