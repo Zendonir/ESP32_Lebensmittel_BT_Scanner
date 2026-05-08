@@ -1,0 +1,48 @@
+# PlatformIO
+.pio
+.pioenvs
+.piolibdeps
+.vscode
+.vscode/
+
+# Build artifacts
+build/
+dist/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor backups
+*.bak
+*.backup
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.env.local
+env/
+venv/
