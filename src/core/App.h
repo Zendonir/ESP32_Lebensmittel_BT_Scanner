@@ -5,6 +5,8 @@
 #include "AppStateManager.h"
 #include "EventBus.h"
 #include "TimeManager.h"
+#include "../storage/LittleFSManager.h"
+#include "../web/WebInterface.h"
 
 class App {
 public:
@@ -15,13 +17,17 @@ public:
 private:
     void initBacklight();
     void initI2C();
+    void initFilesystem();
+    void initWebServer();
     void handleSerialCommand(const String &command);
     void renderWiFiStatus();
 
-    TwoWire i2c_bus;
+    TwoWire        i2c_bus;
     AppStateManager state;
-    EventBus events;
-    TimeManager time_manager;
+    EventBus        events;
+    TimeManager     time_manager;
+    LittleFSManager fs;
+    WebInterface    web;
 };
 
 extern App app;

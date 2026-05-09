@@ -8,7 +8,7 @@
 
 App app;
 
-App::App() : i2c_bus(0) {}
+App::App() : i2c_bus(0), web(80) {}
 
 void App::begin() {
     Logger::begin(115200);
@@ -36,6 +36,10 @@ void App::begin() {
     renderWiFiStatus();
 
     state.setState(wifi_manager.isConnected() ? AppState::MAIN : AppState::AP_MODE);
+
+    initFilesystem();
+    initWebServer();
+
     Logger::info("App", "Ready. Serial commands: scan, ap, status, beep, help");
 }
 
@@ -80,6 +84,24 @@ void App::renderWiFiStatus() {
     String wifi_ip = wifi_manager.getIPAddress();
     bool wifi_connected = wifi_manager.isConnected();
     display_obj.showWiFiStatus(wifi_ssid, wifi_ip, wifi_connected);
+}
+
+void App::initFilesystem() {
+    Logger::info("LittleFS", "Mounting filesystem");
+    if (!fs.begin()) {
+        Logger::error("LittleFS", "Mount failed – web files unavailable");
+    } else {
+        Logger::info("LittleFS", "Mounted OK");
+    }
+}
+
+void App::initWebServer() {
+    Logger::info("Web", "Starting web server on port 80");
+    web.begin();
+    String ip = wifi_manager.isConnected()
+        ? wifi_manager.getIPAddress()
+        : WiFi.softAPIP().toString();
+    Logger::info("Web", "Reachable at http://" + ip);
 }
 
 void App::handleSerialCommand(const String &command) {
