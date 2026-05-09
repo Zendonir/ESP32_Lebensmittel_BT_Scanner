@@ -98,6 +98,17 @@ void App::initFilesystem() {
 }
 
 void App::initWebServer() {
+    // ── Diagnostic: one blocking scan to confirm the WiFi driver can scan ──
+    Logger::info("WiFiScan", "Boot diagnostic scan starting…");
+    int diagN = WiFi.scanNetworks();
+    Logger::info("WiFiScan", String("Diagnostic result: ") + diagN + " networks");
+    for (int i = 0; i < diagN && i < 8; i++) {
+        Logger::info("WiFiScan",
+            String("  ") + i + ": " + WiFi.SSID(i) + " (" + WiFi.RSSI(i) + " dBm)");
+    }
+    WiFi.scanDelete();
+    // ───────────────────────────────────────────────────────────────────────
+
     Logger::info("Web", "Starting web server on port 80");
     web.begin();
 

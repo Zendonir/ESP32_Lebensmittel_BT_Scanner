@@ -6,7 +6,6 @@
 #include <LittleFS.h>
 #include <Update.h>
 #include <WiFi.h>
-#include <esp_wifi.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -17,18 +16,25 @@ static volatile bool _scanReady   = false;
 static volatile int  _scanCount   = 0;
 
 static void wifiScanTask(void *) {
-    Logger::info("WiFiScan", "Task started");
+    // Use Serial.printf directly — guaranteed output even if Logger has issues
+    Serial.println("[WiFiScan] Task started");
+    Serial.flush();
 
-    // Stop any previous scan and free its results before starting a new one.
-    // esp_wifi_scan_stop() resets _scanStarted in the driver; without this,
-    // scanNetworks() immediately returns WIFI_SCAN_FAILED if a prior scan
-    // was never cleanly finished.
-    esp_wifi_scan_stop();
     WiFi.scanDelete();
 
-    Logger::info("WiFiScan", "Starting scan…");
-    int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/false);
-    Logger::info("WiFiScan", String("Done: ") + n + " networks found");
+    Serial.println("[WiFiScan] Calling WiFi.scanNetworks()...");
+    Serial.flush();
+
+    int n = WiFi.scanNetworks(); // simplest blocking form, all defaults
+
+    Serial.printf("[WiFiScan] Result: %d (WIFI_SCAN_FAILED=-2)\n", n);
+    Serial.flush();
+
+    for (int i = 0; i < n && i < 5; i++) {
+        Serial.printf("[WiFiScan]   #%d  %s  %d dBm\n",
+                      i, WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+    }
+    Serial.flush();
 
     _scanCount   = (n > 0) ? n : 0;
     _scanReady   = true;
@@ -485,19 +491,23 @@ void WebInterface::registerApiRoutes() {
 
     // WiFi scan — start
     _server.on("/api/wifi/scan-start", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.println("[WiFiScan] /api/wifi/scan-start called");
+        Serial.flush();
         if (!_scanRunning) {
             _scanRunning = true;
             _scanReady   = false;
             _scanCount   = 0;
-            // Pin to core 0 (WiFi driver core), 8 KB stack
             BaseType_t ok = xTaskCreatePinnedToCore(
                 wifiScanTask, "wifi_scan", 8192, nullptr, 1, nullptr, 0);
+            Serial.printf("[WiFiScan] xTaskCreate: %s\n", ok == pdPASS ? "OK" : "FAIL");
+            Serial.flush();
             if (ok != pdPASS) {
-                Logger::error("WiFiScan", "xTaskCreate failed");
                 _scanRunning = false;
                 req->send(500, "application/json", "{\"error\":\"scan task failed\"}");
                 return;
             }
+        } else {
+            Serial.println("[WiFiScan] scan already running");
         }
         req->send(200, "application/json", "{\"ok\":true}");
     });
