@@ -14,9 +14,11 @@ namespace {
 constexpr uint16_t HID_SERVICE_UUID = 0x1812;
 constexpr uint16_t HID_REPORT_UUID = 0x2A4D;
 constexpr uint16_t HID_BOOT_KEYBOARD_INPUT_UUID = 0x2A22;
+constexpr uint16_t HID_PROTOCOL_MODE_UUID = 0x2A4E;
 BLEUUID hidServiceUuid((uint16_t)HID_SERVICE_UUID);
 BLEUUID hidReportUuid((uint16_t)HID_REPORT_UUID);
 BLEUUID hidBootKeyboardInputUuid((uint16_t)HID_BOOT_KEYBOARD_INPUT_UUID);
+BLEUUID hidProtocolModeUuid((uint16_t)HID_PROTOCOL_MODE_UUID);
 BLEClient *client = nullptr;
 BLEScanner *activeScanner = nullptr;
 BLESecurity *security = nullptr;
@@ -71,9 +73,10 @@ void BLEScanner::begin() {
     if (!initialized) {
         BLEDevice::init("Lebensmittel-Scanner");
         security = new BLESecurity();
-        security->setAuthenticationMode(ESP_LE_AUTH_BOND);
+        security->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_BOND);
         security->setCapability(ESP_IO_CAP_NONE);
         security->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+        security->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
         initialized = true;
         activeScanner = this;
     }
@@ -197,6 +200,13 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
         return false;
     }
 
+    Serial.println("[BLEScanner] Securing BLE HID connection");
+    Serial.flush();
+    bool secured = client->secureConnection();
+    Serial.printf("[BLEScanner] secureConnection=%d\n", secured);
+    Serial.flush();
+    delay(250);
+
     BLERemoteService *service = client->getService(hidServiceUuid);
     if (!service) {
         lastError = "HID service not found";
@@ -207,12 +217,23 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
         return false;
     }
 
-    BLERemoteCharacteristic *characteristic = service->getCharacteristic(hidReportUuid);
-    if (!characteristic) characteristic = service->getCharacteristic(hidBootKeyboardInputUuid);
+    BLERemoteCharacteristic *protocolMode = service->getCharacteristic(hidProtocolModeUuid);
+    if (protocolMode && protocolMode->canWrite()) {
+        uint8_t bootMode = 0;
+        protocolMode->writeValue(&bootMode, 1, false);
+        Serial.println("[BLEScanner] HID protocol mode set to boot");
+    }
+
+    BLERemoteCharacteristic *characteristic = service->getCharacteristic(hidBootKeyboardInputUuid);
+    if (!characteristic || !characteristic->canNotify()) {
+        characteristic = service->getCharacteristic(hidReportUuid);
+    }
 
     if (!characteristic || !characteristic->canNotify()) {
-        lastError = "HID notify characteristic not found";
-        Serial.println("[BLEScanner] HID notify characteristic not found");
+        lastError = secured
+            ? "HID notify characteristic not found"
+            : "HID pairing/encryption failed";
+        Serial.printf("[BLEScanner] %s\n", lastError.c_str());
         connecting = false;
         cleanupClient();
         Serial.flush();
