@@ -286,6 +286,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::CANCEL:
             workflow = WorkflowMode::HOME;
             state.setState(AppState::MAIN);
+            resumeScannerAfterLookup();
             renderDashboard("Vorgang abgebrochen");
             break;
         default:
@@ -312,6 +313,7 @@ void App::handleScan(const ScanResult &scan) {
 }
 
 void App::startProductLookup(const String &barcode) {
+    pauseScannerForLookup();
     _pendingBarcode = barcode;
     _pendingProduct = ProductInfo();
     _pendingDateDraft = "";
@@ -320,6 +322,24 @@ void App::startProductLookup(const String &barcode) {
     workflow = WorkflowMode::FETCHING_PRODUCT;
     state.setState(AppState::FETCHING);
     display_obj.showFetchingProduct(barcode);
+}
+
+void App::pauseScannerForLookup() {
+    _resumeScannerAfterWorkflow = false;
+    _resumeScannerAddress = ble_scanner.getDeviceAddress();
+    _resumeScannerName = ble_scanner.getDeviceName();
+    if (ble_scanner.isConnected() || ble_scanner.isConnecting()) {
+        Logger::info("Scanner", "Temporarily disconnecting BLE scanner for product lookup memory");
+        ble_scanner.disconnect();
+        _resumeScannerAfterWorkflow = !_resumeScannerAddress.isEmpty();
+    }
+}
+
+void App::resumeScannerAfterLookup() {
+    if (!_resumeScannerAfterWorkflow || _resumeScannerAddress.isEmpty()) return;
+    Logger::info("Scanner", "Reconnecting BLE scanner after product workflow");
+    ble_scanner.requestConnect(_resumeScannerAddress, _resumeScannerName);
+    _resumeScannerAfterWorkflow = false;
 }
 
 void App::processWorkflow() {
@@ -374,6 +394,7 @@ bool App::finishStorageWorkflow() {
         : "Inventar konnte nicht gespeichert werden";
     display_obj.showResult(_resultTitle, _resultMessage, stored);
     audio_obj.playTone(stored ? 1800 : 240, stored ? 100 : 260);
+    resumeScannerAfterLookup();
     return stored;
 }
 

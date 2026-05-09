@@ -49,6 +49,8 @@ private:
     void startProductLookup(const String &barcode);
     void processWorkflow();
     bool finishStorageWorkflow();
+    void pauseScannerForLookup();
+    void resumeScannerAfterLookup();
     bool formatDateDraft(String &formatted) const;
     char digitForAction(OnscreenAction action) const;
 
@@ -78,6 +80,9 @@ private:
     String          _pendingExpiryDate;
     int             _pendingQuantity = 1;
     String          _pendingBarcode;
+    bool            _resumeScannerAfterWorkflow = false;
+    String          _resumeScannerAddress;
+    String          _resumeScannerName;
     String          _resultTitle;
     String          _resultMessage;
     bool            _resultSuccess = false;

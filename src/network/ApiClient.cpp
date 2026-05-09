@@ -17,6 +17,9 @@ ApiResponse finishGet(HTTPClient &http) {
 ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
     HTTPClient http;
     http.setTimeout(timeoutMs);
+    http.setReuse(false);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.useHTTP10(true);
 
     if (url.startsWith("https://")) {
         WiFiClientSecure client;
@@ -24,6 +27,8 @@ ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
         // Keep the request HTTPS, but skip chain validation instead of failing every
         // Open Food Facts request with start_ssl_client/connect failed.
         client.setInsecure();
+        client.setTimeout(timeoutMs / 1000);
+        client.setBufferSizes(512, 512);
         if (!http.begin(client, url)) {
             Logger::error("ApiClient", "HTTPS begin failed");
             return ApiResponse();
