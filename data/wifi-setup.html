@@ -437,6 +437,19 @@ window.addEventListener('DOMContentLoaded', async () => {
       return;
     }
   } catch {}
+
+  // The firmware primes this cache from the successful boot scan, so the
+  // network list can appear immediately even before the user triggers a scan.
+  try {
+    const r = await fetch('/api/wifi/scan-result');
+    const data = await r.json();
+    if (!data.scanning && data.ready && (data.networks || []).length) {
+      renderNetworks(data.networks || []);
+      showStatus(`Boot-Scan: ${data.networks.length} WLAN-Netze gefunden`, 'ok');
+      return;
+    }
+  } catch {}
+
   startScan();
 });
 </script>

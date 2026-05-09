@@ -23,6 +23,7 @@ static bool _scanReady = false;
 static int _scanCount = 0;
 static int _scanResult = WIFI_SCAN_RUNNING;
 static uint32_t _scanUpdatedAt = 0;
+static String _scanSource;
 static WiFiScanEntry _scanCache[WIFI_SCAN_CACHE_MAX];
 
 static void resetScanCache() {
@@ -33,6 +34,7 @@ static void resetScanCache() {
     _scanResult = WIFI_SCAN_RUNNING;
     _scanReady = false;
     _scanUpdatedAt = 0;
+    _scanSource = "";
 }
 
 static int findCachedSSID(const String &ssid) {
@@ -42,8 +44,9 @@ static int findCachedSSID(const String &ssid) {
     return -1;
 }
 
-static void cacheScanResults(int result) {
+static void cacheScanResults(int result, const char *source) {
     _scanResult = result;
+    _scanSource = source ? source : "";
     _scanCount = 0;
 
     if (result > 0) {
@@ -79,6 +82,7 @@ static void sendScanResult(AsyncWebServerRequest *req) {
     doc["result"] = _scanResult;
     doc["count"] = _scanCount;
     doc["ageMs"] = _scanUpdatedAt ? millis() - _scanUpdatedAt : 0;
+    doc["source"] = _scanSource;
 
     if (_scanReady && _scanResult < 0) {
         doc["error"] = (_scanResult == WIFI_SCAN_FAILED) ? "wifi scan failed" : "wifi scan did not complete";
@@ -97,6 +101,9 @@ static void sendScanResult(AsyncWebServerRequest *req) {
 
     String body;
     serializeJson(doc, body);
+    Serial.printf("[Web] %s -> scan cache ready=%d count=%d source=%s\n",
+                  req->url().c_str(), _scanReady, _scanCount, _scanSource.c_str());
+    Serial.flush();
     req->send(200, "application/json", body);
 }
 
@@ -107,6 +114,13 @@ void WebInterface::begin() {
     registerApiRoutes();
     _server.begin();
     Logger::info("Web", "Web interface started on port 80");
+}
+
+void WebInterface::primeWiFiScanCache(int scanResult) {
+    cacheScanResults(scanResult, "boot");
+    Serial.printf("[Web] Primed WiFi scan cache from boot scan: raw=%d visible=%d\n",
+                  _scanResult, _scanCount);
+    Serial.flush();
 }
 
 /* ---------------------------------------------------------------
@@ -141,6 +155,9 @@ void WebInterface::registerStaticRoutes() {
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
         bool forceApp = req->hasParam("app");
         bool needsSetup = !wifi_manager.isConnected();
+        Serial.printf("[Web] GET / host=%s forceApp=%d needsSetup=%d\n",
+                      req->host().c_str(), forceApp, needsSetup);
+        Serial.flush();
         if (!forceApp && needsSetup && LittleFS.exists("/wifi-setup.html")) {
             req->send(LittleFS, "/wifi-setup.html", "text/html");
             return;
@@ -155,31 +172,44 @@ void WebInterface::registerStaticRoutes() {
 
     // Explicit WiFi setup page (always accessible for re-setup)
     _server.on("/wifi-setup", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.printf("[Web] GET /wifi-setup host=%s\n", req->host().c_str());
+        Serial.flush();
         if (LittleFS.exists("/wifi-setup.html"))
             req->send(LittleFS, "/wifi-setup.html", "text/html");
         else
             req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
     });
     _server.on("/wifi-setup.html", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.printf("[Web] GET /wifi-setup.html host=%s\n", req->host().c_str());
+        Serial.flush();
         if (LittleFS.exists("/wifi-setup.html"))
             req->send(LittleFS, "/wifi-setup.html", "text/html");
         else
             req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
     });
 
-    // Captive portal detection endpoints — redirect to WiFi setup
+    // Captive portal detection endpoints — redirect to WiFi setup.
+    // Different OSes probe different URLs before showing their captive portal UI.
     auto captive = [](AsyncWebServerRequest *req) {
         String url = "http://";
         url += WiFi.softAPIP().toString();
         url += "/wifi-setup";
+        Serial.printf("[Captive] %s host=%s -> %s\n",
+                      req->url().c_str(), req->host().c_str(), url.c_str());
+        Serial.flush();
         req->redirect(url);
     };
-    _server.on("/generate_204",          HTTP_GET, captive);
-    _server.on("/hotspot-detect.html",   HTTP_GET, captive);
-    _server.on("/ncsi.txt",              HTTP_GET, captive);
-    _server.on("/connecttest.txt",       HTTP_GET, captive);
-    _server.on("/canonical.html",        HTTP_GET, captive);
-    _server.on("/success.txt",           HTTP_GET, captive);
+    _server.on("/generate_204",                  HTTP_GET, captive); // Android
+    _server.on("/gen_204",                       HTTP_GET, captive); // Android variant
+    _server.on("/hotspot-detect.html",           HTTP_GET, captive); // Apple
+    _server.on("/library/test/success.html",     HTTP_GET, captive); // Apple newer
+    _server.on("/ncsi.txt",                      HTTP_GET, captive); // Windows
+    _server.on("/connecttest.txt",               HTTP_GET, captive); // Windows
+    _server.on("/redirect",                      HTTP_GET, captive); // Microsoft Edge
+    _server.on("/fwlink",                        HTTP_GET, captive); // Windows legacy
+    _server.on("/canonical.html",                HTTP_GET, captive); // Ubuntu/Firefox
+    _server.on("/success.txt",                   HTTP_GET, captive); // Firefox
+    _server.on("/kindle-wifi/wifistub.html",     HTTP_GET, captive); // Kindle
 
     _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/style.css"))
@@ -197,8 +227,14 @@ void WebInterface::registerStaticRoutes() {
 
     _server.onNotFound([](AsyncWebServerRequest *req) {
         const String &path = req->url();
+        Serial.printf("[Web] 404/onNotFound %s host=%s\n", path.c_str(), req->host().c_str());
+        Serial.flush();
         if (path.startsWith("/api/")) {
             req->send(404, "application/json", "{\"error\":\"not found\"}");
+            return;
+        }
+        if (!wifi_manager.isConnected() && LittleFS.exists("/wifi-setup.html")) {
+            req->send(LittleFS, "/wifi-setup.html", "text/html");
             return;
         }
         // SPA fallback — all non-API routes load the app
@@ -294,6 +330,8 @@ void WebInterface::registerApiRoutes() {
 
     // ---- PING ----
     _server.on("/api/ping", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.printf("[API] GET /api/ping host=%s\n", req->host().c_str());
+        Serial.flush();
         String r = "{\"ok\":true,\"uptime\":";
         r += millis() / 1000;
         r += ",\"heap\":";
@@ -535,6 +573,8 @@ void WebInterface::registerApiRoutes() {
 
     // ---- WIFI ----
     _server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.printf("[API] GET /api/wifi host=%s connected=%d\n", req->host().c_str(), WiFi.status() == WL_CONNECTED);
+        Serial.flush();
         JsonDocument doc;
         loadJson("/wifi_config.json", doc, "{}");
         doc["connected"] = (WiFi.status() == WL_CONNECTED);
@@ -563,7 +603,7 @@ void WebInterface::registerApiRoutes() {
         resetScanCache();
 
         int result = wifi_manager.scanNetworks(true);
-        cacheScanResults(result);
+        cacheScanResults(result, "api");
         WiFi.scanDelete();
 
         _scanRunning = false;
@@ -591,6 +631,9 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"error\":\"ssid required\"}");
                 return;
             }
+            Serial.printf("[API] POST /api/wifi/connect ssid='%s' passLen=%u\n",
+                          ssid.c_str(), static_cast<unsigned>(pass.length()));
+            Serial.flush();
             wifi_manager.saveCredentials(ssid.c_str(), pass.c_str());
             wifi_manager.connectToWiFi(ssid.c_str(), pass.c_str());
             req->send(200, "application/json", "{\"ok\":true}");
@@ -600,6 +643,9 @@ void WebInterface::registerApiRoutes() {
     // WiFi status — used by setup page to poll connection result
     _server.on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *req) {
         wl_status_t st = WiFi.status();
+        Serial.printf("[API] GET /api/wifi/status host=%s status=%d connected=%d\n",
+                      req->host().c_str(), static_cast<int>(st), st == WL_CONNECTED);
+        Serial.flush();
         bool connected = (st == WL_CONNECTED);
         bool failed    = (st == WL_CONNECT_FAILED || st == WL_NO_SSID_AVAIL);
         JsonDocument doc;

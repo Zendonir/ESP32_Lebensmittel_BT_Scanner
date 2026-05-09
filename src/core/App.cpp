@@ -106,6 +106,7 @@ void App::initWebServer() {
         Logger::info("WiFiScan",
             String("  ") + i + ": " + WiFi.SSID(i) + " (" + WiFi.RSSI(i) + " dBm)");
     }
+    web.primeWiFiScanCache(diagN);
     WiFi.scanDelete();
     // ───────────────────────────────────────────────────────────────────────
 

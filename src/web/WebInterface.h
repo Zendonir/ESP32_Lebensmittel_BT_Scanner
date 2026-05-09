@@ -17,6 +17,7 @@ public:
     void setJsonStorage(JsonStorage *storage)        { _storage = storage; }
 
     void begin();
+    void primeWiFiScanCache(int scanResult);
 
 private:
     AsyncWebServer   _server;
