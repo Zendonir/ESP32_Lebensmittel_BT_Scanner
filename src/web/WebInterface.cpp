@@ -456,30 +456,40 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
 
     // Async WiFi scan — start
-    _server.on("/api/wifi/scan-start", HTTP_GET, [](AsyncWebServerRequest *req) {
-        WiFi.scanNetworks(true, true); // async, show hidden
+    static unsigned long _scanStartedAt = 0;
+    _server.on("/api/wifi/scan-start", HTTP_GET, [&_scanStartedAt](AsyncWebServerRequest *req) {
+        WiFi.scanDelete();                // clear any leftover results first
+        WiFi.scanNetworks(true, true);    // async, include hidden SSIDs
+        _scanStartedAt = millis();
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
     // Async WiFi scan — poll result
-    _server.on("/api/wifi/scan-result", HTTP_GET, [](AsyncWebServerRequest *req) {
+    _server.on("/api/wifi/scan-result", HTTP_GET, [&_scanStartedAt](AsyncWebServerRequest *req) {
         int n = WiFi.scanComplete();
-        if (n == WIFI_SCAN_RUNNING) {
+
+        // WIFI_SCAN_RUNNING = -1: scan in progress
+        // WIFI_SCAN_FAILED  = -2: not started, or failed; treat as "still starting"
+        //                         for the first 4 s to handle the window between
+        //                         scanNetworks() and the driver registering the request
+        if (n == WIFI_SCAN_RUNNING ||
+            (n == WIFI_SCAN_FAILED && _scanStartedAt && millis() - _scanStartedAt < 4000)) {
             req->send(200, "application/json", "{\"scanning\":true,\"networks\":[]}");
             return;
         }
+
+        // Scan finished (n >= 0) or genuinely failed after grace period
+        _scanStartedAt = 0;
         JsonDocument doc;
         doc["scanning"] = false;
         JsonArray arr = doc["networks"].to<JsonArray>();
-        if (n > 0) {
-            for (int i = 0; i < n && i < 30; i++) {
-                JsonObject o = arr.add<JsonObject>();
-                o["ssid"] = WiFi.SSID(i);
-                o["rssi"] = WiFi.RSSI(i);
-                o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
-            }
-            WiFi.scanDelete();
+        for (int i = 0; i < n && i < 30; i++) {
+            JsonObject o = arr.add<JsonObject>();
+            o["ssid"] = WiFi.SSID(i);
+            o["rssi"] = WiFi.RSSI(i);
+            o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
         }
+        WiFi.scanDelete();
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);
