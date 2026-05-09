@@ -27,6 +27,8 @@ public:
     }
 };
 
+ScannerClientCallbacks clientCallbacks;
+
 char keyToChar(uint8_t keycode, bool shift) {
     if (keycode >= 0x04 && keycode <= 0x1D) {
         char c = 'a' + (keycode - 0x04);
@@ -160,7 +162,7 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
     }
 
     client = BLEDevice::createClient();
-    client->setClientCallbacks(new ScannerClientCallbacks(), true);
+    client->setClientCallbacks(&clientCallbacks);
 
     bool ok = client->connect(BLEAddress(address.c_str()));
     if (!ok) {
