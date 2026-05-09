@@ -44,7 +44,7 @@
 // to an ESP32-S3 GPIO. Keep it disabled until an expander driver is added.
 #define SD_CS       -1
 
-// ============ UART (TTL Drucker/Scanner) ============
+// ============ UART (TTL Drucker) ============
 #define UART_TX     43
 #define UART_RX     44
 #define UART_NUM    UART_NUM_1

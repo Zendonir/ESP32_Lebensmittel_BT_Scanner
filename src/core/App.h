@@ -8,6 +8,7 @@
 #include "TimeManager.h"
 #include "../storage/LittleFSManager.h"
 #include "../web/WebInterface.h"
+#include "../scanner/BarcodeManager.h"
 
 class App {
 public:

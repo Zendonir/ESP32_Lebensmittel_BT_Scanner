@@ -38,6 +38,10 @@ void App::begin() {
     state.setState(wifi_manager.isConnected() ? AppState::MAIN : AppState::AP_MODE);
 
     initFilesystem();
+
+    Logger::info("Scanner", "Initializing BLE barcode scanner");
+    barcode_manager.begin();
+
     initWebServer();
 
     Logger::info("App", "Ready. Serial commands: scan, ap, status, beep, help");
@@ -50,6 +54,13 @@ void App::loop() {
         String command = Serial.readStringUntil('\n');
         command.trim();
         handleSerialCommand(command);
+    }
+
+    barcode_manager.loop();
+    ScanResult scan;
+    if (barcode_manager.readScan(scan)) {
+        Logger::info("Scanner", String("Barcode: ") + scan.code);
+        audio_obj.playTone(1800, 80);
     }
 
     AppEvent event;
@@ -149,6 +160,10 @@ void App::handleSerialCommand(const String &command) {
         Serial.println(wifi_manager.getIPAddress());
         Serial.print("SSID: ");
         Serial.println(wifi_manager.getSSID());
+        Serial.print("Scanner: ");
+        Serial.print(ble_scanner.getStatus());
+        Serial.print(" ");
+        Serial.println(ble_scanner.getDeviceName().isEmpty() ? ble_scanner.getDeviceAddress() : ble_scanner.getDeviceName());
         Serial.println();
     } else if (command == "beep") {
         audio_obj.playTone(1000, 100);

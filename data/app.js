@@ -1353,34 +1353,17 @@ Pages.printer = {
 /* ---- SCANNER ---- */
 Pages.scanner = {
   _pollTimer: null,
+  _bleDevices: [],
 
   async load() {
     try {
       const cfg = await API.get('/api/scanner-config');
-      document.getElementById('scanMode').value         = cfg.mode       || 'uart_gm861';
-      document.getElementById('scanBaud').value         = cfg.baudrate   || 9600;
-      document.getElementById('scanRx').value           = cfg.rxPin      || 16;
-      document.getElementById('scanTx').value           = cfg.txPin      || 17;
-      document.getElementById('scanAutoReconnect').checked = !!cfg.autoReconnect;
-      document.getElementById('scanBleDevice').textContent = cfg.bleDevice || '—';
+      document.getElementById('scanAutoReconnect').checked = cfg.autoReconnect !== false;
+      document.getElementById('scanBleDevice').textContent = cfg.bleDevice || cfg.bleAddress || '—';
+      document.getElementById('scanBleStatus').textContent = cfg.bleStatus || (cfg.bleConnected ? 'connected' : 'disconnected');
       document.getElementById('scanLastResult').textContent = cfg.lastScan || '—';
-      this.onModeChange();
     } catch(e) {
       Toast.error('Scanner: ' + e.message);
-    }
-  },
-
-  onModeChange() {
-    const mode = document.getElementById('scanMode').value;
-    const uart = document.getElementById('scanUartFields');
-    const ble  = document.getElementById('scanBleFields');
-    if (!uart || !ble) return;
-    if (mode === 'ble_hid') {
-      uart.hidden = true;
-      ble.hidden  = false;
-    } else {
-      uart.hidden = false;
-      ble.hidden  = true;
     }
   },
 
@@ -1388,13 +1371,11 @@ Pages.scanner = {
     e.preventDefault();
     try {
       await API.post('/api/scanner-config', {
-        mode:          document.getElementById('scanMode').value,
-        baudrate:      parseInt(document.getElementById('scanBaud').value),
-        rxPin:         parseInt(document.getElementById('scanRx').value),
-        txPin:         parseInt(document.getElementById('scanTx').value),
+        mode: 'ble_hid',
         autoReconnect: document.getElementById('scanAutoReconnect').checked,
       });
-      Toast.success('Scanner-Einstellungen gespeichert');
+      Toast.success('Bluetooth-Scanner-Einstellungen gespeichert');
+      this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
@@ -1403,39 +1384,52 @@ Pages.scanner = {
   async bleScan() {
     const box = document.getElementById('scanBleResults');
     box.hidden = false;
-    box.innerHTML = '<div class="muted" style="padding:8px">Suche…</div>';
+    box.innerHTML = '<div class="muted" style="padding:8px">Suche Bluetooth-HID-Scanner…</div>';
     try {
       const res = await API.get('/api/scanner/ble-scan');
-      const devs = Array.isArray(res) ? res : [];
-      box.innerHTML = devs.length
-        ? devs.map(d => `
-          <div class="scan-result-item" onclick="Pages.scanner.bleConnect('${esc(d.address)}')">
+      this._bleDevices = Array.isArray(res) ? res : [];
+      box.innerHTML = this._bleDevices.length
+        ? this._bleDevices.map((d, idx) => `
+          <div class="scan-result-item" onclick="Pages.scanner.bleConnect(${idx})">
             <span>${esc(d.name || d.address)}</span>
-            <span class="scan-rssi">${d.rssi} dBm</span>
+            <span class="scan-rssi">${d.rssi} dBm ${d.hid ? 'HID' : ''}</span>
           </div>`).join('')
-        : '<div class="muted" style="padding:8px">Keine Geräte gefunden</div>';
+        : '<div class="muted" style="padding:8px">Keine Bluetooth-Geräte gefunden</div>';
     } catch(e) {
-      Toast.error('BLE-Scan: ' + e.message);
+      Toast.error('Bluetooth-Scan: ' + e.message);
       box.hidden = true;
     }
   },
 
-  async bleConnect(address) {
+  async bleConnect(index) {
+    const device = this._bleDevices[index];
+    if (!device) { Toast.warn('Bluetooth-Gerät nicht mehr in der Liste'); return; }
     try {
-      await API.post('/api/scanner/ble-connect', { address });
-      Toast.success('Verbindung wird hergestellt…');
-      setTimeout(() => this.load(), 3000);
+      await API.post('/api/scanner/ble-connect', { address: device.address, name: device.name || '' });
+      Toast.success('Bluetooth-Scanner verbunden');
+      setTimeout(() => this.load(), 1000);
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async bleDisconnect() {
+    try {
+      await API.post('/api/scanner/ble-disconnect', {});
+      Toast.info('Bluetooth-Scanner getrennt');
+      this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
   },
 
   startTest() {
-    document.getElementById('scanTestResult').textContent = 'Warte auf Scan…';
+    document.getElementById('scanTestResult').textContent = 'Warte auf Bluetooth-Scan…';
     if (this._pollTimer) clearInterval(this._pollTimer);
     this._pollTimer = setInterval(async () => {
       try {
         const r = await API.get('/api/scanner-config');
+        document.getElementById('scanBleStatus').textContent = r.bleStatus || '—';
         if (r.lastScan) {
           document.getElementById('scanTestResult').textContent = r.lastScan;
           document.getElementById('scanLastResult').textContent = r.lastScan;

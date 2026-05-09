@@ -2,6 +2,7 @@
 #include "../core/Logger.h"
 #include "../storage/JsonStorage.h"
 #include "wifi_manager.h"
+#include "../scanner/BarcodeManager.h"
 
 #include <LittleFS.h>
 #include <Update.h>
@@ -609,8 +610,44 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/printer-config",HTTP_GET,  cfgGet("/printer_config.json"));
     _server.on("/api/printer-config",HTTP_POST, cfgPost("/printer_config.json"), nullptr, bodyCollect);
 
-    _server.on("/api/scanner-config",HTTP_GET,  cfgGet("/scanner_config.json"));
-    _server.on("/api/scanner-config",HTTP_POST, cfgPost("/scanner_config.json"), nullptr, bodyCollect);
+    _server.on("/api/scanner-config", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        loadJson("/scanner_config.json", doc, "{}");
+        doc["mode"] = "ble_hid";
+        doc["autoReconnect"] = ble_scanner.getAutoReconnect();
+        doc["bleAddress"] = ble_scanner.getDeviceAddress();
+        doc["bleDevice"] = ble_scanner.getDeviceName().isEmpty()
+            ? ble_scanner.getDeviceAddress()
+            : ble_scanner.getDeviceName();
+        doc["bleStatus"] = ble_scanner.getStatus();
+        doc["bleConnected"] = ble_scanner.isConnected();
+        doc["lastScan"] = barcode_manager.getLastScan().isEmpty()
+            ? ble_scanner.getLastScan()
+            : barcode_manager.getLastScan();
+        doc["lastType"] = barcode_manager.getLastType();
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/scanner-config", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument incoming;
+            if (deserializeJson(incoming, _body) == DeserializationError::Ok) {
+                if (!incoming["autoReconnect"].isNull()) {
+                    ble_scanner.setAutoReconnect(incoming["autoReconnect"].as<bool>());
+                }
+
+                JsonDocument existing;
+                loadJson("/scanner_config.json", existing, "{}");
+                existing["mode"] = "ble_hid";
+                existing["autoReconnect"] = ble_scanner.getAutoReconnect();
+                existing["bleAddress"] = ble_scanner.getDeviceAddress();
+                existing["bleDevice"] = ble_scanner.getDeviceName();
+                saveJson("/scanner_config.json", existing);
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
 
     _server.on("/api/mqtt",          HTTP_GET,  cfgGet("/mqtt_config.json"));
     _server.on("/api/mqtt",          HTTP_POST, cfgPost("/mqtt_config.json"), nullptr, bodyCollect);
@@ -724,8 +761,50 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
     _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));
-    _server.on("/api/scanner/ble-scan",     HTTP_GET,  stub("[]"));
-    _server.on("/api/scanner/ble-connect",  HTTP_POST, stub("{\"ok\":true}"), nullptr, bodyCollect);
+    _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
+        auto devices = ble_scanner.scanDevices(5);
+        JsonDocument doc;
+        JsonArray arr = doc.to<JsonArray>();
+        for (const auto &dev : devices) {
+            JsonObject o = arr.add<JsonObject>();
+            o["address"] = dev.address;
+            o["name"] = dev.name;
+            o["rssi"] = dev.rssi;
+            o["hid"] = dev.hid;
+        }
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/scanner/ble-connect", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument inp;
+            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+                return;
+            }
+            String address = inp["address"] | "";
+            String name = inp["name"] | "";
+            if (address.isEmpty()) {
+                req->send(400, "application/json", "{\"error\":\"address required\"}");
+                return;
+            }
+            bool ok = ble_scanner.connectToDevice(address, name);
+            JsonDocument doc;
+            doc["ok"] = ok;
+            doc["status"] = ble_scanner.getStatus();
+            doc["device"] = ble_scanner.getDeviceName();
+            doc["address"] = ble_scanner.getDeviceAddress();
+            String body;
+            serializeJson(doc, body);
+            req->send(ok ? 200 : 500, "application/json", body);
+        },
+        nullptr, bodyCollect);
+    _server.on("/api/scanner/ble-disconnect", HTTP_POST, [](AsyncWebServerRequest *req) {
+        ble_scanner.setAutoReconnect(false);
+        ble_scanner.disconnect();
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
     _server.on("/api/ota-url",              HTTP_POST, stub("{\"ok\":true,\"message\":\"OTA gestartet\"}"), nullptr, bodyCollect);
 
     // ---- STATS ----

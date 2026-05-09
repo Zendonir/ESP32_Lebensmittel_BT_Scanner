@@ -1,6 +1,5 @@
 #pragma once
 
-#include "UARTScanner.h"
 #include "BLEScanner.h"
 #include "ScanParser.h"
 
@@ -10,8 +9,15 @@ public:
     void loop();
     bool readScan(ScanResult &result);
 
+    BLEScanner &scanner() { return ble; }
+    String getLastScan() const { return lastScan; }
+    String getLastType() const { return lastType; }
+
 private:
-    UARTScanner uart;
-    BLEScanner ble;
+    BLEScanner &ble = ble_scanner;
     ScanParser parser;
+    String lastScan;
+    String lastType;
 };
+
+extern BarcodeManager barcode_manager;
