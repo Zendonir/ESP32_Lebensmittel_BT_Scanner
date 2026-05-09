@@ -15,9 +15,11 @@
 #define LCD_CS      -1
 #define LCD_RST     -1
 
-// Display resolution
-#define DISPLAY_WIDTH   320
-#define DISPLAY_HEIGHT  480
+// Native panel resolution (portrait) and logical UI resolution (landscape).
+#define DISPLAY_WIDTH             320
+#define DISPLAY_HEIGHT            480
+#define DISPLAY_LANDSCAPE_WIDTH   480
+#define DISPLAY_LANDSCAPE_HEIGHT  320
 
 // ============ TOUCH (FT6336 I2C) ============
 #define TOUCH_SDA   8

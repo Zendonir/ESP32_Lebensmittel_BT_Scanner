@@ -41,8 +41,10 @@ void App::begin() {
 
     Logger::info("Scanner", "Initializing BLE barcode scanner");
     barcode_manager.begin();
+    renderDashboard("BLE-Scanner wird vorbereitet");
 
     initWebServer();
+    renderDashboard("Bereit");
 
     Logger::info("App", "Ready. Serial commands: scan, ap, status, beep, help");
 }
@@ -57,10 +59,15 @@ void App::loop() {
     }
 
     barcode_manager.loop();
+    handleTouch();
+
     ScanResult scan;
     if (barcode_manager.readScan(scan)) {
         Logger::info("Scanner", String("Barcode: ") + scan.code);
         audio_obj.playTone(1800, 80);
+        renderDashboard(String("Scan empfangen: ") + scan.code);
+    } else if (millis() - _lastUiRefreshMs > 5000) {
+        renderDashboard();
     }
 
     AppEvent event;
@@ -93,10 +100,77 @@ void App::initI2C() {
 }
 
 void App::renderWiFiStatus() {
+    renderDashboard();
+}
+
+void App::renderDashboard(const String &message) {
     String wifi_ssid = wifi_manager.getSSID();
     String wifi_ip = wifi_manager.getIPAddress();
     bool wifi_connected = wifi_manager.isConnected();
-    display_obj.showWiFiStatus(wifi_ssid, wifi_ip, wifi_connected);
+
+    String scannerName = ble_scanner.getDeviceName();
+    if (scannerName.isEmpty()) scannerName = ble_scanner.getDeviceAddress();
+    if (scannerName.isEmpty()) scannerName = "nicht gekoppelt";
+
+    if (!message.isEmpty()) _statusMessage = message;
+
+    display_obj.showDashboard(
+        wifi_ssid,
+        wifi_ip,
+        wifi_connected,
+        ble_scanner.getStatus(),
+        scannerName,
+        barcode_manager.getLastScan(),
+        barcode_manager.getLastType(),
+        _statusMessage);
+    _lastUiRefreshMs = millis();
+}
+
+void App::handleTouch() {
+    TouchPoint point = touch_obj.read();
+    uint32_t now = millis();
+
+    if (!point.pressed) {
+        _touchWasPressed = false;
+        return;
+    }
+
+    if (_touchWasPressed || now - _lastTouchMs < 300) return;
+    _touchWasPressed = true;
+    _lastTouchMs = now;
+
+    OnscreenAction action = display_obj.hitTest(point.x, point.y);
+    if (action != OnscreenAction::NONE) {
+        processOnscreenAction(action);
+    }
+}
+
+void App::processOnscreenAction(OnscreenAction action) {
+    switch (action) {
+        case OnscreenAction::REFRESH:
+            renderDashboard("Anzeige aktualisiert");
+            break;
+        case OnscreenAction::START_AP:
+            Logger::info("UI", "Touch action: start AP");
+            wifi_manager.startAP();
+            state.setState(AppState::AP_MODE);
+            renderDashboard("Setup-AP aktiv: 192.168.4.1");
+            break;
+        case OnscreenAction::SCANNER_RECONNECT:
+            Logger::info("UI", "Touch action: scanner reconnect/disconnect");
+            if (ble_scanner.isConnected() || ble_scanner.isConnecting()) {
+                ble_scanner.disconnect();
+                renderDashboard("Scanner getrennt");
+            } else if (!ble_scanner.getDeviceAddress().isEmpty()) {
+                ble_scanner.requestConnect(ble_scanner.getDeviceAddress(), ble_scanner.getDeviceName());
+                renderDashboard("Scanner-Verbindung wird aufgebaut");
+            } else {
+                renderDashboard("Scanner im Web-UI koppeln");
+            }
+            break;
+        case OnscreenAction::NONE:
+            break;
+    }
 }
 
 void App::initFilesystem() {

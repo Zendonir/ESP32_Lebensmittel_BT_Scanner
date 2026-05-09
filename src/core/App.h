@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <DNSServer.h>
+#include "display.h"
 #include "AppStateManager.h"
 #include "EventBus.h"
 #include "TimeManager.h"
@@ -23,6 +24,9 @@ private:
     void initWebServer();
     void handleSerialCommand(const String &command);
     void renderWiFiStatus();
+    void renderDashboard(const String &message = "");
+    void handleTouch();
+    void processOnscreenAction(OnscreenAction action);
 
     TwoWire         i2c_bus;
     AppStateManager state;
@@ -32,6 +36,10 @@ private:
     WebInterface    web;
     DNSServer       _dns;
     bool            _dnsRunning = false;
+    bool            _touchWasPressed = false;
+    uint32_t        _lastTouchMs = 0;
+    uint32_t        _lastUiRefreshMs = 0;
+    String          _statusMessage;
 };
 
 extern App app;
