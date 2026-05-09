@@ -3,9 +3,20 @@
 #include <LittleFS.h>
 
 bool LittleFSManager::begin() {
-    if (LittleFS.begin(false)) return true;
-    Logger::warn("LittleFS", "Mount failed; formatting filesystem");
-    return LittleFS.begin(true);
+    // Try to mount without formatting first so uploaded web files are preserved.
+    if (LittleFS.begin(false)) {
+        Logger::info("LittleFS", String("Mounted – ") + LittleFS.usedBytes() + "/" + LittleFS.totalBytes() + " bytes used");
+        return true;
+    }
+    // Only format if the partition exists but has never been initialised
+    // (i.e. first boot after flashing a fresh chip, no uploadfs done yet).
+    Logger::warn("LittleFS", "Mount failed – partition may be uninitialised, formatting once");
+    if (!LittleFS.begin(true)) {
+        Logger::error("LittleFS", "Format + mount failed – check partition table");
+        return false;
+    }
+    Logger::warn("LittleFS", "Formatted OK – run 'Upload Filesystem Image' to install web files");
+    return true;
 }
 
 bool LittleFSManager::exists(const char *path) const {

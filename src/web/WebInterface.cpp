@@ -27,13 +27,51 @@ void WebInterface::begin() {
    Static file serving from LittleFS
    --------------------------------------------------------------- */
 void WebInterface::registerStaticRoutes() {
-    // SPA root — always serve index.html
+    // SPA root — serve from LittleFS or show a helpful setup page
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/index.html")) {
             req->send(LittleFS, "/index.html", "text/html");
-        } else {
-            req->send(404, "text/plain", "LittleFS not mounted or index.html missing");
+            return;
         }
+        // Filesystem mounted but web files not uploaded yet
+        const char *page = R"HTML(<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Setup erforderlich</title>
+<style>
+  body{font-family:system-ui;background:#0f1117;color:#e8eaf6;margin:0;min-height:100vh;
+       display:flex;align-items:center;justify-content:center;padding:24px}
+  .box{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:16px;padding:32px;
+       max-width:500px;width:100%}
+  h1{color:#5c7cfa;margin:0 0 16px}
+  p{color:#8892b0;line-height:1.6}
+  code{background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;
+       padding:10px 14px;display:block;margin:10px 0;font-size:.9rem;
+       color:#2dd4bf;word-break:break-all}
+  .step{display:flex;gap:12px;margin:12px 0;align-items:flex-start}
+  .num{background:#5c7cfa;color:#fff;border-radius:50%;width:26px;height:26px;
+       display:flex;align-items:center;justify-content:center;font-weight:700;
+       flex-shrink:0;font-size:.85rem}
+  a{color:#5c7cfa}
+</style></head><body>
+<div class="box">
+  <h1>&#x26A0; Web-Dateien fehlen</h1>
+  <p>Der Webserver läuft, aber das LittleFS-Dateisystem enthält noch keine Web-Dateien.</p>
+  <p><strong>Bitte einmalig das Filesystem-Image flashen:</strong></p>
+  <div class="step"><div class="num">1</div>
+    <div>PlatformIO IDE:<br>
+      <em>Project Tasks → esp32-s3-devkitc1-n16r8 → Platform → <strong>Upload Filesystem Image</strong></em>
+    </div>
+  </div>
+  <div class="step"><div class="num">2</div>
+    <div>oder Terminal:<code>pio run -e esp32-s3-devkitc1-n16r8 --target uploadfs</code></div>
+  </div>
+  <div class="step"><div class="num">3</div>
+    <div>Danach diese Seite neu laden.</div>
+  </div>
+  <p style="margin-top:20px"><a href="/api/system-info">System-Info (JSON)</a></p>
+</div></body></html>)HTML";
+        req->send(200, "text/html", page);
     });
 
     // Named static files
