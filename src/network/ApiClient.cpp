@@ -28,7 +28,6 @@ ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
         // Open Food Facts request with start_ssl_client/connect failed.
         client.setInsecure();
         client.setTimeout(timeoutMs / 1000);
-        client.setBufferSizes(512, 512);
         if (!http.begin(client, url)) {
             Logger::error("ApiClient", "HTTPS begin failed");
             return ApiResponse();
