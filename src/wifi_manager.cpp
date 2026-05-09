@@ -6,13 +6,20 @@ WiFiManager wifi_manager;
 WiFiManager::WiFiManager() : current_mode(MODE_OFF) {}
 
 void WiFiManager::init() {
+    WiFi.persistent(false);
+    WiFi.setSleep(false);
     WiFi.mode(WIFI_MODE_APSTA);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
-    current_mode = MODE_AP_STA;
+    delay(100);
 
-    Serial.println("\n[WiFi] AP started: " AP_SSID);
-    Serial.print("[WiFi] AP IP: ");
-    Serial.println(WiFi.softAPIP());
+    if (WiFi.softAP(AP_SSID, AP_PASSWORD)) {
+        Serial.println("\n[WiFi] AP started: " AP_SSID);
+        Serial.print("[WiFi] AP IP: ");
+        Serial.println(WiFi.softAPIP());
+    } else {
+        Serial.println("\n[WiFi] ERROR: AP start failed");
+    }
+    Serial.flush();
+    current_mode = MODE_AP_STA;
 
     if (autoConnect(10000)) {
         Serial.print("[WiFi] Station connected, IP: ");
@@ -20,7 +27,8 @@ void WiFiManager::init() {
     } else {
         Serial.println("[WiFi] No saved credentials or auto-connect failed – AP-only mode");
     }
-    current_ssid = wifi_manager.isConnected() ? WiFi.SSID() : String(AP_SSID);
+    current_ssid = isConnected() ? WiFi.SSID() : String(AP_SSID);
+    Serial.flush();
 }
 
 void WiFiManager::saveCredentials(const char *ssid, const char *password) {
@@ -59,45 +67,101 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
     loadCredentials(ssid, sizeof(ssid), pass, sizeof(pass));
     if (ssid[0] == '\0') return false;
 
+    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.setSleep(false);
     WiFi.begin(ssid, pass[0] ? pass : nullptr);
+    Serial.print("[WiFi] Auto-connect to saved SSID: ");
+    Serial.println(ssid);
+    Serial.flush();
+
     uint32_t start = millis();
+    wl_status_t lastStatus = WL_IDLE_STATUS;
     while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+        wl_status_t status = WiFi.status();
+        if (status != lastStatus) {
+            Serial.printf("[WiFi] Auto-connect status: %d\n", status);
+            Serial.flush();
+            lastStatus = status;
+        }
         delay(250);
     }
     if (WiFi.status() == WL_CONNECTED) {
         current_ssid = ssid;
         return true;
     }
-    WiFi.disconnect(false);
+    Serial.printf("[WiFi] Auto-connect timed out, final status: %d\n", WiFi.status());
+    WiFi.disconnect(false, false);
+    Serial.flush();
     return false;
 }
 
 void WiFiManager::startAP(const char *ssid, const char *password) {
     WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.setSleep(false);
     current_ssid = ssid ? ssid : AP_SSID;
-    WiFi.softAP(current_ssid.c_str(), password ? password : AP_PASSWORD);
+    bool ok = WiFi.softAP(current_ssid.c_str(), password ? password : AP_PASSWORD);
     current_mode = MODE_AP_STA;
     Serial.print("[WiFi] AP Mode: ");
     Serial.println(current_ssid);
+    Serial.print("[WiFi] AP start result: ");
+    Serial.println(ok ? "OK" : "FAIL");
+    Serial.flush();
 }
 
 void WiFiManager::connectToWiFi(const char *ssid, const char *password) {
     if (ssid == nullptr || ssid[0] == '\0') {
         Serial.println("[WiFi] Missing SSID, staying in AP mode");
+        Serial.flush();
         return;
     }
+    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.setSleep(false);
+    WiFi.scanDelete();
     current_ssid = ssid;
     WiFi.begin(ssid, password && password[0] ? password : nullptr);
     current_mode = MODE_AP_STA;
     Serial.print("[WiFi] Connecting to: ");
     Serial.println(current_ssid);
+    Serial.flush();
+}
+
+int WiFiManager::scanNetworks(bool includeHidden) {
+    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.setSleep(false);
+    delay(100);
+
+    Serial.printf("[WiFiScan] mode=%d status=%d AP-IP=%s STA-IP=%s\n",
+                  WiFi.getMode(), WiFi.status(),
+                  WiFi.softAPIP().toString().c_str(),
+                  WiFi.localIP().toString().c_str());
+    Serial.println("[WiFiScan] Cleaning old results and starting blocking scan");
+    Serial.flush();
+
+    WiFi.scanDelete();
+    int n = WiFi.scanNetworks(false, includeHidden);
+
+    if (n == WIFI_SCAN_FAILED) {
+        Serial.println("[WiFiScan] Scan failed (WIFI_SCAN_FAILED)");
+    } else if (n == WIFI_SCAN_RUNNING) {
+        Serial.println("[WiFiScan] Scan still running unexpectedly");
+    } else {
+        Serial.printf("[WiFiScan] Found %d network(s)\n", n);
+        for (int i = 0; i < n && i < 10; i++) {
+            Serial.printf("[WiFiScan]   #%d SSID='%s' RSSI=%d channel=%d enc=%d\n",
+                          i, WiFi.SSID(i).c_str(), WiFi.RSSI(i),
+                          WiFi.channel(i), WiFi.encryptionType(i));
+        }
+    }
+    Serial.flush();
+    return n;
 }
 
 void WiFiManager::scan() {
-    int n = WiFi.scanNetworks();
+    int n = scanNetworks(true);
     for (int i = 0; i < n; i++) {
         Serial.println(WiFi.SSID(i));
     }
+    Serial.flush();
 }
 
 String WiFiManager::getIPAddress() {
@@ -116,7 +180,7 @@ bool WiFiManager::isConnected() {
 }
 
 void WiFiManager::disconnect() {
-    WiFi.disconnect(true);
+    WiFi.disconnect(true, false);
     current_mode = MODE_OFF;
 }
 

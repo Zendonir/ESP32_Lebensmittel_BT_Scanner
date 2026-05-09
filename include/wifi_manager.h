@@ -27,6 +27,7 @@ public:
     bool isConnected();
     WiFiMode getCurrentMode();
     String getIPAddress();
+    int scanNetworks(bool includeHidden = true);
     void scan();
     String getSSID();
     void disconnect();

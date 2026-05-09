@@ -14,28 +14,15 @@
 static volatile bool _scanRunning = false;
 static volatile bool _scanReady   = false;
 static volatile int  _scanCount   = 0;
+static volatile int  _scanResult  = WIFI_SCAN_RUNNING;
 
 static void wifiScanTask(void *) {
-    // Use Serial.printf directly — guaranteed output even if Logger has issues
     Serial.println("[WiFiScan] Task started");
     Serial.flush();
 
-    WiFi.scanDelete();
+    int n = wifi_manager.scanNetworks(true);
 
-    Serial.println("[WiFiScan] Calling WiFi.scanNetworks()...");
-    Serial.flush();
-
-    int n = WiFi.scanNetworks(); // simplest blocking form, all defaults
-
-    Serial.printf("[WiFiScan] Result: %d (WIFI_SCAN_FAILED=-2)\n", n);
-    Serial.flush();
-
-    for (int i = 0; i < n && i < 5; i++) {
-        Serial.printf("[WiFiScan]   #%d  %s  %d dBm\n",
-                      i, WiFi.SSID(i).c_str(), WiFi.RSSI(i));
-    }
-    Serial.flush();
-
+    _scanResult  = n;
     _scanCount   = (n > 0) ? n : 0;
     _scanReady   = true;
     _scanRunning = false;
@@ -497,8 +484,9 @@ void WebInterface::registerApiRoutes() {
             _scanRunning = true;
             _scanReady   = false;
             _scanCount   = 0;
+            _scanResult  = WIFI_SCAN_RUNNING;
             BaseType_t ok = xTaskCreatePinnedToCore(
-                wifiScanTask, "wifi_scan", 8192, nullptr, 1, nullptr, 0);
+                wifiScanTask, "wifi_scan", 8192, nullptr, 1, nullptr, 1);
             Serial.printf("[WiFiScan] xTaskCreate: %s\n", ok == pdPASS ? "OK" : "FAIL");
             Serial.flush();
             if (ok != pdPASS) {
@@ -522,18 +510,27 @@ void WebInterface::registerApiRoutes() {
         // Use the count captured by the task (avoids scanComplete() ambiguity
         // after a blocking scan run in a separate task/core)
         int n = _scanCount;
+        int result = _scanResult;
         JsonDocument doc;
         doc["scanning"] = false;
+        doc["result"] = result;
+        if (result < 0) {
+            doc["error"] = (result == WIFI_SCAN_FAILED) ? "wifi scan failed" : "wifi scan did not complete";
+        }
         JsonArray arr = doc["networks"].to<JsonArray>();
         for (int i = 0; i < n && i < 30; i++) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.isEmpty()) continue;
             JsonObject o = arr.add<JsonObject>();
-            o["ssid"] = WiFi.SSID(i);
+            o["ssid"] = ssid;
             o["rssi"] = WiFi.RSSI(i);
+            o["channel"] = WiFi.channel(i);
             o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
         }
         WiFi.scanDelete();
         _scanReady = false;
         _scanCount = 0;
+        _scanResult = WIFI_SCAN_RUNNING;
 
         String body;
         serializeJson(doc, body);
@@ -568,6 +565,7 @@ void WebInterface::registerApiRoutes() {
         JsonDocument doc;
         doc["connected"] = connected;
         doc["failed"]    = failed;
+        doc["status"]    = static_cast<int>(st);
         doc["ip"]        = connected ? WiFi.localIP().toString() : "";
         doc["ssid"]      = connected ? WiFi.SSID() : "";
         String body;

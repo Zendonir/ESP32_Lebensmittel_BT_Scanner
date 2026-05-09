@@ -275,6 +275,7 @@ async function startScan() {
       const r    = await fetch('/api/wifi/scan-result');
       const data = await r.json();
       if (!data.scanning) {
+        if (data.error) throw new Error(`${data.error} (Code ${data.result})`);
         renderNetworks(data.networks || []);
         found = true;
         break;

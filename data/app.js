@@ -1193,7 +1193,11 @@ Pages.network = {
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 1000));
         const res = await API.get('/api/wifi/scan-result');
-        if (!res.scanning) { nets = res.networks || []; break; }
+        if (!res.scanning) {
+          if (res.error) throw new Error(`${res.error} (Code ${res.result})`);
+          nets = res.networks || [];
+          break;
+        }
       }
       const box = document.getElementById('wifiScanResults');
       box.hidden = false;
