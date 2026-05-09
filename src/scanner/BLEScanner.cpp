@@ -272,7 +272,7 @@ void BLEScanner::cleanupClient(bool releaseClient) {
         delay(250);
     }
     if (releaseClient) {
-        BLEDevice::deleteClient(client);
+        delete client;
         client = nullptr;
     }
 }
