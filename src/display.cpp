@@ -58,7 +58,6 @@ void Display::showSplash() {
     tft->setCursor(50, 250);
     tft->print("Initializing...");
 
-    delay(2000);
 }
 
 void Display::showWiFiStatus(const String &ssid, const String &ip, bool connected) {

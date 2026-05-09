@@ -27,16 +27,16 @@ void WiFiManager::startAP(const char *ssid, const char *password) {
 }
 
 void WiFiManager::connectToWiFi(const char *ssid, const char *password) {
-    WiFi.begin(ssid, password);
-    uint32_t timeout = millis() + 20000;
-    while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
-        delay(500);
-        Serial.print(".");
+    if (ssid == nullptr || ssid[0] == '\0') {
+        Serial.println("[WiFi] Missing SSID, staying in AP mode");
+        return;
     }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\n[WiFi] Connected!");
-        Serial.println(WiFi.localIP());
-    }
+
+    current_ssid = ssid;
+    WiFi.begin(ssid, password ? password : "");
+    current_mode = MODE_STATION;
+    Serial.print("[WiFi] Connecting asynchronously to: ");
+    Serial.println(current_ssid);
 }
 
 void WiFiManager::scan() {

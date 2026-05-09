@@ -63,7 +63,7 @@
 // ============ WIFI ============
 #define WIFI_SSID_STORAGE   "wifi_ssid"
 #define WIFI_PASS_STORAGE   "wifi_pass"
-#define AP_SSID             "ESP32-Scanner"
+#define AP_SSID             "Lebensmittel-Scanner"
 #define AP_PASSWORD         "12345678"
 
 #endif

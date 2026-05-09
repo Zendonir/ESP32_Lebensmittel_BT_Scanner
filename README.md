@@ -1,6 +1,6 @@
 # ESP32-S3 Lebensmittel BT Scanner
 
-Basis-Code für **Waveshare ESP32-S3-Touch-LCD-3.5** mit LVGL GUI, Touch, Audio, WiFi.
+Modularer Projektstart für einen **Waveshare ESP32-S3-Touch-LCD-3.5** Lebensmittel-Scanner mit Touch-UI, Barcode-Scanner, ESC/POS-Drucker, Inventarverwaltung und Webinterface.
 
 ## Hardware
 
@@ -26,33 +26,28 @@ platformio device monitor -b 115200
 ## Struktur
 
 ```
-include/        - Header Dateien
-├── config.h    - GPIO Definitionen
-├── display.h   - Display Manager
-├── touch.h     - Touch Input
-├── audio.h     - Audio/Speaker
-├── wifi_manager.h - WiFi AP/Station
-└── ui.h        - LVGL UI
-
-src/            - Implementierung
-├── main.cpp    - Hauptprogramm + FreeRTOS
-├── display.cpp
-├── touch.cpp
-├── audio.cpp
-└── wifi_manager.cpp
-
-lv_conf.h       - LVGL Config
-platformio.ini  - PlatformIO Setup
+src/main.cpp                 - minimaler Einstiegspunkt
+src/core/                    - App-Lifecycle, State Machine, EventBus, Logger
+src/models/                  - InventoryItem, ProductInfo, Kategorien, Statistiken
+src/storage/                 - LittleFS, JSON, NVS
+src/inventory/               - Inventar-Persistenz und Label-Zähler
+src/scanner/                 - UART/BLE Scanner-Abstraktion
+src/printer/                 - ESC/POS und Label-Rendering
+src/network/                 - API, Open Food Facts, Sync, MQTT, Telegram, OTA
+src/web/                     - lokale SPA und JSON-API
+src/display.cpp, touch.cpp   - aktuell stabile Hardware-Treiber
+include/config.h             - Board-Pins und Konstanten
+docs/ARCHITECTURE.md         - Architektur, Datenfluss und Ausbauplan
 ```
 
 ## Features
 
-✅ LVGL GUI (320×480)  
-✅ Touch Input  
-✅ Audio Output  
-✅ WiFi (AP + Station)  
-✅ FreeRTOS Multi-Core  
-✅ Persistent Storage  
+✅ Stabiler TFT_eSPI Display-Start für Waveshare ESP32-S3-Touch-LCD-3.5
+✅ Modularer App-State-Machine-Start
+✅ Touch-, Audio- und WiFi-Basistreiber
+✅ Scanner-, Printer-, Inventory-, Storage-, Network- und Web-Scaffolding
+✅ LittleFS/NVS Speicherstrategie vorbereitet
+✅ Architektur-Dokumentation für den produktionsreifen Ausbau
 
 ## GPIO
 
