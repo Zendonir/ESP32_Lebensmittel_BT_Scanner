@@ -329,6 +329,37 @@ static void sendFile(AsyncWebServerRequest *req, const char *path,
     req->send(200, "application/json", body);
 }
 
+
+static void handleWiFiConnectRequest(AsyncWebServerRequest *req, const char *routeName) {
+    JsonDocument inp;
+    DeserializationError err = deserializeJson(inp, _body);
+    if (err != DeserializationError::Ok) {
+        Serial.printf("[API] %s invalid JSON: %s bodyLen=%u\n",
+                      routeName, err.c_str(), static_cast<unsigned>(_body.length()));
+        Serial.flush();
+        req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    String ssid = inp["ssid"] | "";
+    String pass = inp["password"] | "";
+    ssid.trim();
+
+    if (ssid.isEmpty()) {
+        Serial.printf("[API] %s missing ssid bodyLen=%u\n", routeName, static_cast<unsigned>(_body.length()));
+        Serial.flush();
+        req->send(400, "application/json", "{\"error\":\"ssid required\"}");
+        return;
+    }
+
+    Serial.printf("[API] %s connect ssid='%s' passLen=%u\n",
+                  routeName, ssid.c_str(), static_cast<unsigned>(pass.length()));
+    Serial.flush();
+    wifi_manager.saveCredentials(ssid.c_str(), pass.c_str());
+    wifi_manager.connectToWiFi(ssid.c_str(), pass.c_str());
+    req->send(200, "application/json", "{\"ok\":true,\"connecting\":true}");
+}
+
 /* Merge POST body (_body) into an existing JSON object file */
 static void mergePost(AsyncWebServerRequest *req, const char *path,
                       const char *fallback) {
@@ -608,7 +639,19 @@ void WebInterface::registerApiRoutes() {
         serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
-    _server.on("/api/wifi",    HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
+    _server.on("/api/wifi", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument probe;
+            if (deserializeJson(probe, _body) == DeserializationError::Ok
+                && !probe["ssid"].isNull()) {
+                handleWiFiConnectRequest(req, "/api/wifi");
+                return;
+            }
+            Serial.printf("[API] POST /api/wifi config bodyLen=%u\n", static_cast<unsigned>(_body.length()));
+            Serial.flush();
+            mergePost(req, "/wifi_config.json", "{}");
+        },
+        nullptr, bodyCollect);
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
 
     // WiFi scan — start. Run synchronously and cache a frontend-ready result.
@@ -643,23 +686,7 @@ void WebInterface::registerApiRoutes() {
     // WiFi connect — save credentials and start connection
     _server.on("/api/wifi/connect", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument inp;
-            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
-                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
-                return;
-            }
-            String ssid = inp["ssid"] | "";
-            String pass = inp["password"] | "";
-            if (ssid.isEmpty()) {
-                req->send(400, "application/json", "{\"error\":\"ssid required\"}");
-                return;
-            }
-            Serial.printf("[API] POST /api/wifi/connect ssid='%s' passLen=%u\n",
-                          ssid.c_str(), static_cast<unsigned>(pass.length()));
-            Serial.flush();
-            wifi_manager.saveCredentials(ssid.c_str(), pass.c_str());
-            wifi_manager.connectToWiFi(ssid.c_str(), pass.c_str());
-            req->send(200, "application/json", "{\"ok\":true}");
+            handleWiFiConnectRequest(req, "/api/wifi/connect");
         },
         nullptr, bodyCollect);
 

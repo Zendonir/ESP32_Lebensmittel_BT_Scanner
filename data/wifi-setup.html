@@ -207,10 +207,10 @@ body {
         </button>
       </div>
     </div>
-    <button class="btn btn-primary" onclick="connect()" id="connectBtn">
+    <button type="button" class="btn btn-primary" onclick="connect()" id="connectBtn">
       Verbinden
     </button>
-    <button class="btn btn-secondary" style="margin-top:8px" onclick="cancelConnect()">
+    <button type="button" class="btn btn-secondary" style="margin-top:8px" onclick="cancelConnect()">
       Abbrechen
     </button>
   </div>
@@ -376,13 +376,22 @@ async function connect() {
   showStatus(`Verbinde mit "${selectedSsid}"…`, 'info', true);
 
   try {
-    const res = await fetch('/api/wifi/connect', {
+    let res = await fetch('/api/wifi/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ssid: selectedSsid, password })
     });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+    let data = await res.json();
+    if (!res.ok || data.error) {
+      console.warn('Fallback /api/wifi connect', data.error || res.status);
+      res = await fetch('/api/wifi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid: selectedSsid, password })
+      });
+      data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+    }
 
     // Poll for connection status
     showStatus('Warte auf Verbindung…', 'info', true);

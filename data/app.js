@@ -1178,9 +1178,17 @@ Pages.network = {
         ${cfg.ssid ? `<span class="muted">${esc(cfg.ssid)}</span>` : ''}
         ${rssi ? `<span class="muted">${rssi}</span>` : ''}`;
       this.renderScanResults(cfg.networks || [], cfg.scanSource || 'cache');
+      if (!document.getElementById('wifiSsid').value.trim() && (cfg.networks || []).length) {
+        this.selectWifi(cfg.networks[0].ssid, false);
+      }
     } catch(e) {
       Toast.error('Netzwerk: ' + e.message);
     }
+  },
+
+  selectWifi(ssid, focusPassword = true) {
+    document.getElementById('wifiSsid').value = ssid || '';
+    if (focusPassword) document.getElementById('wifiPass')?.focus();
   },
 
   renderScanResults(nets, source = '') {
@@ -1189,7 +1197,7 @@ Pages.network = {
     box.hidden = false;
     box.innerHTML = nets.length
       ? nets.map(n => `
-        <div class="scan-result-item" onclick="document.getElementById('wifiSsid').value='${esc(n.ssid)}'">
+        <div class="scan-result-item" onclick="Pages.network.selectWifi('${esc(n.ssid)}')">
           <span>${esc(n.ssid)}</span>
           <span class="scan-rssi">${n.rssi} dBm ${n.open ? '' : '&#128274;'}</span>
         </div>`).join('')
@@ -1234,9 +1242,14 @@ Pages.network = {
       ssid:     document.getElementById('wifiSsid').value.trim(),
       password: document.getElementById('wifiPass').value,
     };
-    if (!data.ssid) { Toast.warn('SSID erforderlich'); return; }
+    if (!data.ssid) { Toast.warn('Bitte erst ein WLAN aus der Liste auswählen oder die SSID eintragen'); return; }
     try {
-      await API.post('/api/wifi/connect', data);
+      try {
+        await API.post('/api/wifi/connect', data);
+      } catch (primaryError) {
+        console.warn('Fallback /api/wifi connect', primaryError);
+        await API.post('/api/wifi', data);
+      }
       Toast.info('Verbindung wird hergestellt…');
       // Poll status for up to 20s
       for (let i = 0; i < 20; i++) {

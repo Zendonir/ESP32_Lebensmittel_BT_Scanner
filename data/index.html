@@ -259,11 +259,11 @@
         <div class="card">
           <div class="card-title">WLAN-Verbindung</div>
           <div id="wifiStatus" class="status-badge-row"></div>
-          <form id="wifiForm" class="form-stack" onsubmit="Pages.network.connectWifi(event)">
+          <form id="wifiForm" class="form-stack" onsubmit="Pages.network.connectWifi(event)" novalidate>
             <div class="form-field">
               <label>SSID</label>
               <div class="input-row">
-                <input type="text" id="wifiSsid" name="ssid" class="input" placeholder="SSID" required>
+                <input type="text" id="wifiSsid" name="ssid" class="input" placeholder="SSID">
                 <button type="button" class="btn btn-sm" onclick="Pages.network.scanWifi()">Scannen</button>
               </div>
             </div>
