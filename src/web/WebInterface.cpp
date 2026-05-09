@@ -1,6 +1,5 @@
 #include "WebInterface.h"
 #include "../core/Logger.h"
-#include "../inventory/InventoryManager.h"
 #include "../storage/JsonStorage.h"
 
 #include <LittleFS.h>
@@ -8,14 +7,8 @@
 #include <WiFi.h>
 #include <esp_system.h>
 
-/* ---------------------------------------------------------------
-   Construction
-   --------------------------------------------------------------- */
 WebInterface::WebInterface(uint16_t port) : _server(port) {}
 
-/* ---------------------------------------------------------------
-   Public
-   --------------------------------------------------------------- */
 void WebInterface::begin() {
     registerStaticRoutes();
     registerApiRoutes();
@@ -24,91 +17,64 @@ void WebInterface::begin() {
 }
 
 /* ---------------------------------------------------------------
-   Static file serving from LittleFS
+   Static file serving
    --------------------------------------------------------------- */
 void WebInterface::registerStaticRoutes() {
-    // SPA root — serve from LittleFS or show a helpful setup page
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/index.html")) {
             req->send(LittleFS, "/index.html", "text/html");
             return;
         }
-        // Filesystem mounted but web files not uploaded yet
-        const char *page = R"HTML(<!DOCTYPE html>
+        req->send(200, "text/html", R"HTML(<!DOCTYPE html>
 <html lang="de"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Setup erforderlich</title>
-<style>
-  body{font-family:system-ui;background:#0f1117;color:#e8eaf6;margin:0;min-height:100vh;
-       display:flex;align-items:center;justify-content:center;padding:24px}
-  .box{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:16px;padding:32px;
-       max-width:500px;width:100%}
-  h1{color:#5c7cfa;margin:0 0 16px}
-  p{color:#8892b0;line-height:1.6}
-  code{background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;
-       padding:10px 14px;display:block;margin:10px 0;font-size:.9rem;
-       color:#2dd4bf;word-break:break-all}
-  .step{display:flex;gap:12px;margin:12px 0;align-items:flex-start}
-  .num{background:#5c7cfa;color:#fff;border-radius:50%;width:26px;height:26px;
-       display:flex;align-items:center;justify-content:center;font-weight:700;
-       flex-shrink:0;font-size:.85rem}
-  a{color:#5c7cfa}
-</style></head><body>
-<div class="box">
-  <h1>&#x26A0; Web-Dateien fehlen</h1>
-  <p>Der Webserver läuft, aber das LittleFS-Dateisystem enthält noch keine Web-Dateien.</p>
-  <p><strong>Bitte einmalig das Filesystem-Image flashen:</strong></p>
-  <div class="step"><div class="num">1</div>
-    <div>PlatformIO IDE:<br>
-      <em>Project Tasks → esp32-s3-devkitc1-n16r8 → Platform → <strong>Upload Filesystem Image</strong></em>
-    </div>
-  </div>
-  <div class="step"><div class="num">2</div>
-    <div>oder Terminal:<code>pio run -e esp32-s3-devkitc1-n16r8 --target uploadfs</code></div>
-  </div>
-  <div class="step"><div class="num">3</div>
-    <div>Danach diese Seite neu laden.</div>
-  </div>
-  <p style="margin-top:20px"><a href="/api/system-info">System-Info (JSON)</a></p>
-</div></body></html>)HTML";
-        req->send(200, "text/html", page);
+<title>Setup</title>
+<style>body{font-family:system-ui;background:#0f1117;color:#e8eaf6;margin:0;min-height:100vh;
+display:flex;align-items:center;justify-content:center;padding:24px}
+.box{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:16px;padding:32px;max-width:500px;width:100%}
+h1{color:#5c7cfa;margin:0 0 16px}p{color:#8892b0;line-height:1.6}
+code{background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:10px 14px;display:block;
+margin:10px 0;font-size:.9rem;color:#2dd4bf;word-break:break-all}
+.step{display:flex;gap:12px;margin:12px 0;align-items:flex-start}
+.num{background:#5c7cfa;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;
+align-items:center;justify-content:center;font-weight:700;flex-shrink:0}a{color:#5c7cfa}</style>
+</head><body><div class="box"><h1>&#x26A0; Web-Dateien fehlen</h1>
+<p>Der Webserver laeuft, aber LittleFS enthaelt noch keine Web-Dateien.</p>
+<p><strong>Einmalig das Filesystem-Image flashen:</strong></p>
+<div class="step"><div class="num">1</div>
+<div>PlatformIO IDE:<br><em>Project Tasks &rarr; Platform &rarr; <strong>Upload Filesystem Image</strong></em></div></div>
+<div class="step"><div class="num">2</div>
+<div>oder Terminal:<code>pio run -e esp32-s3-devkitc1-n16r8 --target uploadfs</code></div></div>
+<div class="step"><div class="num">3</div><div>Danach Seite neu laden.</div></div>
+<p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a></p>
+</div></body></html>)HTML");
     });
 
-    // Named static files
-    auto serveFile = [](const char *path, const char *mime) {
-        return [path, mime](AsyncWebServerRequest *req) {
-            if (LittleFS.exists(path)) {
-                req->send(LittleFS, path, mime);
-            } else {
-                req->send(404, "text/plain", "File not found");
-            }
-        };
-    };
-    _server.on("/style.css", HTTP_GET, serveFile("/style.css", "text/css"));
-    _server.on("/app.js",    HTTP_GET, serveFile("/app.js",    "application/javascript"));
+    _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (LittleFS.exists("/style.css"))
+            req->send(LittleFS, "/style.css", "text/css");
+        else
+            req->send(404, "text/plain", "style.css not found – run uploadfs");
+    });
 
-    // Fallback: serve any file from LittleFS
+    _server.on("/app.js", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (LittleFS.exists("/app.js"))
+            req->send(LittleFS, "/app.js", "application/javascript");
+        else
+            req->send(404, "text/plain", "app.js not found – run uploadfs");
+    });
+
     _server.onNotFound([](AsyncWebServerRequest *req) {
-        const String path = req->url();
-        if (LittleFS.exists(path)) {
-            String mime = "application/octet-stream";
-            if (path.endsWith(".html")) mime = "text/html";
-            else if (path.endsWith(".css"))  mime = "text/css";
-            else if (path.endsWith(".js"))   mime = "application/javascript";
-            else if (path.endsWith(".json")) mime = "application/json";
-            else if (path.endsWith(".ico"))  mime = "image/x-icon";
-            req->send(LittleFS, path, mime);
-        } else {
-            // SPA fallback: any unknown path returns index.html
-            if (!path.startsWith("/api/")) {
-                if (LittleFS.exists("/index.html"))
-                    req->send(LittleFS, "/index.html", "text/html");
-                else
-                    req->send(404, "text/plain", "Not found");
-            } else {
-                req->send(404, "application/json", "{\"error\":\"not found\"}");
-            }
+        const String &path = req->url();
+        if (path.startsWith("/api/")) {
+            req->send(404, "application/json", "{\"error\":\"not found\"}");
+            return;
         }
+        // SPA fallback — all non-API routes load the app
+        if (LittleFS.exists("/index.html"))
+            req->send(LittleFS, "/index.html", "text/html");
+        else
+            req->send(404, "text/plain", "Not found");
     });
 }
 
@@ -126,77 +92,85 @@ void WebInterface::sendOk(AsyncWebServerRequest *req) {
 }
 
 void WebInterface::sendError(AsyncWebServerRequest *req, const char *msg, int code) {
-    JsonDocument doc;
-    doc["error"] = msg;
-    sendJson(req, doc, code);
+    String body = "{\"error\":\"";
+    body += msg;
+    body += "\"}";
+    req->send(code, "application/json", body);
 }
 
-/* Body is collected via onRequestBody; we store it in a simple per-request header trick.
-   ESPAsyncWebServer delivers the body in chunks to onBody(). For JSON APIs we collect it. */
-static String _bodyBuffer;
+/* Global body buffer — rebuilt per-request by bodyCollect() */
+static String _body;
 
-/* ---------------------------------------------------------------
-   JSON file helpers (read/write via LittleFS directly)
-   --------------------------------------------------------------- */
-static bool loadJson(const char *path, JsonDocument &doc, const char *fallback = "{}") {
+static void bodyCollect(AsyncWebServerRequest *, uint8_t *data, size_t len,
+                        size_t index, size_t total) {
+    if (index == 0) {
+        _body = "";
+        _body.reserve(total);
+    }
+    _body += String(reinterpret_cast<char *>(data), len);
+}
+
+static bool loadJson(const char *path, JsonDocument &doc,
+                     const char *fallback = "{}") {
     File f = LittleFS.open(path, "r");
     if (!f) {
         deserializeJson(doc, fallback);
         return false;
     }
-    DeserializationError err = deserializeJson(doc, f);
+    bool ok = (deserializeJson(doc, f) == DeserializationError::Ok);
     f.close();
-    return !err;
+    if (!ok) deserializeJson(doc, fallback);
+    return ok;
 }
 
 static bool saveJson(const char *path, JsonDocument &doc) {
-    // Write to temp file then rename for atomicity
-    const String tmp = String(path) + ".tmp";
+    String tmp = String(path) + ".tmp";
     File f = LittleFS.open(tmp.c_str(), "w");
     if (!f) return false;
     serializeJson(doc, f);
     f.close();
     LittleFS.remove(path);
-    LittleFS.rename(tmp.c_str(), path);
-    return true;
+    return LittleFS.rename(tmp.c_str(), path);
+}
+
+/* Serve a JSON file (GET) with fallback if missing */
+static void sendFile(AsyncWebServerRequest *req, const char *path,
+                     const char *fallback) {
+    JsonDocument doc;
+    loadJson(path, doc, fallback);
+    String body;
+    serializeJson(doc, body);
+    req->send(200, "application/json", body);
+}
+
+/* Merge POST body (_body) into an existing JSON object file */
+static void mergePost(AsyncWebServerRequest *req, const char *path,
+                      const char *fallback) {
+    JsonDocument existing, incoming;
+    loadJson(path, existing, fallback);
+    if (deserializeJson(incoming, _body) == DeserializationError::Ok) {
+        for (JsonPair kv : incoming.as<JsonObject>())
+            existing[kv.key()] = kv.value();
+    }
+    saveJson(path, existing);
+    req->send(200, "application/json", "{\"ok\":true}");
 }
 
 /* ---------------------------------------------------------------
-   Route handlers – body is collected via server.onRequestBody
-   For simplicity we route everything through a global buffer.
-   Routes that need the body register onBody + onRequest pairs.
+   API Routes
    --------------------------------------------------------------- */
-
-/* Macro for GET routes that serve a JSON file */
-#define SERVE_JSON_FILE(path_str, file_str, fallback_str) \
-    _server.on(path_str, HTTP_GET, [](AsyncWebServerRequest *req) { \
-        JsonDocument doc; \
-        loadJson(file_str, doc, fallback_str); \
-        String body; serializeJson(doc, body); \
-        req->send(200, "application/json", body); \
-    })
-
-/* Macro for POST routes that merge body into a JSON file */
-#define HANDLE_JSON_POST(path_str, file_str, fallback_str) \
-    _server.on(path_str, HTTP_POST, \
-        [](AsyncWebServerRequest *req) { \
-            JsonDocument existing; \
-            loadJson(file_str, existing, fallback_str); \
-            JsonDocument incoming; \
-            if (!deserializeJson(incoming, _bodyBuffer)) { \
-                for (JsonPair kv : incoming.as<JsonObject>()) \
-                    existing[kv.key()] = kv.value(); \
-            } \
-            saveJson(file_str, existing); \
-            req->send(200, "application/json", "{\"ok\":true}"); \
-        }, \
-        nullptr, \
-        [](AsyncWebServerRequest *, uint8_t *data, size_t len, size_t, size_t total) { \
-            if (len == total) _bodyBuffer = String((char*)data, len); \
-        } \
-    )
-
 void WebInterface::registerApiRoutes() {
+
+    // ---- PING ----
+    _server.on("/api/ping", HTTP_GET, [](AsyncWebServerRequest *req) {
+        String r = "{\"ok\":true,\"uptime\":";
+        r += millis() / 1000;
+        r += ",\"heap\":";
+        r += ESP.getFreeHeap();
+        r += "}";
+        req->send(200, "application/json", r);
+    });
+
     // ---- SYSTEM INFO ----
     _server.on("/api/system-info", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
@@ -208,418 +182,343 @@ void WebInterface::registerApiRoutes() {
         doc["cpuFreq"]    = ESP.getCpuFreqMHz();
         doc["mac"]        = WiFi.macAddress();
         doc["ip"]         = WiFi.localIP().toString();
-        doc["hostname"]   = WiFi.getHostname();
-        doc["fsUsed"]     = LittleFS.usedBytes();
-        doc["fsTotal"]    = LittleFS.totalBytes();
-        // Uptime in human-readable form
-        unsigned long s = millis() / 1000;
-        char upbuf[32];
-        snprintf(upbuf, sizeof(upbuf), "%lud %02luh %02lum", s/86400, (s%86400)/3600, (s%3600)/60);
-        doc["uptime"] = upbuf;
-        String body; serializeJson(doc, body);
+        const char *hn    = WiFi.getHostname();
+        doc["hostname"]   = hn ? hn : "esp32-scanner";
+        doc["fsUsed"]     = (uint32_t)LittleFS.usedBytes();
+        doc["fsTotal"]    = (uint32_t)LittleFS.totalBytes();
+        unsigned long s   = millis() / 1000;
+        char up[32];
+        snprintf(up, sizeof(up), "%lud %02luh %02lum",
+                 s / 86400, (s % 86400) / 3600, (s % 3600) / 60);
+        doc["uptime"] = up;
+        String body;
+        serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
 
-    // ---- INVENTORY ----
-    SERVE_JSON_FILE("/api/inventory", "/inventory.json", "[]");
+    // ---- INVENTORY (GET) ----
+    _server.on("/api/inventory", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/inventory.json", "[]");
+    });
+
+    // ---- INVENTORY (POST – add) ----
     _server.on("/api/inventory", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, item;
             loadJson("/inventory.json", arr, "[]");
             if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            JsonDocument item;
-            if (!deserializeJson(item, _bodyBuffer)) {
-                arr.as<JsonArray>().add(item);
-                saveJson("/inventory.json", arr);
-            }
+            if (deserializeJson(item, _body) == DeserializationError::Ok)
+                arr.as<JsonArray>().add(item.as<JsonObject>());
+            saveJson("/inventory.json", arr);
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
+
+    // ---- INVENTORY DELETE ----
     _server.on("/api/inventory/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, key, out;
+            out.to<JsonArray>();
             loadJson("/inventory.json", arr, "[]");
-            JsonDocument key;
-            if (!deserializeJson(key, _bodyBuffer) && arr.is<JsonArray>()) {
-                const String lb  = key["labelBarcode"].as<String>();
-                const String bc  = key["barcode"].as<String>();
-                JsonArray newArr = JsonDocument().to<JsonArray>();
-                JsonDocument newDoc;
-                newDoc.to<JsonArray>();
+            if (deserializeJson(key, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String lb = key["labelBarcode"] | "";
+                String bc = key["barcode"]      | "";
                 for (JsonVariant v : arr.as<JsonArray>()) {
-                    if (v["labelBarcode"] == lb || v["barcode"] == bc) continue;
-                    newDoc.as<JsonArray>().add(v);
+                    String vlb = v["labelBarcode"] | "";
+                    String vbc = v["barcode"]      | "";
+                    if (vlb == lb || vbc == bc) continue;
+                    out.as<JsonArray>().add(v);
                 }
-                saveJson("/inventory.json", newDoc);
+                saveJson("/inventory.json", out);
             }
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
 
-    // ---- CUSTOM PRODUCTS (TEMPLATES) ----
-    SERVE_JSON_FILE("/api/custom-products", "/custom_products.json", "[]");
+    // ---- CUSTOM PRODUCTS ----
+    _server.on("/api/custom-products", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/custom_products.json", "[]");
+    });
     _server.on("/api/custom-products", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, item;
             loadJson("/custom_products.json", arr, "[]");
             if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            JsonDocument item;
-            if (!deserializeJson(item, _bodyBuffer))
-                arr.as<JsonArray>().add(item);
+            if (deserializeJson(item, _body) == DeserializationError::Ok)
+                arr.as<JsonArray>().add(item.as<JsonObject>());
             saveJson("/custom_products.json", arr);
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
     _server.on("/api/custom-products/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, key, out;
+            out.to<JsonArray>();
             loadJson("/custom_products.json", arr, "[]");
-            JsonDocument key;
-            JsonDocument newDoc;
-            newDoc.to<JsonArray>();
-            if (!deserializeJson(key, _bodyBuffer) && arr.is<JsonArray>()) {
-                const String bc   = key["barcode"].as<String>();
-                const String name = key["name"].as<String>();
+            if (deserializeJson(key, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String bc   = key["barcode"] | "";
+                String name = key["name"]    | "";
                 for (JsonVariant v : arr.as<JsonArray>()) {
-                    if (v["barcode"] == bc || v["name"] == name) continue;
-                    newDoc.as<JsonArray>().add(v);
+                    if ((String)(v["barcode"] | "") == bc) continue;
+                    if ((String)(v["name"]    | "") == name) continue;
+                    out.as<JsonArray>().add(v);
                 }
+                saveJson("/custom_products.json", out);
             }
-            saveJson("/custom_products.json", newDoc);
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
 
     // ---- CATEGORIES ----
-    SERVE_JSON_FILE("/api/categories", "/categories.json", "[]");
+    _server.on("/api/categories", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/categories.json", "[]");
+    });
     _server.on("/api/categories", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, item;
             loadJson("/categories.json", arr, "[]");
             if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            JsonDocument item;
-            if (!deserializeJson(item, _bodyBuffer)) {
-                // replace if oldName matches, else append
-                const String oldName = item["oldName"].as<String>();
+            if (deserializeJson(item, _body) == DeserializationError::Ok) {
+                String oldName = item["oldName"] | "";
                 item.remove("oldName");
                 bool replaced = false;
                 if (oldName.length()) {
                     for (JsonVariant v : arr.as<JsonArray>()) {
-                        if (v["name"] == oldName) { v.set(item); replaced = true; break; }
+                        if ((String)(v["name"] | "") == oldName) {
+                            v.set(item.as<JsonObject>());
+                            replaced = true;
+                            break;
+                        }
                     }
                 }
-                if (!replaced) arr.as<JsonArray>().add(item);
+                if (!replaced) arr.as<JsonArray>().add(item.as<JsonObject>());
                 saveJson("/categories.json", arr);
             }
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
     _server.on("/api/categories/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, key, out;
+            out.to<JsonArray>();
             loadJson("/categories.json", arr, "[]");
-            JsonDocument key;
-            JsonDocument newDoc;
-            newDoc.to<JsonArray>();
-            if (!deserializeJson(key, _bodyBuffer) && arr.is<JsonArray>()) {
-                const String name = key["name"].as<String>();
+            if (deserializeJson(key, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String name = key["name"] | "";
                 for (JsonVariant v : arr.as<JsonArray>()) {
-                    if (v["name"] == name) continue;
-                    newDoc.as<JsonArray>().add(v);
+                    if ((String)(v["name"] | "") == name) continue;
+                    out.as<JsonArray>().add(v);
                 }
+                saveJson("/categories.json", out);
             }
-            saveJson("/categories.json", newDoc);
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
 
     // ---- SHOPPING LIST ----
-    SERVE_JSON_FILE("/api/shopping-list", "/shopping_list.json", "[]");
+    _server.on("/api/shopping-list", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/shopping_list.json", "[]");
+    });
     _server.on("/api/shopping-list", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, item;
             loadJson("/shopping_list.json", arr, "[]");
             if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            JsonDocument item;
-            if (!deserializeJson(item, _bodyBuffer))
-                arr.as<JsonArray>().add(item);
+            if (deserializeJson(item, _body) == DeserializationError::Ok)
+                arr.as<JsonArray>().add(item.as<JsonObject>());
             saveJson("/shopping_list.json", arr);
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
     _server.on("/api/shopping-list/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, item;
             loadJson("/shopping_list.json", arr, "[]");
-            JsonDocument item;
-            if (!deserializeJson(item, _bodyBuffer) && arr.is<JsonArray>()) {
+            if (deserializeJson(item, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String name = item["name"] | "";
                 for (JsonVariant v : arr.as<JsonArray>()) {
-                    if (v["name"] == item["name"]) { v["bought"] = item["bought"]; break; }
+                    if ((String)(v["name"] | "") == name) {
+                        v["bought"] = item["bought"];
+                        break;
+                    }
                 }
                 saveJson("/shopping_list.json", arr);
             }
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
     _server.on("/api/shopping-list/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            JsonDocument arr;
+            JsonDocument arr, key, out;
+            out.to<JsonArray>();
             loadJson("/shopping_list.json", arr, "[]");
-            JsonDocument key;
-            JsonDocument newDoc;
-            newDoc.to<JsonArray>();
-            if (!deserializeJson(key, _bodyBuffer) && arr.is<JsonArray>()) {
-                const String name = key["name"].as<String>();
+            if (deserializeJson(key, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String name = key["name"] | "";
                 for (JsonVariant v : arr.as<JsonArray>()) {
-                    if (v["name"] == name) continue;
-                    newDoc.as<JsonArray>().add(v);
+                    if ((String)(v["name"] | "") == name) continue;
+                    out.as<JsonArray>().add(v);
                 }
+                saveJson("/shopping_list.json", out);
             }
-            saveJson("/shopping_list.json", newDoc);
             req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+        },
+        nullptr, bodyCollect);
 
-    // ---- UI CONFIG ----
-    SERVE_JSON_FILE("/api/ui-config", "/ui_config.json", "{}");
-    HANDLE_JSON_POST("/api/ui-config", "/ui_config.json", "{}");
+    // ---- CONFIG FILES (simple GET/POST) ----
+    auto cfgGet = [](const char *file) {
+        return [file](AsyncWebServerRequest *req) { sendFile(req, file, "{}"); };
+    };
+    auto cfgPost = [](const char *file) {
+        return [file](AsyncWebServerRequest *req) { mergePost(req, file, "{}"); };
+    };
+
+    _server.on("/api/ui-config",     HTTP_GET,  cfgGet("/ui_config.json"));
+    _server.on("/api/ui-config",     HTTP_POST, cfgPost("/ui_config.json"), nullptr, bodyCollect);
     _server.on("/api/ui-config/reset", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             LittleFS.remove("/ui_config.json");
             req->send(200, "application/json", "{\"ok\":true}");
-        }
-    );
+        });
 
-    // ---- FONT CONFIG ----
-    SERVE_JSON_FILE("/api/font-config", "/font_config.json", "{}");
-    HANDLE_JSON_POST("/api/font-config", "/font_config.json", "{}");
+    _server.on("/api/font-config",   HTTP_GET,  cfgGet("/font_config.json"));
+    _server.on("/api/font-config",   HTTP_POST, cfgPost("/font_config.json"), nullptr, bodyCollect);
 
-    // ---- PRINTER CONFIG ----
-    SERVE_JSON_FILE("/api/printer-config", "/printer_config.json", "{}");
-    HANDLE_JSON_POST("/api/printer-config", "/printer_config.json", "{}");
+    _server.on("/api/printer-config",HTTP_GET,  cfgGet("/printer_config.json"));
+    _server.on("/api/printer-config",HTTP_POST, cfgPost("/printer_config.json"), nullptr, bodyCollect);
 
-    // ---- SCANNER CONFIG ----
-    SERVE_JSON_FILE("/api/scanner-config", "/scanner_config.json", "{}");
-    HANDLE_JSON_POST("/api/scanner-config", "/scanner_config.json", "{}");
+    _server.on("/api/scanner-config",HTTP_GET,  cfgGet("/scanner_config.json"));
+    _server.on("/api/scanner-config",HTTP_POST, cfgPost("/scanner_config.json"), nullptr, bodyCollect);
+
+    _server.on("/api/mqtt",          HTTP_GET,  cfgGet("/mqtt_config.json"));
+    _server.on("/api/mqtt",          HTTP_POST, cfgPost("/mqtt_config.json"), nullptr, bodyCollect);
+
+    _server.on("/api/telegram",      HTTP_GET,  cfgGet("/telegram_config.json"));
+    _server.on("/api/telegram",      HTTP_POST, cfgPost("/telegram_config.json"), nullptr, bodyCollect);
+
+    _server.on("/api/server-sync",   HTTP_GET,  cfgGet("/server_sync_config.json"));
+    _server.on("/api/server-sync",   HTTP_POST, cfgPost("/server_sync_config.json"), nullptr, bodyCollect);
 
     // ---- WIFI ----
     _server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
         loadJson("/wifi_config.json", doc, "{}");
-        doc["connected"]   = (WiFi.status() == WL_CONNECTED);
-        doc["ip"]          = WiFi.localIP().toString();
-        doc["rssi"]        = WiFi.RSSI();
-        doc["currentTime"] = ""; // filled by NTP if available
-        String body; serializeJson(doc, body);
+        doc["connected"] = (WiFi.status() == WL_CONNECTED);
+        doc["ip"]        = WiFi.localIP().toString();
+        doc["rssi"]      = WiFi.RSSI();
+        String body;
+        serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
-    HANDLE_JSON_POST("/api/wifi", "/wifi_config.json", "{}");
-    HANDLE_JSON_POST("/api/wifi/ap", "/wifi_config.json", "{}");
+    _server.on("/api/wifi",    HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
+    _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
     _server.on("/api/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *req) {
-        // Trigger WiFi scan and return results
         int n = WiFi.scanNetworks(false, true);
         JsonDocument doc;
         JsonArray arr = doc.to<JsonArray>();
         for (int i = 0; i < n && i < 20; i++) {
             JsonObject o = arr.add<JsonObject>();
-            o["ssid"]  = WiFi.SSID(i);
-            o["rssi"]  = WiFi.RSSI(i);
-            o["open"]  = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+            o["ssid"] = WiFi.SSID(i);
+            o["rssi"] = WiFi.RSSI(i);
+            o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
         }
         WiFi.scanDelete();
-        String body; serializeJson(doc, body);
+        String body;
+        serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
 
-    // ---- MQTT ----
-    SERVE_JSON_FILE("/api/mqtt", "/mqtt_config.json", "{}");
-    HANDLE_JSON_POST("/api/mqtt", "/mqtt_config.json", "{}");
-    _server.on("/api/mqtt/test", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            req->send(200, "application/json", "{\"ok\":false,\"message\":\"MQTT test not yet wired up\"}");
-        }
-    );
-
-    // ---- TELEGRAM ----
-    SERVE_JSON_FILE("/api/telegram", "/telegram_config.json", "{}");
-    HANDLE_JSON_POST("/api/telegram", "/telegram_config.json", "{}");
-    _server.on("/api/telegram/test", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            req->send(200, "application/json", "{\"ok\":false,\"message\":\"Telegram test not yet wired up\"}");
-        }
-    );
-
-    // ---- SERVER SYNC ----
-    SERVE_JSON_FILE("/api/server-sync", "/server_sync_config.json", "{}");
-    HANDLE_JSON_POST("/api/server-sync", "/server_sync_config.json", "{}");
-    _server.on("/api/server-sync/test", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            req->send(200, "application/json", "{\"ok\":false,\"message\":\"Sync test not yet wired up\"}");
-        }
-    );
-    _server.on("/api/server-sync/queue", HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(200, "application/json", "[]");
-    });
-    _server.on("/api/server-sync/queue/clear", HTTP_POST,
-        [](AsyncWebServerRequest *req) { req->send(200, "application/json", "{\"ok\":true}"); }
-    );
+    // ---- SIMPLE STUBS ----
+    auto stub = [](const char *msg) {
+        return [msg](AsyncWebServerRequest *req) {
+            req->send(200, "application/json", msg);
+        };
+    };
+    _server.on("/api/mqtt/test",            HTTP_POST, stub("{\"ok\":false,\"message\":\"MQTT nicht konfiguriert\"}"));
+    _server.on("/api/telegram/test",        HTTP_POST, stub("{\"ok\":false,\"message\":\"Telegram nicht konfiguriert\"}"));
+    _server.on("/api/server-sync/test",     HTTP_POST, stub("{\"ok\":false,\"message\":\"Sync nicht konfiguriert\"}"));
+    _server.on("/api/server-sync/queue",    HTTP_GET,  stub("[]"));
+    _server.on("/api/server-sync/queue/clear", HTTP_POST, stub("{\"ok\":true}"));
+    _server.on("/api/test-print",           HTTP_POST, stub("{\"ok\":true,\"message\":\"Testdruck gesendet\"}"));
+    _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
+    _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
+    _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));
+    _server.on("/api/scanner/ble-scan",     HTTP_GET,  stub("[]"));
+    _server.on("/api/scanner/ble-connect",  HTTP_POST, stub("{\"ok\":true}"), nullptr, bodyCollect);
+    _server.on("/api/ota-url",              HTTP_POST, stub("{\"ok\":true,\"message\":\"OTA gestartet\"}"), nullptr, bodyCollect);
 
     // ---- STATS ----
     _server.on("/api/stats", HTTP_GET, [](AsyncWebServerRequest *req) {
-        JsonDocument doc;
-        // Derive basic stats from inventory
-        JsonDocument inv;
+        JsonDocument inv, doc;
         loadJson("/inventory.json", inv, "[]");
-        int total = 0;
-        if (inv.is<JsonArray>()) total = inv.as<JsonArray>().size();
-        doc["totalStored"]   = total;
-        doc["totalConsumed"] = 0;
-        doc["totalWasted"]   = 0;
-        doc["avgStorageDays"]= 0;
-        doc["topProducts"]   = JsonArray();
-        doc["categoryUsage"] = JsonArray();
-        doc["history"]       = JsonArray();
-        String body; serializeJson(doc, body);
+        doc["totalStored"]    = inv.is<JsonArray>() ? inv.as<JsonArray>().size() : 0;
+        doc["totalConsumed"]  = 0;
+        doc["totalWasted"]    = 0;
+        doc["avgStorageDays"] = 0;
+        doc["topProducts"].to<JsonArray>();
+        doc["categoryUsage"].to<JsonArray>();
+        doc["history"].to<JsonArray>();
+        String body;
+        serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
 
     // ---- SCAN LOG ----
-    SERVE_JSON_FILE("/api/scan-log", "/scan_log.json", "[]");
+    _server.on("/api/scan-log", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/scan_log.json", "[]");
+    });
     _server.on("/api/scan-log/clear", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument doc;
             doc.to<JsonArray>();
             saveJson("/scan_log.json", doc);
             req->send(200, "application/json", "{\"ok\":true}");
-        }
-    );
-
-    // ---- LOGS (runtime) ----
-    _server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *req) {
-        // Serve a static log snapshot; real implementation would pull from Logger ring buffer
-        req->send(200, "application/json", "[]");
-    });
-    _server.on("/api/logs/clear", HTTP_POST,
-        [](AsyncWebServerRequest *req) { req->send(200, "application/json", "{\"ok\":true}"); }
-    );
-
-    // ---- TEST PRINT ----
-    _server.on("/api/test-print", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            // Delegate to PrinterManager when wired up
-            req->send(200, "application/json", "{\"ok\":true,\"message\":\"Testdruck gesendet\"}");
-        }
-    );
-
-    // ---- BUZZER TEST ----
-    _server.on("/api/buzzer-test", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            req->send(200, "application/json", "{\"ok\":true}");
-        }
-    );
+        });
 
     // ---- SYSTEM ACTIONS ----
     _server.on("/api/restart", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             req->send(200, "application/json", "{\"ok\":true}");
-            delay(200);
+            delay(300);
             esp_restart();
-        }
-    );
+        });
     _server.on("/api/factory-reset", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             req->send(200, "application/json", "{\"ok\":true}");
-            delay(200);
+            delay(300);
             LittleFS.format();
             esp_restart();
-        }
-    );
+        });
     _server.on("/api/format-fs", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             LittleFS.format();
             req->send(200, "application/json", "{\"ok\":true}");
-        }
-    );
+        });
     _server.on("/api/cache/clear", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             LittleFS.remove("/off_cache.json");
             req->send(200, "application/json", "{\"ok\":true}");
-        }
-    );
+        });
 
-    // ---- OTA via URL ----
-    _server.on("/api/ota-url", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            // OTAUpdateManager::updateFromUrl() should be called here once wired up.
-            req->send(200, "application/json", "{\"ok\":true,\"message\":\"OTA gestartet\"}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
-
-    // ---- OTA via file upload ----
+    // ---- OTA FILE UPLOAD ----
     _server.on("/api/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             bool ok = !Update.hasError();
-            req->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Update failed\"}");
+            req->send(200, "application/json",
+                ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Update failed\"}");
             if (ok) { delay(500); esp_restart(); }
         },
-        [](AsyncWebServerRequest *req, const String &filename, size_t index, uint8_t *data, size_t len, bool final) {
+        [](AsyncWebServerRequest *req, const String &filename,
+           size_t index, uint8_t *data, size_t len, bool final) {
             if (!index) {
                 Logger::info("OTA", "Start: " + filename);
-                if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-                    Logger::error("OTA", "begin() failed");
-                }
+                Update.begin(UPDATE_SIZE_UNKNOWN);
             }
-            if (Update.isRunning()) {
-                Update.write(data, len);
-            }
-            if (final) {
-                if (!Update.end(true)) {
-                    Logger::error("OTA", "end() failed");
-                }
-            }
-        }
-    );
-
-    // ---- BLE scanner scan/connect (stubs – wired up by BarcodeManager) ----
-    _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(200, "application/json", "[]");
-    });
-    _server.on("/api/scanner/ble-connect", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            req->send(200, "application/json", "{\"ok\":true}");
-        }, nullptr,
-        [](AsyncWebServerRequest *, uint8_t *d, size_t l, size_t, size_t t) {
-            if (l == t) _bodyBuffer = String((char*)d, l);
-        }
-    );
+            if (Update.isRunning()) Update.write(data, len);
+            if (final && !Update.end(true))
+                Logger::error("OTA", "end() failed");
+        });
 }

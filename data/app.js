@@ -20,9 +20,20 @@ const API = (() => {
         body: body ? JSON.stringify(body) : undefined,
       };
       const res = await fetch(endpoint, opts);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}${txt ? ': ' + txt.slice(0, 80) : ''}`);
+      }
       const text = await res.text();
-      return text ? JSON.parse(text) : {};
+      if (!text) return {};
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`Ungültiges JSON von ${endpoint}: ${text.slice(0, 60)}`);
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error(`Timeout (${TIMEOUT/1000}s) bei ${endpoint}`);
+      throw e;
     } finally {
       clearTimeout(timer);
     }
@@ -290,18 +301,25 @@ const Pages = {};
 /* ---- DASHBOARD ---- */
 Pages.dashboard = {
   async load() {
+    let sys = {}, inv = [], shop = [];
+
+    try { sys = await API.get('/api/system-info'); }
+    catch (e) { Toast.warn('System-Info: ' + e.message); }
+
     try {
-      const [sys, inv, shop] = await Promise.all([
-        API.get('/api/system-info'),
-        API.get('/api/inventory'),
-        API.get('/api/shopping-list'),
-      ]);
-      State.inventory = Array.isArray(inv) ? inv : [];
-      State.shopping  = Array.isArray(shop) ? shop : [];
-      this.render(sys);
-    } catch (e) {
-      Toast.error('Dashboard: ' + e.message);
-    }
+      const r = await API.get('/api/inventory');
+      inv = Array.isArray(r) ? r : [];
+    } catch (e) { Toast.warn('Inventar: ' + e.message); }
+
+    try {
+      const r = await API.get('/api/shopping-list');
+      shop = Array.isArray(r) ? r : [];
+    } catch (e) { Toast.warn('Einkaufsliste: ' + e.message); }
+
+    State.inventory = inv;
+    State.shopping  = shop;
+    try { this.render(sys); }
+    catch (e) { Toast.error('Dashboard render: ' + e.message); }
   },
 
   render(sys) {
