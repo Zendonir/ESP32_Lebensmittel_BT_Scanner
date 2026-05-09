@@ -32,11 +32,9 @@ void WiFiManager::saveCredentials(const char *ssid, const char *password) {
 
 void WiFiManager::loadCredentials(char *ssid, size_t ssidLen,
                                   char *password, size_t passLen) {
-    // Use readOnly=false so the namespace is created on first boot instead of
-    // failing with NVS_NOT_FOUND.
     prefs.begin("wifi", false);
-    String s = prefs.getString("ssid", "");
-    String p = prefs.getString("pass", "");
+    String s = prefs.isKey("ssid") ? prefs.getString("ssid", "") : "";
+    String p = prefs.isKey("pass") ? prefs.getString("pass", "") : "";
     prefs.end();
     strncpy(ssid,     s.c_str(), ssidLen - 1); ssid[ssidLen - 1]     = '\0';
     strncpy(password, p.c_str(), passLen - 1); password[passLen - 1] = '\0';
@@ -44,14 +42,14 @@ void WiFiManager::loadCredentials(char *ssid, size_t ssidLen,
 
 bool WiFiManager::hasCredentials() {
     prefs.begin("wifi", false);
-    String s = prefs.getString("ssid", "");
+    bool has = prefs.isKey("ssid") && prefs.getString("ssid", "").length() > 0;
     prefs.end();
-    return s.length() > 0;
+    return has;
 }
 
 String WiFiManager::getSavedSSID() {
     prefs.begin("wifi", false);
-    String s = prefs.getString("ssid", "");
+    String s = prefs.isKey("ssid") ? prefs.getString("ssid", "") : "";
     prefs.end();
     return s;
 }
