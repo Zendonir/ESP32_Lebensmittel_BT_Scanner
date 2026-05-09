@@ -7,26 +7,97 @@
 #include <Update.h>
 #include <WiFi.h>
 #include <esp_system.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
-/* ── Background WiFi scan state ─────────────────────────────── */
-static volatile bool _scanRunning = false;
-static volatile bool _scanReady   = false;
-static volatile int  _scanCount   = 0;
-static volatile int  _scanResult  = WIFI_SCAN_RUNNING;
+/* ── WiFi scan cache ──────────────────────────────────────────── */
+static constexpr int WIFI_SCAN_CACHE_MAX = 30;
 
-static void wifiScanTask(void *) {
-    Serial.println("[WiFiScan] Task started");
-    Serial.flush();
+struct WiFiScanEntry {
+    String ssid;
+    int32_t rssi = 0;
+    int32_t channel = 0;
+    bool open = false;
+};
 
-    int n = wifi_manager.scanNetworks(true);
+static bool _scanRunning = false;
+static bool _scanReady = false;
+static int _scanCount = 0;
+static int _scanResult = WIFI_SCAN_RUNNING;
+static uint32_t _scanUpdatedAt = 0;
+static WiFiScanEntry _scanCache[WIFI_SCAN_CACHE_MAX];
 
-    _scanResult  = n;
-    _scanCount   = (n > 0) ? n : 0;
-    _scanReady   = true;
-    _scanRunning = false;
-    vTaskDelete(nullptr);
+static void resetScanCache() {
+    for (int i = 0; i < WIFI_SCAN_CACHE_MAX; i++) {
+        _scanCache[i] = WiFiScanEntry();
+    }
+    _scanCount = 0;
+    _scanResult = WIFI_SCAN_RUNNING;
+    _scanReady = false;
+    _scanUpdatedAt = 0;
+}
+
+static int findCachedSSID(const String &ssid) {
+    for (int i = 0; i < _scanCount; i++) {
+        if (_scanCache[i].ssid == ssid) return i;
+    }
+    return -1;
+}
+
+static void cacheScanResults(int result) {
+    _scanResult = result;
+    _scanCount = 0;
+
+    if (result > 0) {
+        for (int i = 0; i < result; i++) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.isEmpty()) continue; // Hidden SSIDs cannot be selected usefully in the UI.
+
+            int existing = findCachedSSID(ssid);
+            int32_t rssi = WiFi.RSSI(i);
+            if (existing >= 0) {
+                // Keep the strongest BSSID for duplicate SSIDs.
+                if (rssi <= _scanCache[existing].rssi) continue;
+            } else {
+                if (_scanCount >= WIFI_SCAN_CACHE_MAX) continue;
+                existing = _scanCount++;
+            }
+
+            _scanCache[existing].ssid = ssid;
+            _scanCache[existing].rssi = rssi;
+            _scanCache[existing].channel = WiFi.channel(i);
+            _scanCache[existing].open = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+        }
+    }
+
+    _scanReady = true;
+    _scanUpdatedAt = millis();
+}
+
+static void sendScanResult(AsyncWebServerRequest *req) {
+    JsonDocument doc;
+    doc["scanning"] = _scanRunning;
+    doc["ready"] = _scanReady;
+    doc["result"] = _scanResult;
+    doc["count"] = _scanCount;
+    doc["ageMs"] = _scanUpdatedAt ? millis() - _scanUpdatedAt : 0;
+
+    if (_scanReady && _scanResult < 0) {
+        doc["error"] = (_scanResult == WIFI_SCAN_FAILED) ? "wifi scan failed" : "wifi scan did not complete";
+    }
+
+    JsonArray arr = doc["networks"].to<JsonArray>();
+    if (_scanReady) {
+        for (int i = 0; i < _scanCount; i++) {
+            JsonObject o = arr.add<JsonObject>();
+            o["ssid"] = _scanCache[i].ssid;
+            o["rssi"] = _scanCache[i].rssi;
+            o["channel"] = _scanCache[i].channel;
+            o["open"] = _scanCache[i].open;
+        }
+    }
+
+    String body;
+    serializeJson(doc, body);
+    req->send(200, "application/json", body);
 }
 
 WebInterface::WebInterface(uint16_t port) : _server(port) {}
@@ -66,10 +137,11 @@ align-items:center;justify-content:center;font-weight:700;flex-shrink:0}a{color:
 </div></body></html>)HTML";
 
 void WebInterface::registerStaticRoutes() {
-    // Root: show WiFi setup if no credentials saved, otherwise the main SPA
+    // Root: show WiFi setup while offline/AP-only; /?app=1 opens the main SPA explicitly
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
-        bool hasCreds = wifi_manager.hasCredentials();
-        if (!hasCreds && LittleFS.exists("/wifi-setup.html")) {
+        bool forceApp = req->hasParam("app");
+        bool needsSetup = !wifi_manager.isConnected();
+        if (!forceApp && needsSetup && LittleFS.exists("/wifi-setup.html")) {
             req->send(LittleFS, "/wifi-setup.html", "text/html");
             return;
         }
@@ -476,65 +548,33 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/wifi",    HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
 
-    // WiFi scan — start
+    // WiFi scan — start. Run synchronously and cache a frontend-ready result.
+    // This avoids races between AsyncWebServer callbacks and WiFi's global scan buffer.
     _server.on("/api/wifi/scan-start", HTTP_GET, [](AsyncWebServerRequest *req) {
         Serial.println("[WiFiScan] /api/wifi/scan-start called");
         Serial.flush();
-        if (!_scanRunning) {
-            _scanRunning = true;
-            _scanReady   = false;
-            _scanCount   = 0;
-            _scanResult  = WIFI_SCAN_RUNNING;
-            BaseType_t ok = xTaskCreatePinnedToCore(
-                wifiScanTask, "wifi_scan", 8192, nullptr, 1, nullptr, 1);
-            Serial.printf("[WiFiScan] xTaskCreate: %s\n", ok == pdPASS ? "OK" : "FAIL");
-            Serial.flush();
-            if (ok != pdPASS) {
-                _scanRunning = false;
-                req->send(500, "application/json", "{\"error\":\"scan task failed\"}");
-                return;
-            }
-        } else {
-            Serial.println("[WiFiScan] scan already running");
-        }
-        req->send(200, "application/json", "{\"ok\":true}");
-    });
 
-    // WiFi scan — poll result
-    _server.on("/api/wifi/scan-result", HTTP_GET, [](AsyncWebServerRequest *req) {
-        if (!_scanReady) {
-            req->send(200, "application/json", "{\"scanning\":true,\"networks\":[]}");
+        if (_scanRunning) {
+            sendScanResult(req);
             return;
         }
 
-        // Use the count captured by the task (avoids scanComplete() ambiguity
-        // after a blocking scan run in a separate task/core)
-        int n = _scanCount;
-        int result = _scanResult;
-        JsonDocument doc;
-        doc["scanning"] = false;
-        doc["result"] = result;
-        if (result < 0) {
-            doc["error"] = (result == WIFI_SCAN_FAILED) ? "wifi scan failed" : "wifi scan did not complete";
-        }
-        JsonArray arr = doc["networks"].to<JsonArray>();
-        for (int i = 0; i < n && i < 30; i++) {
-            String ssid = WiFi.SSID(i);
-            if (ssid.isEmpty()) continue;
-            JsonObject o = arr.add<JsonObject>();
-            o["ssid"] = ssid;
-            o["rssi"] = WiFi.RSSI(i);
-            o["channel"] = WiFi.channel(i);
-            o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
-        }
-        WiFi.scanDelete();
-        _scanReady = false;
-        _scanCount = 0;
-        _scanResult = WIFI_SCAN_RUNNING;
+        _scanRunning = true;
+        resetScanCache();
 
-        String body;
-        serializeJson(doc, body);
-        req->send(200, "application/json", body);
+        int result = wifi_manager.scanNetworks(true);
+        cacheScanResults(result);
+        WiFi.scanDelete();
+
+        _scanRunning = false;
+        Serial.printf("[WiFiScan] Cached %d visible network(s), raw result=%d\n", _scanCount, _scanResult);
+        Serial.flush();
+        sendScanResult(req);
+    });
+
+    // WiFi scan — poll cached result. Keep the cache stable across repeated polls.
+    _server.on("/api/wifi/scan-result", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendScanResult(req);
     });
 
     // WiFi connect — save credentials and start connection

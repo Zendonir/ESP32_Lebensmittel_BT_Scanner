@@ -1187,16 +1187,22 @@ Pages.network = {
     btn.textContent = 'Scanne…';
     btn.disabled = true;
     try {
-      await API.get('/api/wifi/scan-start');
-      // Poll until scan completes (up to 15s)
+      let res = await API.get('/api/wifi/scan-start');
+      // New firmware returns the scan result directly; polling stays as fallback.
       let nets = [];
-      for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 1000));
-        const res = await API.get('/api/wifi/scan-result');
-        if (!res.scanning) {
-          if (res.error) throw new Error(`${res.error} (Code ${res.result})`);
-          nets = res.networks || [];
-          break;
+      if (!res.scanning && res.ready !== false) {
+        if (res.error) throw new Error(`${res.error} (Code ${res.result})`);
+        nets = res.networks || [];
+      } else {
+        // Poll until scan completes (up to 15s)
+        for (let i = 0; i < 15; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          res = await API.get('/api/wifi/scan-result');
+          if (!res.scanning && res.ready !== false) {
+            if (res.error) throw new Error(`${res.error} (Code ${res.result})`);
+            nets = res.networks || [];
+            break;
+          }
         }
       }
       const box = document.getElementById('wifiScanResults');

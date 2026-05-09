@@ -216,7 +216,7 @@ body {
   </div>
 </div>
 
-<a href="/" class="skip-link">Zur Hauptanwendung →</a>
+<a href="/?app=1" class="skip-link">Zur Hauptanwendung →</a>
 
 <script>
 'use strict';
@@ -264,17 +264,25 @@ async function startScan() {
   document.getElementById('netList').innerHTML = '<div class="empty">Netzwerke werden gesucht…</div>';
 
   try {
-    // Trigger scan
+    // Trigger scan. The backend now returns the cached result directly,
+    // but keep polling as a fallback for older firmware responses.
     const sr = await fetch('/api/wifi/scan-start');
     if (!sr.ok) throw new Error('scan-start fehlgeschlagen');
 
-    // Poll until done (max 20 s)
+    let data = await sr.json();
     let found = false;
-    for (let attempt = 0; attempt < 13; attempt++) {
+    if (!data.scanning && data.ready !== false) {
+      if (data.error) throw new Error(`${data.error} (Code ${data.result})`);
+      renderNetworks(data.networks || []);
+      found = true;
+    }
+
+    // Poll until done (max 20 s)
+    for (let attempt = 0; !found && attempt < 13; attempt++) {
       await sleep(1500);
-      const r    = await fetch('/api/wifi/scan-result');
-      const data = await r.json();
-      if (!data.scanning) {
+      const r = await fetch('/api/wifi/scan-result');
+      data = await r.json();
+      if (!data.scanning && data.ready !== false) {
         if (data.error) throw new Error(`${data.error} (Code ${data.result})`);
         renderNetworks(data.networks || []);
         found = true;
