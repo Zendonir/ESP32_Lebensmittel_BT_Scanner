@@ -1177,9 +1177,23 @@ Pages.network = {
         <span>${cfg.connected ? 'Verbunden' : 'Getrennt'}</span>
         ${cfg.ssid ? `<span class="muted">${esc(cfg.ssid)}</span>` : ''}
         ${rssi ? `<span class="muted">${rssi}</span>` : ''}`;
+      this.renderScanResults(cfg.networks || [], cfg.scanSource || 'cache');
     } catch(e) {
       Toast.error('Netzwerk: ' + e.message);
     }
+  },
+
+  renderScanResults(nets, source = '') {
+    const box = document.getElementById('wifiScanResults');
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = nets.length
+      ? nets.map(n => `
+        <div class="scan-result-item" onclick="document.getElementById('wifiSsid').value='${esc(n.ssid)}'">
+          <span>${esc(n.ssid)}</span>
+          <span class="scan-rssi">${n.rssi} dBm ${n.open ? '' : '&#128274;'}</span>
+        </div>`).join('')
+      : `<div class="muted" style="padding:8px">Keine Netzwerke gefunden${source ? ` (${esc(source)})` : ''}</div>`;
   },
 
   async scanWifi() {
@@ -1205,15 +1219,7 @@ Pages.network = {
           }
         }
       }
-      const box = document.getElementById('wifiScanResults');
-      box.hidden = false;
-      box.innerHTML = nets.length
-        ? nets.map(n => `
-          <div class="scan-result-item" onclick="document.getElementById('wifiSsid').value='${esc(n.ssid)}'">
-            <span>${esc(n.ssid)}</span>
-            <span class="scan-rssi">${n.rssi} dBm ${n.open ? '' : '&#128274;'}</span>
-          </div>`).join('')
-        : '<div class="muted" style="padding:8px">Keine Netzwerke gefunden</div>';
+      this.renderScanResults(nets, res.source || 'scan');
     } catch(e) {
       Toast.error('Scan: ' + e.message);
     } finally {

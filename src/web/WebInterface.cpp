@@ -75,6 +75,26 @@ static void cacheScanResults(int result, const char *source) {
     _scanUpdatedAt = millis();
 }
 
+
+static void appendScanCache(JsonDocument &doc) {
+    doc["scanReady"] = _scanReady;
+    doc["scanResult"] = _scanResult;
+    doc["scanCount"] = _scanCount;
+    doc["scanAgeMs"] = _scanUpdatedAt ? millis() - _scanUpdatedAt : 0;
+    doc["scanSource"] = _scanSource;
+
+    JsonArray arr = doc["networks"].to<JsonArray>();
+    if (_scanReady) {
+        for (int i = 0; i < _scanCount; i++) {
+            JsonObject o = arr.add<JsonObject>();
+            o["ssid"] = _scanCache[i].ssid;
+            o["rssi"] = _scanCache[i].rssi;
+            o["channel"] = _scanCache[i].channel;
+            o["open"] = _scanCache[i].open;
+        }
+    }
+}
+
 static void sendScanResult(AsyncWebServerRequest *req) {
     JsonDocument doc;
     doc["scanning"] = _scanRunning;
@@ -88,16 +108,7 @@ static void sendScanResult(AsyncWebServerRequest *req) {
         doc["error"] = (_scanResult == WIFI_SCAN_FAILED) ? "wifi scan failed" : "wifi scan did not complete";
     }
 
-    JsonArray arr = doc["networks"].to<JsonArray>();
-    if (_scanReady) {
-        for (int i = 0; i < _scanCount; i++) {
-            JsonObject o = arr.add<JsonObject>();
-            o["ssid"] = _scanCache[i].ssid;
-            o["rssi"] = _scanCache[i].rssi;
-            o["channel"] = _scanCache[i].channel;
-            o["open"] = _scanCache[i].open;
-        }
-    }
+    appendScanCache(doc);
 
     String body;
     serializeJson(doc, body);
@@ -150,6 +161,14 @@ align-items:center;justify-content:center;font-weight:700;flex-shrink:0}a{color:
 <p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a></p>
 </div></body></html>)HTML";
 
+static void sendNoCacheFile(AsyncWebServerRequest *req, const char *path, const char *contentType) {
+    AsyncWebServerResponse *response = req->beginResponse(LittleFS, path, contentType);
+    response->addHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    response->addHeader("Pragma", "no-cache");
+    response->addHeader("Expires", "0");
+    req->send(response);
+}
+
 void WebInterface::registerStaticRoutes() {
     // Root: show WiFi setup while offline/AP-only; /?app=1 opens the main SPA explicitly
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -159,11 +178,11 @@ void WebInterface::registerStaticRoutes() {
                       req->host().c_str(), forceApp, needsSetup);
         Serial.flush();
         if (!forceApp && needsSetup && LittleFS.exists("/wifi-setup.html")) {
-            req->send(LittleFS, "/wifi-setup.html", "text/html");
+            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
             return;
         }
         if (LittleFS.exists("/index.html")) {
-            req->send(LittleFS, "/index.html", "text/html");
+            sendNoCacheFile(req, "/index.html", "text/html");
             return;
         }
         // Filesystem not uploaded yet
@@ -175,7 +194,7 @@ void WebInterface::registerStaticRoutes() {
         Serial.printf("[Web] GET /wifi-setup host=%s\n", req->host().c_str());
         Serial.flush();
         if (LittleFS.exists("/wifi-setup.html"))
-            req->send(LittleFS, "/wifi-setup.html", "text/html");
+            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
         else
             req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
     });
@@ -183,7 +202,7 @@ void WebInterface::registerStaticRoutes() {
         Serial.printf("[Web] GET /wifi-setup.html host=%s\n", req->host().c_str());
         Serial.flush();
         if (LittleFS.exists("/wifi-setup.html"))
-            req->send(LittleFS, "/wifi-setup.html", "text/html");
+            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
         else
             req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
     });
@@ -213,14 +232,14 @@ void WebInterface::registerStaticRoutes() {
 
     _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/style.css"))
-            req->send(LittleFS, "/style.css", "text/css");
+            sendNoCacheFile(req, "/style.css", "text/css");
         else
             req->send(404, "text/plain", "style.css not found – run uploadfs");
     });
 
     _server.on("/app.js", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/app.js"))
-            req->send(LittleFS, "/app.js", "application/javascript");
+            sendNoCacheFile(req, "/app.js", "application/javascript");
         else
             req->send(404, "text/plain", "app.js not found – run uploadfs");
     });
@@ -234,12 +253,12 @@ void WebInterface::registerStaticRoutes() {
             return;
         }
         if (!wifi_manager.isConnected() && LittleFS.exists("/wifi-setup.html")) {
-            req->send(LittleFS, "/wifi-setup.html", "text/html");
+            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
             return;
         }
         // SPA fallback — all non-API routes load the app
         if (LittleFS.exists("/index.html"))
-            req->send(LittleFS, "/index.html", "text/html");
+            sendNoCacheFile(req, "/index.html", "text/html");
         else
             req->send(404, "text/plain", "Not found");
     });
@@ -581,6 +600,10 @@ void WebInterface::registerApiRoutes() {
         doc["ssid"]      = wifi_manager.getSavedSSID();
         doc["ip"]        = WiFi.localIP().toString();
         doc["rssi"]      = WiFi.RSSI();
+        appendScanCache(doc);
+        Serial.printf("[API] /api/wifi includes scan cache ready=%d count=%d source=%s\n",
+                      _scanReady, _scanCount, _scanSource.c_str());
+        Serial.flush();
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);
