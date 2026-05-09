@@ -6,9 +6,17 @@
 #include "touch.h"
 #include "display.h"
 
+#include <WiFi.h>
+
 App app;
 
-App::App() : i2c_bus(0), web(80) {}
+App::App()
+    : i2c_bus(0),
+      json(fs),
+      inventoryStorage(json),
+      inventory(inventoryStorage),
+      openFoodFacts(api, &fs),
+      web(80) {}
 
 void App::begin() {
     Logger::begin(115200);
@@ -33,15 +41,18 @@ void App::begin() {
     state.setState(AppState::WIFI_CONNECTING);
     Logger::info("WiFi", "Initializing network manager");
     wifi_manager.init();
-    renderWiFiStatus();
 
     state.setState(wifi_manager.isConnected() ? AppState::MAIN : AppState::AP_MODE);
 
     initFilesystem();
+    time_manager.begin();
+    labelCounter.begin();
+    inventory.begin();
+    printer.begin();
 
     Logger::info("Scanner", "Initializing BLE barcode scanner");
     barcode_manager.begin();
-    renderDashboard("BLE-Scanner wird vorbereitet");
+    renderDashboard("EAN scannen zum Einlagern");
 
     initWebServer();
     renderDashboard("Bereit");
@@ -60,14 +71,13 @@ void App::loop() {
 
     barcode_manager.loop();
     handleTouch();
+    processWorkflow();
 
     ScanResult scan;
     if (barcode_manager.readScan(scan)) {
-        Logger::info("Scanner", String("Barcode: ") + scan.code);
-        audio_obj.playTone(1800, 80);
-        renderDashboard(String("Scan empfangen: ") + scan.code);
-    } else if (millis() - _lastUiRefreshMs > 5000) {
-        renderDashboard();
+        handleScan(scan);
+    } else if (workflow == WorkflowMode::HOME && millis() - _lastUiRefreshMs > 5000) {
+        renderActiveTab();
     }
 
     AppEvent event;
@@ -104,6 +114,11 @@ void App::renderWiFiStatus() {
 }
 
 void App::renderDashboard(const String &message) {
+    _activeTab = UiTab::STORE;
+    renderActiveTab(message);
+}
+
+void App::renderActiveTab(const String &message) {
     String wifi_ssid = wifi_manager.getSSID();
     String wifi_ip = wifi_manager.getIPAddress();
     bool wifi_connected = wifi_manager.isConnected();
@@ -114,7 +129,8 @@ void App::renderDashboard(const String &message) {
 
     if (!message.isEmpty()) _statusMessage = message;
 
-    display_obj.showDashboard(
+    display_obj.showHome(
+        _activeTab,
         wifi_ssid,
         wifi_ip,
         wifi_connected,
@@ -122,6 +138,7 @@ void App::renderDashboard(const String &message) {
         scannerName,
         barcode_manager.getLastScan(),
         barcode_manager.getLastType(),
+        inventory.items().size(),
         _statusMessage);
     _lastUiRefreshMs = millis();
 }
@@ -135,42 +152,210 @@ void App::handleTouch() {
         return;
     }
 
-    if (_touchWasPressed || now - _lastTouchMs < 300) return;
+    if (_touchWasPressed || now - _lastTouchMs < 260) return;
     _touchWasPressed = true;
     _lastTouchMs = now;
 
     OnscreenAction action = display_obj.hitTest(point.x, point.y);
-    if (action != OnscreenAction::NONE) {
-        processOnscreenAction(action);
+    if (action != OnscreenAction::NONE) processOnscreenAction(action);
+}
+
+char App::digitForAction(OnscreenAction action) const {
+    switch (action) {
+        case OnscreenAction::DATE_DIGIT_0: return '0';
+        case OnscreenAction::DATE_DIGIT_1: return '1';
+        case OnscreenAction::DATE_DIGIT_2: return '2';
+        case OnscreenAction::DATE_DIGIT_3: return '3';
+        case OnscreenAction::DATE_DIGIT_4: return '4';
+        case OnscreenAction::DATE_DIGIT_5: return '5';
+        case OnscreenAction::DATE_DIGIT_6: return '6';
+        case OnscreenAction::DATE_DIGIT_7: return '7';
+        case OnscreenAction::DATE_DIGIT_8: return '8';
+        case OnscreenAction::DATE_DIGIT_9: return '9';
+        default: return 0;
     }
 }
 
 void App::processOnscreenAction(OnscreenAction action) {
+    char digit = digitForAction(action);
+    if (digit && workflow == WorkflowMode::ENTER_DATE) {
+        if (_pendingDateDraft.length() < 8) _pendingDateDraft += digit;
+        display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+        return;
+    }
+
     switch (action) {
+        case OnscreenAction::TAB_STORE:
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::STORE;
+            renderActiveTab("EAN scannen zum Einlagern");
+            break;
+        case OnscreenAction::TAB_INVENTORY:
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::INVENTORY;
+            if (_activeTab == UiTab::INVENTORY) display_obj.showInventoryList(inventory.items());
+            _lastUiRefreshMs = millis();
+            break;
+        case OnscreenAction::TAB_SCANNER:
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::SCANNER;
+            renderActiveTab("Scanner verbinden im Web-UI oder per gespeicherter Kopplung");
+            break;
+        case OnscreenAction::TAB_SYSTEM:
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::SYSTEM;
+            renderActiveTab("Systemstatus und Setup AP");
+            break;
         case OnscreenAction::REFRESH:
-            renderDashboard("Anzeige aktualisiert");
+            workflow = WorkflowMode::HOME;
+            renderActiveTab("Anzeige aktualisiert");
             break;
         case OnscreenAction::START_AP:
             Logger::info("UI", "Touch action: start AP");
             wifi_manager.startAP();
             state.setState(AppState::AP_MODE);
-            renderDashboard("Setup-AP aktiv: 192.168.4.1");
+            _activeTab = UiTab::SYSTEM;
+            renderActiveTab("Setup-AP aktiv: 192.168.4.1");
             break;
         case OnscreenAction::SCANNER_RECONNECT:
             Logger::info("UI", "Touch action: scanner reconnect/disconnect");
             if (ble_scanner.isConnected() || ble_scanner.isConnecting()) {
                 ble_scanner.disconnect();
-                renderDashboard("Scanner getrennt");
+                renderActiveTab("Scanner getrennt");
             } else if (!ble_scanner.getDeviceAddress().isEmpty()) {
                 ble_scanner.requestConnect(ble_scanner.getDeviceAddress(), ble_scanner.getDeviceName());
-                renderDashboard("Scanner-Verbindung wird aufgebaut");
+                renderActiveTab("Scanner-Verbindung wird aufgebaut");
             } else {
-                renderDashboard("Scanner im Web-UI koppeln");
+                renderActiveTab("Scanner im Web-UI koppeln");
             }
             break;
-        case OnscreenAction::NONE:
+        case OnscreenAction::DATE_BACKSPACE:
+            if (workflow == WorkflowMode::ENTER_DATE && !_pendingDateDraft.isEmpty()) {
+                _pendingDateDraft.remove(_pendingDateDraft.length() - 1);
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            }
+            break;
+        case OnscreenAction::DATE_CONFIRM:
+            if (workflow == WorkflowMode::ENTER_DATE && formatDateDraft(_pendingExpiryDate)) {
+                workflow = WorkflowMode::ENTER_QTY;
+                state.setState(AppState::ENTER_QTY);
+                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+            } else if (workflow == WorkflowMode::ENTER_DATE) {
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+                audio_obj.playTone(250, 160);
+            }
+            break;
+        case OnscreenAction::QTY_MINUS:
+            if (workflow == WorkflowMode::ENTER_QTY && _pendingQuantity > 1) {
+                _pendingQuantity--;
+                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+            }
+            break;
+        case OnscreenAction::QTY_PLUS:
+            if (workflow == WorkflowMode::ENTER_QTY && _pendingQuantity < 99) {
+                _pendingQuantity++;
+                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+            }
+            break;
+        case OnscreenAction::QTY_CONFIRM:
+            if (workflow == WorkflowMode::ENTER_QTY) {
+                workflow = WorkflowMode::SAVING;
+                state.setState(AppState::SAVING);
+                finishStorageWorkflow();
+            }
+            break;
+        case OnscreenAction::CANCEL:
+            workflow = WorkflowMode::HOME;
+            state.setState(AppState::MAIN);
+            renderDashboard("Vorgang abgebrochen");
+            break;
+        default:
             break;
     }
+}
+
+void App::handleScan(const ScanResult &scan) {
+    Logger::info("Scanner", String("Barcode: ") + scan.code);
+    audio_obj.playTone(1800, 80);
+
+    if (scan.type == BarcodeType::LABEL) {
+        state.setState(AppState::RETRIEVE);
+        bool removed = inventory.removeByLabel(scan.code);
+        workflow = WorkflowMode::RESULT;
+        _resultSuccess = removed;
+        _resultTitle = removed ? "Ausgelagert" : "Nicht gefunden";
+        _resultMessage = removed ? scan.code : "Label ist nicht im Inventar";
+        display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
+        return;
+    }
+
+    startProductLookup(scan.code);
+}
+
+void App::startProductLookup(const String &barcode) {
+    _pendingBarcode = barcode;
+    _pendingProduct = ProductInfo();
+    _pendingDateDraft = "";
+    _pendingExpiryDate = "";
+    _pendingQuantity = 1;
+    workflow = WorkflowMode::FETCHING_PRODUCT;
+    state.setState(AppState::FETCHING);
+    display_obj.showFetchingProduct(barcode);
+}
+
+void App::processWorkflow() {
+    if (workflow != WorkflowMode::FETCHING_PRODUCT) return;
+
+    ProductInfo product;
+    bool ok = openFoodFacts.fetchProduct(_pendingBarcode, product);
+    if (!ok) {
+        product.barcode = _pendingBarcode;
+        product.name = "Unbekanntes Produkt";
+        product.brand = "Manuell pruefen";
+    }
+
+    _pendingProduct = product;
+    workflow = WorkflowMode::ENTER_DATE;
+    state.setState(AppState::ENTER_DATE);
+    display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+    _lastUiRefreshMs = millis();
+}
+
+bool App::formatDateDraft(String &formatted) const {
+    if (_pendingDateDraft.length() != 8) return false;
+    int year = _pendingDateDraft.substring(0, 4).toInt();
+    int month = _pendingDateDraft.substring(4, 6).toInt();
+    int day = _pendingDateDraft.substring(6, 8).toInt();
+    if (year < 2024 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+    formatted = _pendingDateDraft.substring(0, 4) + "-" + _pendingDateDraft.substring(4, 6) + "-" + _pendingDateDraft.substring(6, 8);
+    return true;
+}
+
+bool App::finishStorageWorkflow() {
+    state.setState(AppState::PRINTING);
+
+    InventoryItem item;
+    item.barcode = _pendingProduct.barcode;
+    item.name = _pendingProduct.name.isEmpty() ? "Lebensmittel" : _pendingProduct.name;
+    item.brand = _pendingProduct.brand;
+    item.category = "Barcode";
+    item.expiryDate = _pendingExpiryDate;
+    item.addedDate = time_manager.today();
+    item.quantity = _pendingQuantity;
+    item.labelBarcode = labelCounter.nextLabel();
+
+    bool stored = inventory.addItem(item);
+    bool printed = stored && printer.printLabel(item);
+    workflow = WorkflowMode::RESULT;
+    state.setState(stored ? AppState::SUCCESS : AppState::ERROR);
+    _resultSuccess = stored;
+    _resultTitle = stored ? "Eingelagert" : "Speicherfehler";
+    _resultMessage = stored
+        ? String(item.labelBarcode) + (printed ? " gedruckt" : " gespeichert, Drucker?")
+        : "Inventar konnte nicht gespeichert werden";
+    display_obj.showResult(_resultTitle, _resultMessage, stored);
+    audio_obj.playTone(stored ? 1800 : 240, stored ? 100 : 260);
+    return stored;
 }
 
 void App::initFilesystem() {
@@ -179,6 +364,8 @@ void App::initFilesystem() {
         Logger::error("LittleFS", "Mount failed – web files unavailable");
     } else {
         Logger::info("LittleFS", "Mounted OK");
+        fs.ensureJsonFile("/inventory.json", "[]");
+        fs.ensureJsonFile("/off_cache.json", "[]");
     }
 }
 
@@ -198,8 +385,6 @@ void App::initWebServer() {
     Logger::info("Web", "Starting web server on port 80");
     web.begin();
 
-    // Start captive-portal DNS so devices connecting to the AP get redirected
-    // to the WiFi setup page automatically.
     _dns.setErrorReplyCode(DNSReplyCode::NoError);
     if (_dns.start(53, "*", WiFi.softAPIP())) {
         _dnsRunning = true;
@@ -224,7 +409,13 @@ void App::handleSerialCommand(const String &command) {
         Logger::info("CMD", "Starting AP mode");
         wifi_manager.startAP();
         state.setState(AppState::AP_MODE);
-        renderWiFiStatus();
+        _activeTab = UiTab::SYSTEM;
+        renderActiveTab("Setup-AP aktiv");
+    } else if (command.startsWith("ean ")) {
+        String code = command.substring(4);
+        code.trim();
+        barcode_manager.scanner().injectCode(code);
+        barcode_manager.scanner().injectCode("\n");
     } else if (command == "status") {
         Serial.println("\n=== Status ===");
         Serial.printf("State: %s\n", state.stateName());
@@ -234,6 +425,8 @@ void App::handleSerialCommand(const String &command) {
         Serial.println(wifi_manager.getIPAddress());
         Serial.print("SSID: ");
         Serial.println(wifi_manager.getSSID());
+        Serial.print("Inventory: ");
+        Serial.println(static_cast<unsigned>(inventory.items().size()));
         Serial.print("Scanner: ");
         Serial.print(ble_scanner.getStatus());
         Serial.print(" ");
@@ -243,10 +436,11 @@ void App::handleSerialCommand(const String &command) {
         audio_obj.playTone(1000, 100);
     } else if (command == "help") {
         Serial.println("\n=== Commands ===");
-        Serial.println("scan   - Scan WiFi");
-        Serial.println("ap     - AP Mode");
-        Serial.println("status - Status");
-        Serial.println("beep   - Beep\n");
+        Serial.println("scan       - Scan WiFi");
+        Serial.println("ap         - AP Mode");
+        Serial.println("ean <code> - Simulate barcode");
+        Serial.println("status     - Status");
+        Serial.println("beep       - Beep\n");
     } else {
         Logger::warn("CMD", String("Unknown command: ") + command);
     }

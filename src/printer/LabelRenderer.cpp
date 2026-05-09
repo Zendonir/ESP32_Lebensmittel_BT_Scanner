@@ -12,7 +12,8 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     printer.setBold(false);
     printer.println("Eingelagert: " + item.addedDate);
     printer.println("MHD: " + item.expiryDate);
-    printer.println("Menge: " + String(item.quantity));
+    printer.println("Menge: " + String(item.quantity) + " Stueck");
+    printer.println("Auslagern: " + item.labelBarcode);
     printer.qrCode(item.labelBarcode);
     printer.feed(4);
     return true;
