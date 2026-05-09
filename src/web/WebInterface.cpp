@@ -1,6 +1,7 @@
 #include "WebInterface.h"
 #include "../core/Logger.h"
 #include "../storage/JsonStorage.h"
+#include "wifi_manager.h"
 
 #include <LittleFS.h>
 #include <Update.h>
@@ -19,13 +20,7 @@ void WebInterface::begin() {
 /* ---------------------------------------------------------------
    Static file serving
    --------------------------------------------------------------- */
-void WebInterface::registerStaticRoutes() {
-    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
-        if (LittleFS.exists("/index.html")) {
-            req->send(LittleFS, "/index.html", "text/html");
-            return;
-        }
-        req->send(200, "text/html", R"HTML(<!DOCTYPE html>
+static const char SETUP_FALLBACK[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html lang="de"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Setup</title>
@@ -47,8 +42,51 @@ align-items:center;justify-content:center;font-weight:700;flex-shrink:0}a{color:
 <div>oder Terminal:<code>pio run -e esp32-s3-devkitc1-n16r8 --target uploadfs</code></div></div>
 <div class="step"><div class="num">3</div><div>Danach Seite neu laden.</div></div>
 <p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a></p>
-</div></body></html>)HTML");
+</div></body></html>)HTML";
+
+void WebInterface::registerStaticRoutes() {
+    // Root: show WiFi setup if no credentials saved, otherwise the main SPA
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
+        bool hasCreds = wifi_manager.hasCredentials();
+        if (!hasCreds && LittleFS.exists("/wifi-setup.html")) {
+            req->send(LittleFS, "/wifi-setup.html", "text/html");
+            return;
+        }
+        if (LittleFS.exists("/index.html")) {
+            req->send(LittleFS, "/index.html", "text/html");
+            return;
+        }
+        // Filesystem not uploaded yet
+        req->send(200, "text/html", FPSTR(SETUP_FALLBACK));
     });
+
+    // Explicit WiFi setup page (always accessible for re-setup)
+    _server.on("/wifi-setup", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (LittleFS.exists("/wifi-setup.html"))
+            req->send(LittleFS, "/wifi-setup.html", "text/html");
+        else
+            req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
+    });
+    _server.on("/wifi-setup.html", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (LittleFS.exists("/wifi-setup.html"))
+            req->send(LittleFS, "/wifi-setup.html", "text/html");
+        else
+            req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
+    });
+
+    // Captive portal detection endpoints — redirect to WiFi setup
+    auto captive = [](AsyncWebServerRequest *req) {
+        String url = "http://";
+        url += WiFi.softAPIP().toString();
+        url += "/wifi-setup";
+        req->redirect(url);
+    };
+    _server.on("/generate_204",          HTTP_GET, captive);
+    _server.on("/hotspot-detect.html",   HTTP_GET, captive);
+    _server.on("/ncsi.txt",              HTTP_GET, captive);
+    _server.on("/connecttest.txt",       HTTP_GET, captive);
+    _server.on("/canonical.html",        HTTP_GET, captive);
+    _server.on("/success.txt",           HTTP_GET, captive);
 
     _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/style.css"))
@@ -407,6 +445,7 @@ void WebInterface::registerApiRoutes() {
         JsonDocument doc;
         loadJson("/wifi_config.json", doc, "{}");
         doc["connected"] = (WiFi.status() == WL_CONNECTED);
+        doc["ssid"]      = wifi_manager.getSavedSSID();
         doc["ip"]        = WiFi.localIP().toString();
         doc["rssi"]      = WiFi.RSSI();
         String body;
@@ -415,17 +454,67 @@ void WebInterface::registerApiRoutes() {
     });
     _server.on("/api/wifi",    HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
-    _server.on("/api/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *req) {
-        int n = WiFi.scanNetworks(false, true);
-        JsonDocument doc;
-        JsonArray arr = doc.to<JsonArray>();
-        for (int i = 0; i < n && i < 20; i++) {
-            JsonObject o = arr.add<JsonObject>();
-            o["ssid"] = WiFi.SSID(i);
-            o["rssi"] = WiFi.RSSI(i);
-            o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+
+    // Async WiFi scan — start
+    _server.on("/api/wifi/scan-start", HTTP_GET, [](AsyncWebServerRequest *req) {
+        WiFi.scanNetworks(true, true); // async, show hidden
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    // Async WiFi scan — poll result
+    _server.on("/api/wifi/scan-result", HTTP_GET, [](AsyncWebServerRequest *req) {
+        int n = WiFi.scanComplete();
+        if (n == WIFI_SCAN_RUNNING) {
+            req->send(200, "application/json", "{\"scanning\":true,\"networks\":[]}");
+            return;
         }
-        WiFi.scanDelete();
+        JsonDocument doc;
+        doc["scanning"] = false;
+        JsonArray arr = doc["networks"].to<JsonArray>();
+        if (n > 0) {
+            for (int i = 0; i < n && i < 30; i++) {
+                JsonObject o = arr.add<JsonObject>();
+                o["ssid"] = WiFi.SSID(i);
+                o["rssi"] = WiFi.RSSI(i);
+                o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+            }
+            WiFi.scanDelete();
+        }
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+
+    // WiFi connect — save credentials and start connection
+    _server.on("/api/wifi/connect", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument inp;
+            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+                return;
+            }
+            String ssid = inp["ssid"] | "";
+            String pass = inp["password"] | "";
+            if (ssid.isEmpty()) {
+                req->send(400, "application/json", "{\"error\":\"ssid required\"}");
+                return;
+            }
+            wifi_manager.saveCredentials(ssid.c_str(), pass.c_str());
+            wifi_manager.connectToWiFi(ssid.c_str(), pass.c_str());
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+
+    // WiFi status — used by setup page to poll connection result
+    _server.on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *req) {
+        wl_status_t st = WiFi.status();
+        bool connected = (st == WL_CONNECTED);
+        bool failed    = (st == WL_CONNECT_FAILED || st == WL_NO_SSID_AVAIL);
+        JsonDocument doc;
+        doc["connected"] = connected;
+        doc["failed"]    = failed;
+        doc["ip"]        = connected ? WiFi.localIP().toString() : "";
+        doc["ssid"]      = connected ? WiFi.SSID() : "";
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);

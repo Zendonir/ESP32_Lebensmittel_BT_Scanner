@@ -1187,15 +1187,21 @@ Pages.network = {
     btn.textContent = 'Scanne…';
     btn.disabled = true;
     try {
-      const res = await API.get('/api/wifi/scan');
-      const nets = Array.isArray(res) ? res : (res.networks || []);
-      const box  = document.getElementById('wifiScanResults');
+      await API.get('/api/wifi/scan-start');
+      // Poll until scan completes (up to 15s)
+      let nets = [];
+      for (let i = 0; i < 15; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const res = await API.get('/api/wifi/scan-result');
+        if (!res.scanning) { nets = res.networks || []; break; }
+      }
+      const box = document.getElementById('wifiScanResults');
       box.hidden = false;
       box.innerHTML = nets.length
         ? nets.map(n => `
           <div class="scan-result-item" onclick="document.getElementById('wifiSsid').value='${esc(n.ssid)}'">
             <span>${esc(n.ssid)}</span>
-            <span class="scan-rssi">${n.rssi} dBm ${n.open ? '' : '🔒'}</span>
+            <span class="scan-rssi">${n.rssi} dBm ${n.open ? '' : '&#128274;'}</span>
           </div>`).join('')
         : '<div class="muted" style="padding:8px">Keine Netzwerke gefunden</div>';
     } catch(e) {
@@ -1214,9 +1220,21 @@ Pages.network = {
     };
     if (!data.ssid) { Toast.warn('SSID erforderlich'); return; }
     try {
-      await API.post('/api/wifi', data);
+      await API.post('/api/wifi/connect', data);
       Toast.info('Verbindung wird hergestellt…');
-      setTimeout(() => this.load(), 4000);
+      // Poll status for up to 20s
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const st = await API.get('/api/wifi/status').catch(() => ({}));
+        if (st.connected) {
+          Toast.success(`Verbunden! IP: ${st.ip}`);
+          setTimeout(() => this.load(), 1000);
+          return;
+        }
+        if (st.failed) { Toast.error('Verbindung fehlgeschlagen – SSID/Passwort prüfen'); return; }
+      }
+      Toast.warn('Timeout – Verbindung noch nicht hergestellt');
+      this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }

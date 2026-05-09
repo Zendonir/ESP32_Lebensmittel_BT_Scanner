@@ -44,6 +44,8 @@ void App::begin() {
 }
 
 void App::loop() {
+    if (_dnsRunning) _dns.processNextRequest();
+
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
         command.trim();
@@ -98,10 +100,21 @@ void App::initFilesystem() {
 void App::initWebServer() {
     Logger::info("Web", "Starting web server on port 80");
     web.begin();
-    String ip = wifi_manager.isConnected()
-        ? wifi_manager.getIPAddress()
-        : WiFi.softAPIP().toString();
-    Logger::info("Web", "Reachable at http://" + ip);
+
+    // Start captive-portal DNS so devices connecting to the AP get redirected
+    // to the WiFi setup page automatically.
+    _dns.setErrorReplyCode(DNSReplyCode::NoError);
+    if (_dns.start(53, "*", WiFi.softAPIP())) {
+        _dnsRunning = true;
+        Logger::info("DNS", "Captive-portal DNS started");
+    } else {
+        Logger::warn("DNS", "DNS server start failed");
+    }
+
+    if (wifi_manager.isConnected()) {
+        Logger::info("Web", "Station: http://" + wifi_manager.getIPAddress());
+    }
+    Logger::info("Web", "AP: http://" + WiFi.softAPIP().toString());
 }
 
 void App::handleSerialCommand(const String &command) {

@@ -20,7 +20,10 @@ public:
     void startAP(const char *ssid = AP_SSID, const char *password = AP_PASSWORD);
     void connectToWiFi(const char *ssid, const char *password);
     void saveCredentials(const char *ssid, const char *password);
-    void loadCredentials(char *ssid, char *password);
+    void loadCredentials(char *ssid, size_t ssidLen, char *password, size_t passLen);
+    bool hasCredentials();
+    bool autoConnect(uint32_t timeoutMs = 10000);
+    String getSavedSSID();
     bool isConnected();
     WiFiMode getCurrentMode();
     String getIPAddress();
@@ -32,8 +35,6 @@ private:
     Preferences prefs;
     WiFiMode current_mode;
     String current_ssid;
-
-    void startWebServer();
 };
 
 extern WiFiManager wifi_manager;

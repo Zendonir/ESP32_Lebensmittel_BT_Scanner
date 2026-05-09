@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <DNSServer.h>
 #include "AppStateManager.h"
 #include "EventBus.h"
 #include "TimeManager.h"
@@ -22,12 +23,14 @@ private:
     void handleSerialCommand(const String &command);
     void renderWiFiStatus();
 
-    TwoWire        i2c_bus;
+    TwoWire         i2c_bus;
     AppStateManager state;
     EventBus        events;
     TimeManager     time_manager;
     LittleFSManager fs;
     WebInterface    web;
+    DNSServer       _dns;
+    bool            _dnsRunning = false;
 };
 
 extern App app;
