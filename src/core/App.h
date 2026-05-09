@@ -41,7 +41,8 @@ private:
     void handleSerialCommand(const String &command);
     void renderWiFiStatus();
     void renderDashboard(const String &message = "");
-    void renderActiveTab(const String &message = "");
+    void renderActiveTab(const String &message = "", bool force = false);
+    String buildUiSignature() const;
     void handleTouch();
     void processOnscreenAction(OnscreenAction action);
     void handleScan(const ScanResult &scan);
@@ -70,6 +71,7 @@ private:
     uint32_t        _lastTouchMs = 0;
     uint32_t        _lastUiRefreshMs = 0;
     String          _statusMessage;
+    String          _lastUiSignature;
     UiTab           _activeTab = UiTab::STORE;
     ProductInfo     _pendingProduct;
     String          _pendingDateDraft;

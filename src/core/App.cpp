@@ -76,8 +76,6 @@ void App::loop() {
     ScanResult scan;
     if (barcode_manager.readScan(scan)) {
         handleScan(scan);
-    } else if (workflow == WorkflowMode::HOME && millis() - _lastUiRefreshMs > 5000) {
-        renderActiveTab();
     }
 
     AppEvent event;
@@ -115,10 +113,32 @@ void App::renderWiFiStatus() {
 
 void App::renderDashboard(const String &message) {
     _activeTab = UiTab::STORE;
-    renderActiveTab(message);
+    renderActiveTab(message, true);
 }
 
-void App::renderActiveTab(const String &message) {
+String App::buildUiSignature() const {
+    return String(static_cast<int>(_activeTab)) + "|" +
+           wifi_manager.getSSID() + "|" +
+           wifi_manager.getIPAddress() + "|" +
+           String(wifi_manager.isConnected()) + "|" +
+           ble_scanner.getStatus() + "|" +
+           ble_scanner.getDeviceAddress() + "|" +
+           ble_scanner.getDeviceName() + "|" +
+           barcode_manager.getLastScan() + "|" +
+           barcode_manager.getLastType() + "|" +
+           String(static_cast<unsigned>(inventory.items().size())) + "|" +
+           _statusMessage;
+}
+
+void App::renderActiveTab(const String &message, bool force) {
+    if (!message.isEmpty()) _statusMessage = message;
+
+    String signature = buildUiSignature();
+    if (!force && signature == _lastUiSignature) {
+        _lastUiRefreshMs = millis();
+        return;
+    }
+
     String wifi_ssid = wifi_manager.getSSID();
     String wifi_ip = wifi_manager.getIPAddress();
     bool wifi_connected = wifi_manager.isConnected();
@@ -126,8 +146,6 @@ void App::renderActiveTab(const String &message) {
     String scannerName = ble_scanner.getDeviceName();
     if (scannerName.isEmpty()) scannerName = ble_scanner.getDeviceAddress();
     if (scannerName.isEmpty()) scannerName = "nicht gekoppelt";
-
-    if (!message.isEmpty()) _statusMessage = message;
 
     display_obj.showHome(
         _activeTab,
@@ -140,6 +158,7 @@ void App::renderActiveTab(const String &message) {
         barcode_manager.getLastType(),
         inventory.items().size(),
         _statusMessage);
+    _lastUiSignature = signature;
     _lastUiRefreshMs = millis();
 }
 

@@ -36,7 +36,12 @@ bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
         return true;
     }
 
-    ApiResponse response = api.get("https://world.openfoodfacts.org/api/v3/product/" + barcode + ".json");
+    String path = "world.openfoodfacts.org/api/v3/product/" + barcode + ".json";
+    ApiResponse response = api.get("https://" + path);
+    if (response.status <= 0) {
+        Logger::warn("OpenFoodFacts", "HTTPS failed, retrying Open Food Facts over HTTP");
+        response = api.get("http://" + path);
+    }
     if (response.status != 200) {
         Logger::warn("OpenFoodFacts", String("HTTP status ") + response.status);
         return false;

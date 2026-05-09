@@ -88,16 +88,21 @@ void BLEScanner::begin() {
 
 void BLEScanner::loadSettings() {
     Preferences prefs;
-    prefs.begin("scanner", false);
+    if (!prefs.begin("scanner", false)) {
+        autoReconnect = true;
+        deviceAddress = "";
+        deviceName = "";
+        return;
+    }
     autoReconnect = prefs.getBool("autoReconnect", true);
-    deviceAddress = prefs.getString("addr", "");
-    deviceName = prefs.getString("name", "");
+    deviceAddress = prefs.isKey("addr") ? prefs.getString("addr", "") : "";
+    deviceName = prefs.isKey("name") ? prefs.getString("name", "") : "";
     prefs.end();
 }
 
 void BLEScanner::saveSettings() {
     Preferences prefs;
-    prefs.begin("scanner", false);
+    if (!prefs.begin("scanner", false)) return;
     prefs.putBool("autoReconnect", autoReconnect);
     prefs.putString("addr", deviceAddress);
     prefs.putString("name", deviceName);
@@ -137,16 +142,19 @@ std::vector<BLEScannerDevice> BLEScanner::scanDevices(uint32_t durationSeconds) 
 
     private:
         std::vector<BLEScannerDevice> &devices;
-    } callbacks(devices);
+    };
 
+    ScanCallbacks *callbacks = new ScanCallbacks(devices);
     BLEScan *scan = BLEDevice::getScan();
-    scan->setAdvertisedDeviceCallbacks(&callbacks, true);
+    scan->setAdvertisedDeviceCallbacks(callbacks, true);
     scan->setActiveScan(true);
     scan->setInterval(80);
     scan->setWindow(40);
     scan->start(durationSeconds, false);
+    scan->stop();
     scan->setAdvertisedDeviceCallbacks(nullptr);
     scan->clearResults();
+    delete callbacks;
     Serial.printf("[BLEScanner] Scan complete: %u candidate(s)\n", static_cast<unsigned>(devices.size()));
     Serial.flush();
     return devices;
@@ -165,6 +173,8 @@ void BLEScanner::requestConnect(const String &address, const String &name) {
     requestedName = name;
     connectRequested = true;
     connecting = true;
+    reconnectPaused = false;
+    reconnectFailures = 0;
     lastError = "";
     Serial.printf("[BLEScanner] Queued connect to %s '%s'\n", address.c_str(), name.c_str());
     Serial.flush();
@@ -183,19 +193,18 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
     Serial.printf("[BLEScanner] Connecting to %s '%s'\n", address.c_str(), name.c_str());
     Serial.flush();
 
-    cleanupClient();
+    cleanupClient(true);
 
-    if (!client) {
-        client = BLEDevice::createClient();
-        client->setClientCallbacks(&clientCallbacks);
-    }
+    client = BLEDevice::createClient();
+    client->setClientCallbacks(&clientCallbacks);
 
     bool ok = client->connect(BLEAddress(address.c_str()));
     if (!ok) {
         lastError = "connect failed";
         Serial.println("[BLEScanner] Connect failed");
         connecting = false;
-        cleanupClient();
+        reconnectFailures++;
+        cleanupClient(true);
         Serial.flush();
         return false;
     }
@@ -212,7 +221,8 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
         lastError = "HID service not found";
         Serial.println("[BLEScanner] HID service not found");
         connecting = false;
-        cleanupClient();
+        reconnectFailures++;
+        cleanupClient(true);
         Serial.flush();
         return false;
     }
@@ -235,7 +245,8 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
             : "HID pairing/encryption failed";
         Serial.printf("[BLEScanner] %s\n", lastError.c_str());
         connecting = false;
-        cleanupClient();
+        reconnectFailures++;
+        cleanupClient(true);
         Serial.flush();
         return false;
     }
@@ -245,6 +256,8 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
     if (!name.isEmpty()) deviceName = name;
     connected = true;
     connecting = false;
+    reconnectPaused = false;
+    reconnectFailures = 0;
     if (persist) saveSettings();
     lastError = "";
     Serial.printf("[BLEScanner] Connected to %s '%s'\n", deviceAddress.c_str(), deviceName.c_str());
@@ -252,11 +265,15 @@ bool BLEScanner::connectInternal(const String &address, const String &name, bool
     return true;
 }
 
-void BLEScanner::cleanupClient() {
+void BLEScanner::cleanupClient(bool releaseClient) {
     if (!client) return;
     if (client->isConnected()) {
         client->disconnect();
         delay(250);
+    }
+    if (releaseClient) {
+        BLEDevice::deleteClient(client);
+        client = nullptr;
     }
 }
 
@@ -273,9 +290,10 @@ void BLEScanner::handleClientDisconnect() {
 void BLEScanner::disconnect() {
     bool wasConnected = connected || connecting || client;
     connectRequested = false;
+    reconnectPaused = true;
     connected = false;
     connecting = false;
-    cleanupClient();
+    cleanupClient(true);
     if (wasConnected) {
         Serial.println("[BLEScanner] Disconnected");
         Serial.flush();
@@ -284,6 +302,10 @@ void BLEScanner::disconnect() {
 
 void BLEScanner::setAutoReconnect(bool enabled) {
     autoReconnect = enabled;
+    if (enabled) {
+        reconnectPaused = false;
+        reconnectFailures = 0;
+    }
     saveSettings();
 }
 
@@ -300,11 +322,18 @@ void BLEScanner::loop() {
         return;
     }
 
-    if (!autoReconnect || connected || connecting || deviceAddress.isEmpty()) return;
+    if (!autoReconnect || reconnectPaused || connected || connecting || deviceAddress.isEmpty()) return;
     uint32_t now = millis();
-    if (now - lastReconnectAttempt < reconnectIntervalMs) return;
+    uint32_t backoff = reconnectIntervalMs;
+    if (reconnectFailures > 0) {
+        uint8_t cappedFailures = reconnectFailures + 1;
+        if (cappedFailures > 6) cappedFailures = 6;
+        backoff = reconnectIntervalMs * cappedFailures;
+    }
+    if (now - lastReconnectAttempt < backoff) return;
     lastReconnectAttempt = now;
-    Serial.printf("[BLEScanner] Auto-reconnect to %s\n", deviceAddress.c_str());
+    Serial.printf("[BLEScanner] Auto-reconnect to %s (attempt %u, next backoff %lus)\n",
+                  deviceAddress.c_str(), reconnectFailures + 1, static_cast<unsigned long>(backoff / 1000));
     Serial.flush();
     connectInternal(deviceAddress, deviceName, false);
 }
@@ -357,6 +386,7 @@ bool BLEScanner::readCode(String &code) {
 String BLEScanner::getStatus() const {
     if (connected) return "connected";
     if (connecting || connectRequested) return "connecting";
+    if (reconnectPaused) return "paused";
     if (!lastError.isEmpty()) return "error";
     if (!deviceAddress.isEmpty() && autoReconnect) return "reconnecting";
     return "disconnected";

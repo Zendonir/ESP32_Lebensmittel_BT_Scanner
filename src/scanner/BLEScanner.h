@@ -41,13 +41,14 @@ private:
     void appendKey(uint8_t keycode, uint8_t modifiers);
     void finishCode();
     bool connectInternal(const String &address, const String &name, bool persist);
-    void cleanupClient();
+    void cleanupClient(bool releaseClient = false);
 
     bool initialized = false;
     bool autoReconnect = true;
     bool connected = false;
     bool connecting = false;
     bool connectRequested = false;
+    bool reconnectPaused = false;
     String deviceAddress;
     String deviceName;
     String requestedAddress;
@@ -57,7 +58,8 @@ private:
     String lastScan;
     String lastError;
     uint32_t lastReconnectAttempt = 0;
-    uint32_t reconnectIntervalMs = 10000;
+    uint32_t reconnectIntervalMs = 30000;
+    uint8_t reconnectFailures = 0;
 };
 
 extern BLEScanner ble_scanner;

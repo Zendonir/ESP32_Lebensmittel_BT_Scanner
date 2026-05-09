@@ -25,13 +25,14 @@ constexpr int KEY_Y = 86;
 constexpr int KEY_W = 66;
 constexpr int KEY_H = 38;
 constexpr int KEY_GAP = 8;
-constexpr uint16_t COLOR_BG = TFT_BLACK;
-constexpr uint16_t COLOR_SURFACE = 0x2104;
-constexpr uint16_t COLOR_SURFACE_2 = 0x3186;
-constexpr uint16_t COLOR_ACCENT = TFT_CYAN;
-constexpr uint16_t COLOR_WARN = TFT_ORANGE;
-constexpr uint16_t COLOR_DANGER = TFT_RED;
-constexpr uint16_t COLOR_OK = TFT_GREEN;
+constexpr uint16_t COLOR_BG = 0x080D;       // near-black blue
+constexpr uint16_t COLOR_HEADER = 0x118F;   // deep slate
+constexpr uint16_t COLOR_SURFACE = 0x2149;  // soft graphite
+constexpr uint16_t COLOR_SURFACE_2 = 0x3A30;
+constexpr uint16_t COLOR_ACCENT = 0x5D9F;    // desaturated cyan
+constexpr uint16_t COLOR_WARN = 0xFDEB;
+constexpr uint16_t COLOR_DANGER = 0xD2AA;
+constexpr uint16_t COLOR_OK = 0x6EEB;
 }
 
 Display display_obj;
@@ -91,16 +92,16 @@ void Display::drawTab(int x, const char *label, bool active, uint16_t accent) {
 }
 
 void Display::drawHeader(UiTab activeTab, const char *title) {
-    tft->fillRect(0, 0, SCREEN_W, HEADER_H, 0x0841);
+    tft->fillRect(0, 0, SCREEN_W, HEADER_H, COLOR_HEADER);
     tft->drawFastHLine(0, HEADER_H - 1, SCREEN_W, COLOR_SURFACE_2);
     drawTab(TAB_X0, "Einlagern", activeTab == UiTab::STORE, COLOR_ACCENT);
-    drawTab(TAB_X0 + (TAB_W + TAB_GAP), "Inventar", activeTab == UiTab::INVENTORY, TFT_GREEN);
-    drawTab(TAB_X0 + 2 * (TAB_W + TAB_GAP), "Scanner", activeTab == UiTab::SCANNER, TFT_YELLOW);
-    drawTab(TAB_X0 + 3 * (TAB_W + TAB_GAP), "System", activeTab == UiTab::SYSTEM, TFT_ORANGE);
+    drawTab(TAB_X0 + (TAB_W + TAB_GAP), "Inventar", activeTab == UiTab::INVENTORY, COLOR_OK);
+    drawTab(TAB_X0 + 2 * (TAB_W + TAB_GAP), "Scanner", activeTab == UiTab::SCANNER, COLOR_WARN);
+    drawTab(TAB_X0 + 3 * (TAB_W + TAB_GAP), "System", activeTab == UiTab::SYSTEM, COLOR_WARN);
 
     if (title != nullptr && strlen(title) > 0) {
         tft->setTextSize(1);
-        tft->setTextColor(TFT_LIGHTGREY, 0x0841);
+        tft->setTextColor(TFT_LIGHTGREY, COLOR_HEADER);
         tft->setCursor(16, HEADER_H + 5);
         tft->print(title);
     }
@@ -140,6 +141,7 @@ void Display::drawButton(int x, int y, int w, int h, const char *label, uint16_t
 void Display::showSplash() {
     if (tft == nullptr) return;
     currentScreen = ScreenKind::MESSAGE;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     tft->fillRoundRect(34, 42, SCREEN_W - 68, 186, 24, COLOR_SURFACE);
     tft->drawRoundRect(34, 42, SCREEN_W - 68, 186, 24, COLOR_ACCENT);
@@ -154,6 +156,7 @@ void Display::showSplash() {
     tft->setTextColor(TFT_LIGHTGREY, COLOR_BG);
     tft->setCursor(158, 258);
     tft->print("System startet...");
+    tft->endWrite();
 }
 
 void Display::showWiFiStatus(const String &ssid, const String &ip, bool connected) {
@@ -183,6 +186,7 @@ void Display::showHome(UiTab activeTab,
                        const String &message) {
     if (tft == nullptr) return;
     currentScreen = activeTab == UiTab::INVENTORY ? ScreenKind::INVENTORY_LIST : ScreenKind::HOME;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     drawHeader(activeTab, activeTab == UiTab::STORE ? "Barcode scannen -> Produktdaten -> MHD -> Menge -> Etikett" : "Status und Verwaltung");
 
@@ -197,7 +201,7 @@ void Display::showHome(UiTab activeTab,
         tft->setCursor(36, 128);
         tft->print(lastType.isEmpty() ? "EAN = einlagern, LebNumber-QR = auslagern" : lastType);
 
-        drawCard(16, 166, 214, 72, "INVENTAR", TFT_GREEN);
+        drawCard(16, 166, 214, 72, "INVENTAR", COLOR_OK);
         tft->setTextSize(3);
         tft->setTextColor(TFT_WHITE, COLOR_SURFACE);
         tft->setCursor(38, 195);
@@ -216,7 +220,7 @@ void Display::showHome(UiTab activeTab,
         tft->setCursor(270, 218);
         tft->print(fitText(scannerName, 22));
     } else if (activeTab == UiTab::INVENTORY) {
-        drawCard(16, 66, 448, 172, "INVENTAR", TFT_GREEN);
+        drawCard(16, 66, 448, 172, "INVENTAR", COLOR_OK);
         tft->setTextSize(3);
         tft->setTextColor(TFT_WHITE, COLOR_SURFACE);
         tft->setCursor(42, 108);
@@ -257,14 +261,16 @@ void Display::showHome(UiTab activeTab,
         tft->print(fitText(message, 56));
     }
 
-    drawButton(BTN_REFRESH_X, BTN_Y, BTN_W, BTN_H, "Refresh", TFT_CYAN);
-    drawButton(BTN_AP_X, BTN_Y, BTN_W, BTN_H, "Setup AP", TFT_ORANGE);
-    drawButton(BTN_SCANNER_X, BTN_Y, BTN_W, BTN_H, "Scanner", TFT_GREEN);
+    drawButton(BTN_REFRESH_X, BTN_Y, BTN_W, BTN_H, "Refresh", COLOR_ACCENT);
+    drawButton(BTN_AP_X, BTN_Y, BTN_W, BTN_H, "Setup AP", COLOR_WARN);
+    drawButton(BTN_SCANNER_X, BTN_Y, BTN_W, BTN_H, "Scanner", COLOR_OK);
+    tft->endWrite();
 }
 
 void Display::showFetchingProduct(const String &barcode) {
     if (tft == nullptr) return;
     currentScreen = ScreenKind::MESSAGE;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     drawHeader(UiTab::STORE, "Produktdaten werden geladen");
     drawCard(44, 88, 392, 150, "OPEN FOOD FACTS", COLOR_ACCENT);
@@ -275,6 +281,7 @@ void Display::showFetchingProduct(const String &barcode) {
     tft->setCursor(74, 166);
     tft->print(fitText(barcode, 28));
     drawButton(168, BTN_Y, 144, BTN_H, "Abbruch", COLOR_DANGER, TFT_WHITE);
+    tft->endWrite();
 }
 
 void Display::drawKeypad(const String &value, bool dateMode) {
@@ -298,6 +305,7 @@ void Display::drawKeypad(const String &value, bool dateMode) {
 void Display::showDateEntry(const ProductInfo &product, const String &dateDraft) {
     if (tft == nullptr) return;
     currentScreen = ScreenKind::DATE_ENTRY;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     drawHeader(UiTab::STORE, "MHD eingeben");
     drawCard(16, 72, 204, 176, "PRODUKT", COLOR_ACCENT);
@@ -315,11 +323,13 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     tft->print("20260514");
     drawKeypad(dateDraft, true);
     drawButton(16, BTN_Y, 132, BTN_H, "Abbruch", COLOR_DANGER, TFT_WHITE);
+    tft->endWrite();
 }
 
 void Display::showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity) {
     if (tft == nullptr) return;
     currentScreen = ScreenKind::QUANTITY_ENTRY;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     drawHeader(UiTab::STORE, "Menge bestaetigen");
     drawCard(16, 72, 448, 82, "PRODUKT", COLOR_ACCENT);
@@ -332,7 +342,7 @@ void Display::showQuantityEntry(const ProductInfo &product, const String &expiry
     tft->setCursor(36, 132);
     tft->print(String("MHD: ") + expiryDate);
 
-    drawCard(96, 174, 288, 64, "MENGE", TFT_GREEN);
+    drawCard(96, 174, 288, 64, "MENGE", COLOR_OK);
     drawButton(112, 190, 56, 38, "-", COLOR_WARN);
     tft->setTextSize(3);
     tft->setTextColor(TFT_WHITE, COLOR_SURFACE);
@@ -341,11 +351,13 @@ void Display::showQuantityEntry(const ProductInfo &product, const String &expiry
     drawButton(312, 190, 56, 38, "+", COLOR_OK);
     drawButton(16, BTN_Y, 132, BTN_H, "Zurueck", COLOR_DANGER, TFT_WHITE);
     drawButton(284, BTN_Y, 180, BTN_H, "Einlagern", COLOR_OK);
+    tft->endWrite();
 }
 
 void Display::showResult(const String &title, const String &message, bool success) {
     if (tft == nullptr) return;
     currentScreen = ScreenKind::MESSAGE;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     drawHeader(UiTab::STORE, success ? "Abgeschlossen" : "Fehler");
     drawCard(42, 88, 396, 148, title.c_str(), success ? COLOR_OK : COLOR_DANGER);
@@ -354,11 +366,13 @@ void Display::showResult(const String &title, const String &message, bool succes
     tft->setCursor(68, 142);
     tft->print(fitText(message, 30));
     drawButton(168, BTN_Y, 144, BTN_H, "OK", COLOR_ACCENT);
+    tft->endWrite();
 }
 
 void Display::showInventoryList(const std::vector<InventoryItem> &items) {
     if (tft == nullptr) return;
     currentScreen = ScreenKind::INVENTORY_LIST;
+    tft->startWrite();
     tft->fillScreen(COLOR_BG);
     drawHeader(UiTab::INVENTORY, "Gespeicherte Lebensmittel");
     int y = 62;
@@ -378,13 +392,14 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
         y += 42;
     }
     if (items.empty()) {
-        drawCard(16, 88, 448, 112, "INVENTAR", TFT_GREEN);
+        drawCard(16, 88, 448, 112, "INVENTAR", COLOR_OK);
         tft->setTextSize(2);
         tft->setTextColor(TFT_WHITE, COLOR_SURFACE);
         tft->setCursor(44, 132);
         tft->print("Noch keine Artikel eingelagert.");
     }
     drawButton(16, BTN_Y, 132, BTN_H, "Zurueck", COLOR_ACCENT);
+    tft->endWrite();
 }
 
 OnscreenAction Display::hitTest(uint16_t x, uint16_t y) const {
