@@ -7,6 +7,23 @@
 #include <Update.h>
 #include <WiFi.h>
 #include <esp_system.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+/* ── Background WiFi scan state ─────────────────────────────── */
+static volatile bool _scanRunning = false;
+static volatile bool _scanReady   = false;
+
+static void wifiScanTask(void *) {
+    // Blocking scan: 200 ms per channel, show hidden SSIDs.
+    // Runs in its own task so the web server is never blocked.
+    WiFi.scanDelete();
+    WiFi.scanNetworks(/*async=*/false, /*hidden=*/true,
+                      /*passive=*/false, /*ms_per_chan=*/200);
+    _scanReady   = true;
+    _scanRunning = false;
+    vTaskDelete(nullptr);
+}
 
 WebInterface::WebInterface(uint16_t port) : _server(port) {}
 
@@ -455,31 +472,27 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/wifi",    HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
 
-    // Async WiFi scan — start
-    static unsigned long _scanStartedAt = 0;
-    _server.on("/api/wifi/scan-start", HTTP_GET, [&_scanStartedAt](AsyncWebServerRequest *req) {
-        WiFi.scanDelete();                // clear any leftover results first
-        WiFi.scanNetworks(true, true);    // async, include hidden SSIDs
-        _scanStartedAt = millis();
+    // WiFi scan — start (kicks off a background FreeRTOS task so the web
+    // server is never blocked; the blocking scan is far more reliable than
+    // WiFi.scanNetworks(async=true) which can return WIFI_SCAN_FAILED
+    // spuriously when called from an AsyncWebServer handler)
+    _server.on("/api/wifi/scan-start", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (!_scanRunning) {
+            _scanRunning = true;
+            _scanReady   = false;
+            xTaskCreate(wifiScanTask, "wifi_scan", 4096, nullptr, 1, nullptr);
+        }
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
-    // Async WiFi scan — poll result
-    _server.on("/api/wifi/scan-result", HTTP_GET, [&_scanStartedAt](AsyncWebServerRequest *req) {
-        int n = WiFi.scanComplete();
-
-        // WIFI_SCAN_RUNNING = -1: scan in progress
-        // WIFI_SCAN_FAILED  = -2: not started, or failed; treat as "still starting"
-        //                         for the first 4 s to handle the window between
-        //                         scanNetworks() and the driver registering the request
-        if (n == WIFI_SCAN_RUNNING ||
-            (n == WIFI_SCAN_FAILED && _scanStartedAt && millis() - _scanStartedAt < 4000)) {
+    // WiFi scan — poll result
+    _server.on("/api/wifi/scan-result", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (!_scanReady) {
             req->send(200, "application/json", "{\"scanning\":true,\"networks\":[]}");
             return;
         }
 
-        // Scan finished (n >= 0) or genuinely failed after grace period
-        _scanStartedAt = 0;
+        int n = WiFi.scanComplete();
         JsonDocument doc;
         doc["scanning"] = false;
         JsonArray arr = doc["networks"].to<JsonArray>();
@@ -490,6 +503,8 @@ void WebInterface::registerApiRoutes() {
             o["open"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
         }
         WiFi.scanDelete();
+        _scanReady = false;
+
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);
