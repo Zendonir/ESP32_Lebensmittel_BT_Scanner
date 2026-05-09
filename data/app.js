@@ -1360,7 +1360,8 @@ Pages.scanner = {
       const cfg = await API.get('/api/scanner-config');
       document.getElementById('scanAutoReconnect').checked = cfg.autoReconnect !== false;
       document.getElementById('scanBleDevice').textContent = cfg.bleDevice || cfg.bleAddress || '—';
-      document.getElementById('scanBleStatus').textContent = cfg.bleStatus || (cfg.bleConnected ? 'connected' : 'disconnected');
+      const status = cfg.bleLastError ? `${cfg.bleStatus}: ${cfg.bleLastError}` : (cfg.bleStatus || (cfg.bleConnected ? 'connected' : 'disconnected'));
+      document.getElementById('scanBleStatus').textContent = status;
       document.getElementById('scanLastResult').textContent = cfg.lastScan || '—';
     } catch(e) {
       Toast.error('Scanner: ' + e.message);
@@ -1406,11 +1407,37 @@ Pages.scanner = {
     if (!device) { Toast.warn('Bluetooth-Gerät nicht mehr in der Liste'); return; }
     try {
       await API.post('/api/scanner/ble-connect', { address: device.address, name: device.name || '' });
-      Toast.success('Bluetooth-Scanner verbunden');
-      setTimeout(() => this.load(), 1000);
+      Toast.info('Bluetooth-Verbindung wird hergestellt…');
+      this.pollConnectionStatus();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
+  },
+
+  pollConnectionStatus() {
+    if (this._pollTimer) clearInterval(this._pollTimer);
+    let attempts = 0;
+    this._pollTimer = setInterval(async () => {
+      attempts++;
+      try {
+        const cfg = await API.get('/api/scanner-config');
+        document.getElementById('scanBleStatus').textContent = cfg.bleStatus || '—';
+        document.getElementById('scanBleDevice').textContent = cfg.bleDevice || cfg.bleAddress || '—';
+        if (cfg.bleConnected) {
+          clearInterval(this._pollTimer);
+          this._pollTimer = null;
+          Toast.success('Bluetooth-Scanner verbunden');
+        } else if (cfg.bleStatus === 'error') {
+          clearInterval(this._pollTimer);
+          this._pollTimer = null;
+          Toast.error('Bluetooth-Verbindung fehlgeschlagen: ' + (cfg.bleLastError || 'unbekannter Fehler'));
+        } else if (attempts >= 20) {
+          clearInterval(this._pollTimer);
+          this._pollTimer = null;
+          Toast.warn('Bluetooth-Verbindung dauert länger als erwartet');
+        }
+      } catch {}
+    }, 1000);
   },
 
   async bleDisconnect() {

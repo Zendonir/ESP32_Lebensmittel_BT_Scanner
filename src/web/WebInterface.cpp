@@ -621,6 +621,8 @@ void WebInterface::registerApiRoutes() {
             : ble_scanner.getDeviceName();
         doc["bleStatus"] = ble_scanner.getStatus();
         doc["bleConnected"] = ble_scanner.isConnected();
+        doc["bleConnecting"] = ble_scanner.isConnecting();
+        doc["bleLastError"] = ble_scanner.getLastError();
         doc["lastScan"] = barcode_manager.getLastScan().isEmpty()
             ? ble_scanner.getLastScan()
             : barcode_manager.getLastScan();
@@ -789,15 +791,16 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"error\":\"address required\"}");
                 return;
             }
-            bool ok = ble_scanner.connectToDevice(address, name);
+            ble_scanner.requestConnect(address, name);
             JsonDocument doc;
-            doc["ok"] = ok;
+            doc["ok"] = true;
+            doc["queued"] = true;
             doc["status"] = ble_scanner.getStatus();
-            doc["device"] = ble_scanner.getDeviceName();
-            doc["address"] = ble_scanner.getDeviceAddress();
+            doc["device"] = name;
+            doc["address"] = address;
             String body;
             serializeJson(doc, body);
-            req->send(ok ? 200 : 500, "application/json", body);
+            req->send(202, "application/json", body);
         },
         nullptr, bodyCollect);
     _server.on("/api/scanner/ble-disconnect", HTTP_POST, [](AsyncWebServerRequest *req) {
