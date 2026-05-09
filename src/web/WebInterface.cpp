@@ -6,6 +6,7 @@
 #include <LittleFS.h>
 #include <Update.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -13,13 +14,23 @@
 /* ── Background WiFi scan state ─────────────────────────────── */
 static volatile bool _scanRunning = false;
 static volatile bool _scanReady   = false;
+static volatile int  _scanCount   = 0;
 
 static void wifiScanTask(void *) {
-    // Blocking scan: 200 ms per channel, show hidden SSIDs.
-    // Runs in its own task so the web server is never blocked.
+    Logger::info("WiFiScan", "Task started");
+
+    // Stop any previous scan and free its results before starting a new one.
+    // esp_wifi_scan_stop() resets _scanStarted in the driver; without this,
+    // scanNetworks() immediately returns WIFI_SCAN_FAILED if a prior scan
+    // was never cleanly finished.
+    esp_wifi_scan_stop();
     WiFi.scanDelete();
-    WiFi.scanNetworks(/*async=*/false, /*hidden=*/true,
-                      /*passive=*/false, /*ms_per_chan=*/200);
+
+    Logger::info("WiFiScan", "Starting scan…");
+    int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/false);
+    Logger::info("WiFiScan", String("Done: ") + n + " networks found");
+
+    _scanCount   = (n > 0) ? n : 0;
     _scanReady   = true;
     _scanRunning = false;
     vTaskDelete(nullptr);
@@ -472,15 +483,21 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/wifi",    HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
 
-    // WiFi scan — start (kicks off a background FreeRTOS task so the web
-    // server is never blocked; the blocking scan is far more reliable than
-    // WiFi.scanNetworks(async=true) which can return WIFI_SCAN_FAILED
-    // spuriously when called from an AsyncWebServer handler)
+    // WiFi scan — start
     _server.on("/api/wifi/scan-start", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (!_scanRunning) {
             _scanRunning = true;
             _scanReady   = false;
-            xTaskCreate(wifiScanTask, "wifi_scan", 4096, nullptr, 1, nullptr);
+            _scanCount   = 0;
+            // Pin to core 0 (WiFi driver core), 8 KB stack
+            BaseType_t ok = xTaskCreatePinnedToCore(
+                wifiScanTask, "wifi_scan", 8192, nullptr, 1, nullptr, 0);
+            if (ok != pdPASS) {
+                Logger::error("WiFiScan", "xTaskCreate failed");
+                _scanRunning = false;
+                req->send(500, "application/json", "{\"error\":\"scan task failed\"}");
+                return;
+            }
         }
         req->send(200, "application/json", "{\"ok\":true}");
     });
@@ -492,7 +509,9 @@ void WebInterface::registerApiRoutes() {
             return;
         }
 
-        int n = WiFi.scanComplete();
+        // Use the count captured by the task (avoids scanComplete() ambiguity
+        // after a blocking scan run in a separate task/core)
+        int n = _scanCount;
         JsonDocument doc;
         doc["scanning"] = false;
         JsonArray arr = doc["networks"].to<JsonArray>();
@@ -504,6 +523,7 @@ void WebInterface::registerApiRoutes() {
         }
         WiFi.scanDelete();
         _scanReady = false;
+        _scanCount = 0;
 
         String body;
         serializeJson(doc, body);

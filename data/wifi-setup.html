@@ -265,16 +265,24 @@ async function startScan() {
 
   try {
     // Trigger scan
-    await fetch('/api/wifi/scan-start');
-    // Poll until done
-    for (let attempt = 0; attempt < 12; attempt++) {
+    const sr = await fetch('/api/wifi/scan-start');
+    if (!sr.ok) throw new Error('scan-start fehlgeschlagen');
+
+    // Poll until done (max 20 s)
+    let found = false;
+    for (let attempt = 0; attempt < 13; attempt++) {
       await sleep(1500);
-      const r   = await fetch('/api/wifi/scan-result');
+      const r    = await fetch('/api/wifi/scan-result');
       const data = await r.json();
       if (!data.scanning) {
         renderNetworks(data.networks || []);
+        found = true;
         break;
       }
+    }
+    if (!found) {
+      document.getElementById('netList').innerHTML =
+        '<div class="empty">Timeout – Scan hat nicht geantwortet. Erneut versuchen.</div>';
     }
   } catch (e) {
     document.getElementById('netList').innerHTML = `<div class="empty">Fehler: ${e.message}</div>`;
