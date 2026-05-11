@@ -3,6 +3,8 @@
 #include "../storage/JsonStorage.h"
 #include "wifi_manager.h"
 #include "../scanner/BarcodeManager.h"
+#include "../printer/PrinterManager.h"
+#include "config.h"
 
 #include <LittleFS.h>
 #include <Update.h>
@@ -26,6 +28,7 @@ static int _scanResult = WIFI_SCAN_RUNNING;
 static uint32_t _scanUpdatedAt = 0;
 static String _scanSource;
 static WiFiScanEntry _scanCache[WIFI_SCAN_CACHE_MAX];
+static bool loadJson(const char *path, JsonDocument &doc, const char *fallback);
 
 static void resetScanCache() {
     for (int i = 0; i < WIFI_SCAN_CACHE_MAX; i++) {
@@ -122,6 +125,14 @@ static void sendScanResult(AsyncWebServerRequest *req) {
 WebInterface::WebInterface(uint16_t port) : _server(port) {}
 
 void WebInterface::begin() {
+    if (_printer) {
+        JsonDocument printerConfig;
+        if (loadJson("/printer_config.json", printerConfig, "{}")) {
+            uint32_t baud = printerConfig["baudrate"] | 0;
+            if (baud > 0) _printer->configure(baud);
+        }
+    }
+
     registerStaticRoutes();
     registerApiRoutes();
     _server.begin();
@@ -607,8 +618,32 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/font-config",   HTTP_GET,  cfgGet("/font_config.json"));
     _server.on("/api/font-config",   HTTP_POST, cfgPost("/font_config.json"), nullptr, bodyCollect);
 
-    _server.on("/api/printer-config",HTTP_GET,  cfgGet("/printer_config.json"));
-    _server.on("/api/printer-config",HTTP_POST, cfgPost("/printer_config.json"), nullptr, bodyCollect);
+    _server.on("/api/printer-config", HTTP_GET, [this](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        loadJson("/printer_config.json", doc, "{}");
+        if (!doc["baudrate"].is<uint32_t>()) doc["baudrate"] = _printer ? _printer->baud() : UART_BAUD;
+        if (!doc["labelLen"].is<int>()) doc["labelLen"] = 40;
+        if (!doc["gap"].is<int>()) doc["gap"] = 3;
+        if (!doc["feedOffset"].is<int>()) doc["feedOffset"] = 0;
+        doc["ready"] = _printer && _printer->isReady();
+        doc["txPin"] = UART_TX;
+        doc["rxPin"] = UART_RX;
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/printer-config", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            JsonDocument incoming;
+            if (deserializeJson(incoming, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+                return;
+            }
+            mergePost(req, "/printer_config.json", "{}");
+            uint32_t baud = incoming["baudrate"] | UART_BAUD;
+            if (_printer) _printer->configure(baud);
+        },
+        nullptr, bodyCollect);
 
     _server.on("/api/scanner-config", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
@@ -759,7 +794,28 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/server-sync/test",     HTTP_POST, stub("{\"ok\":false,\"message\":\"Sync nicht konfiguriert\"}"));
     _server.on("/api/server-sync/queue",    HTTP_GET,  stub("[]"));
     _server.on("/api/server-sync/queue/clear", HTTP_POST, stub("{\"ok\":true}"));
-    _server.on("/api/test-print",           HTTP_POST, stub("{\"ok\":true,\"message\":\"Testdruck gesendet\"}"));
+    _server.on("/api/test-print", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            if (!_printer) {
+                req->send(500, "application/json", "{\"ok\":false,\"error\":\"printer not initialized\"}");
+                return;
+            }
+
+            JsonDocument inp;
+            deserializeJson(inp, _body);
+            String type = inp["type"] | "text";
+            bool printed = _printer->printTestPage(type == "qr");
+
+            JsonDocument doc;
+            doc["ok"] = printed;
+            doc["ready"] = _printer->isReady();
+            doc["baudrate"] = _printer->baud();
+            doc["message"] = printed ? "Testdruck gesendet" : "Drucker nicht bereit";
+            String body;
+            serializeJson(doc, body);
+            req->send(printed ? 200 : 503, "application/json", body);
+        },
+        nullptr, bodyCollect);
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
     _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));

@@ -286,7 +286,6 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::CANCEL:
             workflow = WorkflowMode::HOME;
             state.setState(AppState::MAIN);
-            resumeScannerAfterLookup();
             renderDashboard("Vorgang abgebrochen");
             break;
         default:
@@ -320,7 +319,6 @@ void App::handleScan(const ScanResult &scan) {
 }
 
 void App::startProductLookup(const String &barcode) {
-    pauseScannerForLookup();
     _pendingBarcode = barcode;
     _pendingProduct = ProductInfo();
     _pendingDateDraft = "";
@@ -329,24 +327,6 @@ void App::startProductLookup(const String &barcode) {
     workflow = WorkflowMode::FETCHING_PRODUCT;
     state.setState(AppState::FETCHING);
     display_obj.showFetchingProduct(barcode);
-}
-
-void App::pauseScannerForLookup() {
-    _resumeScannerAfterLookup = false;
-    _resumeScannerAddress = ble_scanner.getDeviceAddress();
-    _resumeScannerName = ble_scanner.getDeviceName();
-    if (ble_scanner.isConnected() || ble_scanner.isConnecting()) {
-        Logger::info("Scanner", "Temporarily disconnecting BLE scanner for product lookup memory");
-        ble_scanner.disconnect();
-        _resumeScannerAfterLookup = !_resumeScannerAddress.isEmpty();
-    }
-}
-
-void App::resumeScannerAfterLookup() {
-    if (!_resumeScannerAfterLookup || _resumeScannerAddress.isEmpty()) return;
-    Logger::info("Scanner", "Reconnecting BLE scanner after product lookup");
-    ble_scanner.requestConnect(_resumeScannerAddress, _resumeScannerName);
-    _resumeScannerAfterLookup = false;
 }
 
 void App::processWorkflow() {
@@ -364,7 +344,6 @@ void App::processWorkflow() {
     workflow = WorkflowMode::ENTER_DATE;
     state.setState(AppState::ENTER_DATE);
     display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
-    resumeScannerAfterLookup();
     _lastUiRefreshMs = millis();
 }
 
@@ -402,7 +381,6 @@ bool App::finishStorageWorkflow() {
         : "Inventar konnte nicht gespeichert werden";
     display_obj.showResult(_resultTitle, _resultMessage, stored);
     audio_obj.playTone(stored ? 1800 : 240, stored ? 100 : 260);
-    resumeScannerAfterLookup();
     return stored;
 }
 
@@ -431,6 +409,7 @@ void App::initWebServer() {
     // ───────────────────────────────────────────────────────────────────────
 
     Logger::info("Web", "Starting web server on port 80");
+    web.setPrinterManager(&printer);
     web.begin();
 
     _dns.setErrorReplyCode(DNSReplyCode::NoError);

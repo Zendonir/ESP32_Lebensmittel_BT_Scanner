@@ -7,6 +7,7 @@
 // Forward declarations – the web layer uses these managers via pointer; all are optional.
 class InventoryManager;
 class JsonStorage;
+class PrinterManager;
 
 class WebInterface {
 public:
@@ -15,6 +16,7 @@ public:
     // Inject optional manager references before calling begin().
     void setInventoryManager(InventoryManager *mgr) { _invMgr = mgr; }
     void setJsonStorage(JsonStorage *storage)        { _storage = storage; }
+    void setPrinterManager(PrinterManager *printer)  { _printer = printer; }
 
     void begin();
     void primeWiFiScanCache(int scanResult);
@@ -23,6 +25,7 @@ private:
     AsyncWebServer   _server;
     InventoryManager *_invMgr  = nullptr;
     JsonStorage      *_storage = nullptr;
+    PrinterManager   *_printer = nullptr;
 
     void registerStaticRoutes();
     void registerApiRoutes();

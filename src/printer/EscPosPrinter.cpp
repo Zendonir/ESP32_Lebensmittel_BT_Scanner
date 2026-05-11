@@ -55,3 +55,8 @@ void EscPosPrinter::qrCode(const String &data) {
     printerSerial.write(0x1D); printerSerial.write('('); printerSerial.write('k');
     printerSerial.write(3); printerSerial.write(0); printerSerial.write(49); printerSerial.write(81); printerSerial.write(48);
 }
+
+void EscPosPrinter::flush() {
+    if (!ready) return;
+    printerSerial.flush();
+}

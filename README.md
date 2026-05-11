@@ -75,8 +75,8 @@ help        - Help
 
 - PlatformIO
 - ESP32 Arduino Framework
-- LVGL 9.2.0+
-- TFT_eSPI 2.6.0+
+- TFT_eSPI 2.5.43+
+- LVGL ist aktuell noch nicht eingebunden; die Firmware rendert direkt mit TFT_eSPI.
 
 ## Lizenz
 

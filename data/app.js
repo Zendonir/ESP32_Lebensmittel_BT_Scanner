@@ -1301,14 +1301,14 @@ Pages.printer = {
   async load() {
     try {
       const cfg = await API.get('/api/printer-config');
-      document.getElementById('prBaud').value       = cfg.baudrate  || 115200;
+      document.getElementById('prBaud').value       = cfg.baudrate  || 9600;
       document.getElementById('prLabelLen').value   = cfg.labelLen  || 40;
       document.getElementById('prGap').value        = cfg.gap       || 3;
       document.getElementById('prFeedOffset').value = cfg.feedOffset|| 0;
       document.getElementById('prCutter').checked   = !!cfg.cutter;
       document.getElementById('prBackfeed').checked = !!cfg.backfeed;
       document.getElementById('printerStatus').innerHTML =
-        `<span class="status-dot"></span><span>Status unbekannt</span>`;
+        `<span class="status-dot ${cfg.ready ? 'ok' : 'warn'}"></span><span>${cfg.ready ? 'Bereit' : 'Nicht bereit'} · TTL TX ${cfg.txPin ?? '-'} / RX ${cfg.rxPin ?? '-'} · ${cfg.baudrate || 9600} Baud</span>`;
     } catch(e) {
       Toast.error('Drucker: ' + e.message);
     }
@@ -1333,8 +1333,8 @@ Pages.printer = {
 
   async testPrint() {
     try {
-      await API.post('/api/test-print', { type: 'text' });
-      Toast.success('Testdruck gesendet');
+      const res = await API.post('/api/test-print', { type: 'text' });
+      Toast.success(res.message || 'Testdruck gesendet');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
@@ -1342,8 +1342,8 @@ Pages.printer = {
 
   async testQr() {
     try {
-      await API.post('/api/test-print', { type: 'qr' });
-      Toast.success('QR-Testdruck gesendet');
+      const res = await API.post('/api/test-print', { type: 'qr' });
+      Toast.success(res.message || 'QR-Testdruck gesendet');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }

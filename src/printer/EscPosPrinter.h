@@ -13,6 +13,7 @@ public:
     void println(const String &text);
     void feed(uint8_t lines = 3);
     void qrCode(const String &data);
+    void flush();
 
 private:
     HardwareSerial printerSerial = HardwareSerial(1);
