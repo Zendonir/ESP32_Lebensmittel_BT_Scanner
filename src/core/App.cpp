@@ -296,6 +296,13 @@ void App::processOnscreenAction(OnscreenAction action) {
 
 void App::handleScan(const ScanResult &scan) {
     Logger::info("Scanner", String("Barcode: ") + scan.code);
+
+    if (workflow != WorkflowMode::HOME && workflow != WorkflowMode::RESULT) {
+        Logger::warn("Scanner", "Ignoring scan while product workflow is active");
+        audio_obj.playTone(250, 120);
+        return;
+    }
+
     audio_obj.playTone(1800, 80);
 
     if (scan.type == BarcodeType::LABEL) {
@@ -325,21 +332,21 @@ void App::startProductLookup(const String &barcode) {
 }
 
 void App::pauseScannerForLookup() {
-    _resumeScannerAfterWorkflow = false;
+    _resumeScannerAfterLookup = false;
     _resumeScannerAddress = ble_scanner.getDeviceAddress();
     _resumeScannerName = ble_scanner.getDeviceName();
     if (ble_scanner.isConnected() || ble_scanner.isConnecting()) {
         Logger::info("Scanner", "Temporarily disconnecting BLE scanner for product lookup memory");
         ble_scanner.disconnect();
-        _resumeScannerAfterWorkflow = !_resumeScannerAddress.isEmpty();
+        _resumeScannerAfterLookup = !_resumeScannerAddress.isEmpty();
     }
 }
 
 void App::resumeScannerAfterLookup() {
-    if (!_resumeScannerAfterWorkflow || _resumeScannerAddress.isEmpty()) return;
-    Logger::info("Scanner", "Reconnecting BLE scanner after product workflow");
+    if (!_resumeScannerAfterLookup || _resumeScannerAddress.isEmpty()) return;
+    Logger::info("Scanner", "Reconnecting BLE scanner after product lookup");
     ble_scanner.requestConnect(_resumeScannerAddress, _resumeScannerName);
-    _resumeScannerAfterWorkflow = false;
+    _resumeScannerAfterLookup = false;
 }
 
 void App::processWorkflow() {
@@ -357,6 +364,7 @@ void App::processWorkflow() {
     workflow = WorkflowMode::ENTER_DATE;
     state.setState(AppState::ENTER_DATE);
     display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+    resumeScannerAfterLookup();
     _lastUiRefreshMs = millis();
 }
 
