@@ -61,8 +61,8 @@ static lv_obj_t* _lbl_hdr_wifi;
 // Tab bar buttons + indicators
 static lv_obj_t* _btn_tab[4];
 static lv_obj_t* _lbl_tab[4];
-static const char* _tab_labels[4] = { LV_SYMBOL_HOME, LV_SYMBOL_LIST,
-                                       LV_SYMBOL_SCAN,  LV_SYMBOL_SETTINGS };
+static const char* _tab_labels[4] = { LV_SYMBOL_HOME,     LV_SYMBOL_LIST,
+                                       LV_SYMBOL_EYE_OPEN, LV_SYMBOL_SETTINGS };
 static const char* _tab_names[4]  = { "Home", "Inventar", "Scan", "System" };
 
 // Content panels
