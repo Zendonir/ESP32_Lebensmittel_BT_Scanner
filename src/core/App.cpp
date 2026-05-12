@@ -61,6 +61,8 @@ void App::begin() {
 }
 
 void App::loop() {
+    display_obj.tick();   // LVGL timer/renderer – must be called every iteration
+
     if (_dnsRunning) _dns.processNextRequest();
 
     if (Serial.available()) {

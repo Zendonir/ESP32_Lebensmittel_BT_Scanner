@@ -2,7 +2,6 @@
 #define DISPLAY_H
 
 #include <Arduino.h>
-#include <TFT_eSPI.h>
 #include <vector>
 #include "config.h"
 
@@ -47,9 +46,13 @@ class Display {
 public:
     Display();
     ~Display();
+
     void init();
-    void drawText(int x, int y, const char *text, uint16_t color = TFT_WHITE);
-    void fillScreen(uint16_t color);
+
+    /* Called every loop() iteration – drives the LVGL timer/renderer */
+    void tick();
+
+    /* Screen transitions (same API as before, now backed by LVGL) */
     void showSplash();
     void showWiFiStatus(const String &ssid, const String &ip, bool connected);
     void showDashboard(const String &ssid,
@@ -75,27 +78,18 @@ public:
     void showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity);
     void showResult(const String &title, const String &message, bool success);
     void showInventoryList(const std::vector<InventoryItem> &items);
+
+    /* hitTest() – returns (and clears) the most recent action queued by
+       LVGL button callbacks.  x/y are unused; LVGL resolves them internally. */
     OnscreenAction hitTest(uint16_t x, uint16_t y) const;
+
+    /* Legacy helpers kept for compatibility */
+    void drawText(int x, int y, const char *text, uint16_t color = 0xFFFF);
+    void fillScreen(uint16_t color);
     void clear();
 
 private:
-    enum class ScreenKind {
-        HOME,
-        DATE_ENTRY,
-        QUANTITY_ENTRY,
-        MESSAGE,
-        INVENTORY_LIST
-    } currentScreen = ScreenKind::HOME;
-
-    TFT_eSPI *tft;
-
-    void drawHeader(UiTab activeTab, const char *title);
-    void drawTab(int x, const char *label, bool active, uint16_t accent);
-    void drawButton(int x, int y, int w, int h, const char *label, uint16_t color, uint16_t textColor = TFT_BLACK);
-    void drawCard(int x, int y, int w, int h, const char *title, uint16_t accent);
-    void drawStatusPill(int x, int y, const char *label, uint16_t color);
-    void drawKeypad(const String &value, bool dateMode);
-    String fitText(const String &text, uint8_t maxChars) const;
+    bool _initialized = false;
 };
 
 extern Display display_obj;
