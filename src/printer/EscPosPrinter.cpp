@@ -32,6 +32,42 @@ void EscPosPrinter::setLarge(bool enabled) {
     printerSerial.write(enabled ? 0x11 : 0x00);
 }
 
+void EscPosPrinter::setUnderline(bool enabled) {
+    if (!ready) return;
+    printerSerial.write(0x1B);
+    printerSerial.write('-');
+    printerSerial.write(enabled ? 1 : 0);
+}
+
+void EscPosPrinter::setAlign(uint8_t align) {
+    if (!ready) return;
+    printerSerial.write(0x1B);
+    printerSerial.write('a');
+    printerSerial.write(align & 0x03);
+}
+
+size_t EscPosPrinter::printLabelRow(const String &label, const String &value,
+                                    uint8_t paperChars) {
+    if (!ready) return 0;
+    // Left-align the label column (bold), right part is the value (underlined).
+    // Pad so label+value fit exactly in paperChars; truncate value if needed.
+    size_t labelLen = label.length();
+    size_t available = (paperChars > labelLen + 1) ? (paperChars - labelLen) : 1;
+    String val = value;
+    if (val.length() > available) val = val.substring(0, available);
+    // Pad value to fill remaining width (underline extends to edge).
+    while (val.length() < available) val += ' ';
+
+    setBold(true);
+    printerSerial.print(label);
+    setBold(false);
+    setUnderline(true);
+    size_t written = labelLen + printerSerial.print(val);
+    setUnderline(false);
+    written += printerSerial.write('\n');
+    return written;
+}
+
 size_t EscPosPrinter::println(const String &text) {
     if (!ready) return 0;
     size_t written = printerSerial.print(text);

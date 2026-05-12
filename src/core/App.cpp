@@ -253,7 +253,7 @@ char App::digitForAction(OnscreenAction action) const {
 void App::processOnscreenAction(OnscreenAction action) {
     char digit = digitForAction(action);
     if (digit && workflow == WorkflowMode::ENTER_DATE) {
-        if (_pendingDateDraft.length() < 8) _pendingDateDraft += digit;
+        if (_pendingDateDraft.length() < 6) _pendingDateDraft += digit;
         display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
         return;
     }
@@ -403,12 +403,14 @@ void App::processWorkflow() {
 }
 
 bool App::formatDateDraft(String &formatted) const {
-    if (_pendingDateDraft.length() != 8) return false;
-    int year = _pendingDateDraft.substring(0, 4).toInt();
-    int month = _pendingDateDraft.substring(4, 6).toInt();
-    int day = _pendingDateDraft.substring(6, 8).toInt();
-    if (year < 2024 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return false;
-    formatted = _pendingDateDraft.substring(0, 4) + "-" + _pendingDateDraft.substring(4, 6) + "-" + _pendingDateDraft.substring(6, 8);
+    if (_pendingDateDraft.length() != 6) return false;
+    int day   = _pendingDateDraft.substring(0, 2).toInt();
+    int month = _pendingDateDraft.substring(2, 4).toInt();
+    int year  = 2000 + _pendingDateDraft.substring(4, 6).toInt();
+    if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2024 || year > 2099) return false;
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%02d.%02d.%04d", day, month, year);
+    formatted = buf;
     return true;
 }
 

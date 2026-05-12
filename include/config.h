@@ -68,4 +68,10 @@
 #define AP_SSID             "Lebensmittel-Scanner"
 #define AP_PASSWORD         "12345678"
 
+// ============ LABEL / PRINTER ============
+// Characters per line (32 = 58 mm paper, 48 = 80 mm paper)
+#define LABEL_PAPER_CHARS   32
+// Household name printed on every label
+#define LABEL_HOUSEHOLD     "Haushalt Müller"
+
 #endif

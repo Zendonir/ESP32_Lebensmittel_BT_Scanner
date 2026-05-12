@@ -551,7 +551,7 @@ static void build_overlay_dateentry() {
     _dlg_date = make_dialog(440, 200);
 
     lv_obj_t* ttl = lv_label_create(_dlg_date);
-    lv_label_set_text(ttl, "MHD eingeben  (JJJJMMTT)");
+    lv_label_set_text(ttl, "MHD eingeben  (TT MM JJ)");
     lv_obj_set_style_text_font(ttl, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(ttl, C_ACCENT, 0);
     lv_obj_align(ttl, LV_ALIGN_TOP_MID, 0, 0);
@@ -577,7 +577,7 @@ static void build_overlay_dateentry() {
     lv_obj_clear_flag(draft_box, LV_OBJ_FLAG_SCROLLABLE);
 
     _lbl_date_draft = lv_label_create(draft_box);
-    lv_label_set_text(_lbl_date_draft, "________");
+    lv_label_set_text(_lbl_date_draft, "______");
     lv_obj_set_style_text_font(_lbl_date_draft, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(_lbl_date_draft, C_ACCENT, 0);
     lv_obj_center(_lbl_date_draft);
@@ -1086,13 +1086,12 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     if (!_initialized) return;
     lv_label_set_text(_lbl_date_product, product.name.c_str());
 
-    // Format draft with placeholder underscores
-    String display_draft = dateDraft;
-    while (display_draft.length() < 8) display_draft += '_';
-    // Insert separators: JJJJ-MM-TT
-    String formatted = display_draft.substring(0, 4) + "-"
-                     + display_draft.substring(4, 6) + "-"
-                     + display_draft.substring(6, 8);
+    // Format draft "DDMMJJ" with placeholders: "31.12.25"
+    String d = dateDraft;
+    while (d.length() < 6) d += '_';
+    String formatted = d.substring(0, 2) + "."
+                     + d.substring(2, 4) + "."
+                     + d.substring(4, 6);
     lv_label_set_text(_lbl_date_draft, formatted.c_str());
     show_overlay(_dlg_date);
 }
