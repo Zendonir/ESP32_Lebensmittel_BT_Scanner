@@ -148,9 +148,9 @@ void WiFiManager::connectToWiFi(const char *ssid, const char *password) {
 }
 
 int WiFiManager::scanNetworks(bool includeHidden) {
-    WiFi.mode(WIFI_MODE_APSTA);
+    // Do NOT force WIFI_MODE_APSTA here – that would re-enable the AP even
+    // after it was intentionally stopped.  Scanning works in STA mode too.
     WiFi.setSleep(false);
-    delay(100);
 
     Serial.printf("[WiFiScan] mode=%d status=%d AP-IP=%s STA-IP=%s\n",
                   WiFi.getMode(), WiFi.status(),
