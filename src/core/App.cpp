@@ -25,11 +25,14 @@ void App::begin() {
 
     initBacklight();
 
+    // I2C must be up before display init because LCD reset is driven by the
+    // TCA9554 I/O expander (address 0x20), not a direct ESP32-S3 GPIO.
+    initI2C();
+    resetLCDViaTCA9554();
+
     Logger::info("Display", "Initializing ST7796");
     display_obj.init();
     display_obj.showSplash();
-
-    initI2C();
 
     Logger::info("Touch", "Initializing FT6336");
     touch_obj.init(&i2c_bus);
@@ -118,6 +121,31 @@ void App::initBacklight() {
 void App::initI2C() {
     Logger::info("I2C", String("SDA=") + TOUCH_SDA + " SCL=" + TOUCH_SCL);
     i2c_bus.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
+}
+
+void App::resetLCDViaTCA9554() {
+    // TCA9554 at I2C 0x20: EXIO1 (bit 1) drives the LCD reset line.
+    // Reg 0x03 = Configuration (0=output). Reg 0x01 = Output Port.
+    constexpr uint8_t TCA_ADDR   = 0x20;
+    constexpr uint8_t REG_OUTPUT = 0x01;
+    constexpr uint8_t REG_CONFIG = 0x03;
+    constexpr uint8_t RST_BIT    = 0x02;  // EXIO1
+
+    auto tca_write = [&](uint8_t reg, uint8_t val) {
+        i2c_bus.beginTransmission(TCA_ADDR);
+        i2c_bus.write(reg);
+        i2c_bus.write(val);
+        i2c_bus.endTransmission();
+    };
+
+    tca_write(REG_CONFIG, ~RST_BIT);     // EXIO1 = output, all others = input
+    tca_write(REG_OUTPUT, 0xFF);         // EXIO1 high (idle)
+    delay(10);
+    tca_write(REG_OUTPUT, ~RST_BIT);     // EXIO1 low  (assert reset)
+    delay(10);
+    tca_write(REG_OUTPUT, 0xFF);         // EXIO1 high (release reset)
+    delay(200);                          // ST7796 needs ~120 ms to wake
+    Logger::info("Display", "TCA9554 LCD reset done");
 }
 
 void App::renderWiFiStatus() {

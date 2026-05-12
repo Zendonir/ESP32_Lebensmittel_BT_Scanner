@@ -931,18 +931,20 @@ void Display::init() {
     // ── LVGL init ────────────────────────────────────────
     lv_init();
 
+    // Draw buffers must be in DMA-accessible internal SRAM, not SPIRAM.
+    // MALLOC_CAP_DMA implies internal RAM on ESP32; SPI DMA cannot source PSRAM.
     size_t buf_bytes = SCR_W * LV_BUF_LINES * sizeof(lv_color_t);
     _lv_buf1 = static_cast<lv_color_t*>(
-        heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     _lv_buf2 = static_cast<lv_color_t*>(
-        heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     if (!_lv_buf1 || !_lv_buf2) {
-        // Fallback: internal SRAM (smaller buffer)
-        if (_lv_buf1) { free(_lv_buf1); }
-        if (_lv_buf2) { free(_lv_buf2); }
+        // Fallback: smaller single buffer from any 8-bit-accessible memory
+        if (_lv_buf1) { heap_caps_free(_lv_buf1); }
+        if (_lv_buf2) { heap_caps_free(_lv_buf2); }
         size_t small = SCR_W * 10 * sizeof(lv_color_t);
-        _lv_buf1 = static_cast<lv_color_t*>(malloc(small));
-        _lv_buf2 = static_cast<lv_color_t*>(malloc(small));
+        _lv_buf1 = static_cast<lv_color_t*>(heap_caps_malloc(small, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        _lv_buf2 = nullptr;
         lv_disp_draw_buf_init(&_draw_buf, _lv_buf1, _lv_buf2, SCR_W * 10);
     } else {
         lv_disp_draw_buf_init(&_draw_buf, _lv_buf1, _lv_buf2, SCR_W * LV_BUF_LINES);
@@ -972,12 +974,10 @@ void Display::init() {
 }
 
 // ── tick: call every loop() iteration ────────────────────
+// LV_TICK_CUSTOM=1 in lv_conf.h wires millis() into LVGL's tick source,
+// so lv_tick_inc() is not called here – lv_timer_handler() is sufficient.
 void Display::tick() {
     if (!_initialized) return;
-    static uint32_t last_ms = 0;
-    uint32_t now = millis();
-    lv_tick_inc(now - last_ms);
-    last_ms = now;
     lv_timer_handler();
 }
 

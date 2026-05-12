@@ -36,6 +36,7 @@ private:
 
     void initBacklight();
     void initI2C();
+    void resetLCDViaTCA9554();
     void initFilesystem();
     void initWebServer();
     void handleSerialCommand(const String &command);
