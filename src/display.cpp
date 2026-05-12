@@ -956,8 +956,13 @@ void Display::init() {
     lv_disp_drv_register(&_disp_drv);
 
     lv_indev_drv_init(&_indev_drv);
-    _indev_drv.type    = LV_INDEV_TYPE_POINTER;
-    _indev_drv.read_cb = touch_read_cb;
+    _indev_drv.type             = LV_INDEV_TYPE_POINTER;
+    _indev_drv.read_cb          = touch_read_cb;
+    // Raise scroll threshold so short finger drift doesn't prevent a click.
+    // Default is 10 px; 20 px is more forgiving on capacitive glass.
+    _indev_drv.scroll_limit     = 20;
+    // Allow 600 ms before a press becomes a long-press (default 400 ms).
+    _indev_drv.long_press_time  = 600;
     lv_indev_drv_register(&_indev_drv);
 
     build_ui();

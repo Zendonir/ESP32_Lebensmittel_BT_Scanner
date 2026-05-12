@@ -63,6 +63,17 @@ void App::begin() {
 void App::loop() {
     display_obj.tick();   // LVGL timer/renderer – must be called every iteration
 
+    // If WiFi just connected (e.g. after web-UI credential submit) and the AP
+    // is still up, shut it down and stop the captive-portal DNS server.
+    if (wifi_manager.isConnected() && wifi_manager.isAPActive()) {
+        wifi_manager.stopAP();
+        if (_dnsRunning) {
+            _dns.stop();
+            _dnsRunning = false;
+            Logger::info("WiFi", "Connected – AP and DNS stopped");
+        }
+    }
+
     if (_dnsRunning) _dns.processNextRequest();
 
     if (Serial.available()) {
@@ -405,18 +416,25 @@ void App::initWebServer() {
     web.setPrinterManager(&printer);
     web.begin();
 
-    _dns.setErrorReplyCode(DNSReplyCode::NoError);
-    if (_dns.start(53, "*", WiFi.softAPIP())) {
-        _dnsRunning = true;
-        Logger::info("DNS", "Captive-portal DNS started");
+    // Only run captive-portal DNS when we are in AP mode (no station link).
+    // When WiFi is connected the AP is down, so the DNS server is useless and
+    // can interfere with normal DNS resolution on the local network.
+    if (wifi_manager.isAPActive()) {
+        _dns.setErrorReplyCode(DNSReplyCode::NoError);
+        if (_dns.start(53, "*", WiFi.softAPIP())) {
+            _dnsRunning = true;
+            Logger::info("DNS", "Captive-portal DNS started (AP mode)");
+        } else {
+            Logger::warn("DNS", "DNS server start failed");
+        }
+        Logger::info("Web", "AP: http://" + WiFi.softAPIP().toString());
     } else {
-        Logger::warn("DNS", "DNS server start failed");
+        Logger::info("DNS", "Skipping captive-portal DNS (station mode)");
     }
 
     if (wifi_manager.isConnected()) {
         Logger::info("Web", "Station: http://" + wifi_manager.getIPAddress());
     }
-    Logger::info("Web", "AP: http://" + WiFi.softAPIP().toString());
 }
 
 void App::handleSerialCommand(const String &command) {

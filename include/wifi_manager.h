@@ -25,6 +25,8 @@ public:
     bool autoConnect(uint32_t timeoutMs = 10000);
     String getSavedSSID();
     bool isConnected();
+    bool isAPActive();
+    void stopAP();
     WiFiMode getCurrentMode();
     String getIPAddress();
     int scanNetworks(bool includeHidden = true);
