@@ -59,6 +59,27 @@ void App::begin() {
     barcode_manager.begin();
     renderDashboard("EAN scannen zum Einlagern");
 
+    // Prime the WiFi scan cache before the web server opens for connections.
+    // Only runs in AP mode (no station link). Uses the async scan API so the
+    // display continues to render during the wait (max 5 s).
+    if (!wifi_manager.isConnected()) {
+        Logger::info("WiFiScan", "Priming network list for setup page...");
+        WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
+        uint32_t t0 = millis();
+        while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && millis() - t0 < 5000) {
+            display_obj.tick();
+            delay(30);
+        }
+        int n = WiFi.scanComplete();
+        if (n >= 0) {
+            web.primeWiFiScanCache(n);
+            Logger::info("WiFiScan", String(n) + " Netzwerke gefunden");
+        } else {
+            Logger::warn("WiFiScan", "Scan fehlgeschlagen oder Timeout");
+        }
+        WiFi.scanDelete();
+    }
+
     initWebServer();
     renderDashboard("Bereit");
 
