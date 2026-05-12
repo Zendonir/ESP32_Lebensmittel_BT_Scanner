@@ -67,8 +67,6 @@ private:
     WebInterface    web;
     DNSServer       _dns;
     bool            _dnsRunning = false;
-    bool            _touchWasPressed = false;
-    uint32_t        _lastTouchMs = 0;
     uint32_t        _lastUiRefreshMs = 0;
     String          _statusMessage;
     String          _lastUiSignature;

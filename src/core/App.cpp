@@ -165,19 +165,10 @@ void App::renderActiveTab(const String &message, bool force) {
 }
 
 void App::handleTouch() {
-    TouchPoint point = touch_obj.read();
-    uint32_t now = millis();
-
-    if (!point.pressed) {
-        _touchWasPressed = false;
-        return;
-    }
-
-    if (_touchWasPressed || now - _lastTouchMs < 260) return;
-    _touchWasPressed = true;
-    _lastTouchMs = now;
-
-    OnscreenAction action = display_obj.hitTest(point.x, point.y);
+    // LVGL reads the touch IC via its own input-device driver (called inside
+    // display_obj.tick()).  We only need to dequeue whatever action a button
+    // callback posted into the single-slot queue.
+    OnscreenAction action = display_obj.hitTest(0, 0);
     if (action != OnscreenAction::NONE) processOnscreenAction(action);
 }
 

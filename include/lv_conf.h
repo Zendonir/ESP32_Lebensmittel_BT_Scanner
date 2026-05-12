@@ -30,8 +30,8 @@
 /*====================
    HAL SETTINGS
  *====================*/
-#define LV_DISP_DEF_REFR_PERIOD   30   /* ms */
-#define LV_INDEV_DEF_READ_PERIOD  30   /* ms */
+#define LV_DISP_DEF_REFR_PERIOD   16   /* ms – ~60 fps target */
+#define LV_INDEV_DEF_READ_PERIOD  16   /* ms – snappier touch response */
 
 /* Use a custom tick source - lv_tick_inc() called manually */
 #define LV_TICK_CUSTOM     0
