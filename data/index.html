@@ -319,8 +319,10 @@
       <div class="card">
         <div class="card-title">Test</div>
         <div class="btn-group-v">
-          <button class="btn btn-ok" onclick="Pages.printer.testPrint()">Testdruck</button>
-          <button class="btn" onclick="Pages.printer.testQr()">QR-Testdruck</button>
+          <button type="button" class="btn btn-ok" onclick="Pages.printer.testPrint()">ESC/POS-Testdruck</button>
+          <button type="button" class="btn" onclick="Pages.printer.testPlain()">Nur Text (CR/LF)</button>
+          <button type="button" class="btn" onclick="Pages.printer.testQr()">QR-Testdruck</button>
+          <button type="button" class="btn" onclick="Pages.printer.testBaudProbe()">Baudrate suchen</button>
         </div>
         <div class="card-title" style="margin-top:16px">Status</div>
         <div id="printerStatus" class="status-badge-row"></div>

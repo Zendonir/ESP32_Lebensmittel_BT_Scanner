@@ -12,7 +12,9 @@ public:
     bool isReady() const;
     uint32_t baud() const;
     bool printLabel(const InventoryItem &item);
-    bool printTestPage(bool includeQr = false);
+    size_t printTestPage(bool includeQr = false);
+    size_t printPlainTest();
+    size_t printBaudProbe();
 
 private:
     EscPosPrinter printer;

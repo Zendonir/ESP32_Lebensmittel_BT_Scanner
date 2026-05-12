@@ -57,7 +57,7 @@ void App::begin() {
     initWebServer();
     renderDashboard("Bereit");
 
-    Logger::info("App", "Ready. Serial commands: scan, ap, status, beep, help");
+    Logger::info("App", "Ready. Serial commands: scan, ap, status, beep, print, printplain, printbaud, help");
 }
 
 void App::loop() {
@@ -461,13 +461,25 @@ void App::handleSerialCommand(const String &command) {
         Serial.println();
     } else if (command == "beep") {
         audio_obj.playTone(1000, 100);
+    } else if (command == "print") {
+        size_t bytes = printer.printTestPage(false);
+        Serial.printf("Printer ESC/POS test bytes=%u\n", static_cast<unsigned>(bytes));
+    } else if (command == "printplain") {
+        size_t bytes = printer.printPlainTest();
+        Serial.printf("Printer plain test bytes=%u\n", static_cast<unsigned>(bytes));
+    } else if (command == "printbaud") {
+        size_t bytes = printer.printBaudProbe();
+        Serial.printf("Printer baud probe bytes=%u\n", static_cast<unsigned>(bytes));
     } else if (command == "help") {
         Serial.println("\n=== Commands ===");
         Serial.println("scan       - Scan WiFi");
         Serial.println("ap         - AP Mode");
         Serial.println("ean <code> - Simulate barcode");
         Serial.println("status     - Status");
-        Serial.println("beep       - Beep\n");
+        Serial.println("beep       - Beep");
+        Serial.println("print      - ESC/POS printer test");
+        Serial.println("printplain - Plain UART printer test");
+        Serial.println("printbaud  - Try common printer baudrates\n");
     } else {
         Logger::warn("CMD", String("Unknown command: ") + command);
     }

@@ -1,8 +1,10 @@
 #include "EscPosPrinter.h"
 
 void EscPosPrinter::begin(uint32_t baud) {
+    if (ready) printerSerial.end();
     printerSerial.begin(baud, SERIAL_8N1, UART_RX, UART_TX);
     ready = true;
+    delay(20);
     reset();
 }
 
@@ -12,6 +14,8 @@ void EscPosPrinter::reset() {
     if (!ready) return;
     printerSerial.write(0x1B);
     printerSerial.write('@');
+    printerSerial.flush();
+    delay(50);
 }
 
 void EscPosPrinter::setBold(bool enabled) {
@@ -28,10 +32,19 @@ void EscPosPrinter::setLarge(bool enabled) {
     printerSerial.write(enabled ? 0x11 : 0x00);
 }
 
-void EscPosPrinter::println(const String &text) {
-    if (!ready) return;
-    printerSerial.print(text);
-    printerSerial.write('\n');
+size_t EscPosPrinter::println(const String &text) {
+    if (!ready) return 0;
+    size_t written = printerSerial.print(text);
+    written += printerSerial.write('\n');
+    return written;
+}
+
+size_t EscPosPrinter::printlnCrLf(const String &text) {
+    if (!ready) return 0;
+    size_t written = printerSerial.print(text);
+    written += printerSerial.write('\r');
+    written += printerSerial.write('\n');
+    return written;
 }
 
 void EscPosPrinter::feed(uint8_t lines) {
@@ -54,6 +67,16 @@ void EscPosPrinter::qrCode(const String &data) {
     printerSerial.print(data);
     printerSerial.write(0x1D); printerSerial.write('('); printerSerial.write('k');
     printerSerial.write(3); printerSerial.write(0); printerSerial.write(49); printerSerial.write(81); printerSerial.write(48);
+}
+
+size_t EscPosPrinter::writeBytes(const uint8_t *data, size_t length) {
+    if (!ready || data == nullptr || length == 0) return 0;
+    return printerSerial.write(data, length);
+}
+
+size_t EscPosPrinter::writeText(const String &text) {
+    if (!ready) return 0;
+    return printerSerial.print(text);
 }
 
 void EscPosPrinter::flush() {

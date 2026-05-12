@@ -639,8 +639,9 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
                 return;
             }
-            mergePost(req, "/printer_config.json", "{}");
             uint32_t baud = incoming["baudrate"] | UART_BAUD;
+            Logger::info("Printer", String("Web config update baud=") + baud);
+            mergePost(req, "/printer_config.json", "{}");
             if (_printer) _printer->configure(baud);
         },
         nullptr, bodyCollect);
@@ -797,6 +798,7 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/test-print", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             if (!_printer) {
+                Logger::error("Printer", "Web test print requested but printer manager is missing");
                 req->send(500, "application/json", "{\"ok\":false,\"error\":\"printer not initialized\"}");
                 return;
             }
@@ -804,15 +806,32 @@ void WebInterface::registerApiRoutes() {
             JsonDocument inp;
             deserializeJson(inp, _body);
             String type = inp["type"] | "text";
-            bool printed = _printer->printTestPage(type == "qr");
+            Logger::info("Printer", String("Web test print request type=") + type + " ready=" + (_printer->isReady() ? 1 : 0) + " baud=" + _printer->baud());
 
+            size_t bytes = 0;
+            String mode = type;
+            if (type == "qr") {
+                bytes = _printer->printTestPage(true);
+            } else if (type == "plain") {
+                bytes = _printer->printPlainTest();
+            } else if (type == "baud") {
+                bytes = _printer->printBaudProbe();
+            } else {
+                mode = "text";
+                bytes = _printer->printTestPage(false);
+            }
+
+            bool printed = bytes > 0;
             JsonDocument doc;
             doc["ok"] = printed;
             doc["ready"] = _printer->isReady();
             doc["baudrate"] = _printer->baud();
+            doc["mode"] = mode;
+            doc["bytes"] = static_cast<uint32_t>(bytes);
             doc["message"] = printed ? "Testdruck gesendet" : "Drucker nicht bereit";
             String body;
             serializeJson(doc, body);
+            Logger::info("Printer", String("Web test print response ok=") + (printed ? 1 : 0) + " bytes=" + static_cast<uint32_t>(bytes));
             req->send(printed ? 200 : 503, "application/json", body);
         },
         nullptr, bodyCollect);

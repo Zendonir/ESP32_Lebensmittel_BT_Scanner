@@ -1331,10 +1331,24 @@ Pages.printer = {
     }
   },
 
+  showPrintResult(res, fallback) {
+    const bytes = Number.isFinite(res.bytes) ? ` (${res.bytes} Bytes)` : '';
+    Toast.success((res.message || fallback) + bytes);
+  },
+
   async testPrint() {
     try {
       const res = await API.post('/api/test-print', { type: 'text' });
-      Toast.success(res.message || 'Testdruck gesendet');
+      this.showPrintResult(res, 'Testdruck gesendet');
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async testPlain() {
+    try {
+      const res = await API.post('/api/test-print', { type: 'plain' });
+      this.showPrintResult(res, 'Nur-Text-Test gesendet');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
@@ -1343,7 +1357,17 @@ Pages.printer = {
   async testQr() {
     try {
       const res = await API.post('/api/test-print', { type: 'qr' });
-      Toast.success(res.message || 'QR-Testdruck gesendet');
+      this.showPrintResult(res, 'QR-Testdruck gesendet');
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async testBaudProbe() {
+    try {
+      Toast.info('Sende Baudraten-Test…');
+      const res = await API.post('/api/test-print', { type: 'baud' });
+      this.showPrintResult(res, 'Baudraten-Test gesendet');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
