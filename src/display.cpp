@@ -931,19 +931,20 @@ void Display::init() {
     // ── LVGL init ────────────────────────────────────────
     lv_init();
 
-    // Draw buffers must be in DMA-accessible internal SRAM, not SPIRAM.
-    // MALLOC_CAP_DMA implies internal RAM on ESP32; SPI DMA cannot source PSRAM.
+    // Stripe buffers live in SPIRAM – TFT_eSPI copies to an internal SPI FIFO
+    // buffer before transfer, so SPIRAM is fine here and avoids consuming the
+    // DMA-capable internal SRAM that the BLE stack needs.
     size_t buf_bytes = SCR_W * LV_BUF_LINES * sizeof(lv_color_t);
     _lv_buf1 = static_cast<lv_color_t*>(
-        heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     _lv_buf2 = static_cast<lv_color_t*>(
-        heap_caps_malloc(buf_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!_lv_buf1 || !_lv_buf2) {
-        // Fallback: smaller single buffer from any 8-bit-accessible memory
+        // Fallback: internal SRAM with smaller single buffer
         if (_lv_buf1) { heap_caps_free(_lv_buf1); }
         if (_lv_buf2) { heap_caps_free(_lv_buf2); }
         size_t small = SCR_W * 10 * sizeof(lv_color_t);
-        _lv_buf1 = static_cast<lv_color_t*>(heap_caps_malloc(small, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        _lv_buf1 = static_cast<lv_color_t*>(malloc(small));
         _lv_buf2 = nullptr;
         lv_disp_draw_buf_init(&_draw_buf, _lv_buf1, _lv_buf2, SCR_W * 10);
     } else {

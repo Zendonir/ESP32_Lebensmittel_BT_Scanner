@@ -53,7 +53,9 @@ void App::begin() {
     inventory.begin();
     printer.begin();
 
+    Serial.flush();
     Logger::info("Scanner", "Initializing BLE barcode scanner");
+    Serial.flush();
     barcode_manager.begin();
     renderDashboard("EAN scannen zum Einlagern");
 
