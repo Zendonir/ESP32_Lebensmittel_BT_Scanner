@@ -27,11 +27,6 @@ ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
     if (url.startsWith("https://")) {
         WiFiClientSecure client;
         client.setInsecure();
-        // Default TLS buffers are 16 KB in + 16 KB out = ~32 KB on the heap.
-        // ESP32-S3 running BLE+WiFi+LVGL rarely has that much contiguous DRAM.
-        // 4096/512 covers the OpenFoodFacts JSON response (typically <3 KB)
-        // and cuts SSL heap demand to ~6 KB.
-        client.setBufferSizes(4096, 512);
         client.setTimeout(timeoutMs / 1000);
         if (!http.begin(client, url)) {
             Logger::error("ApiClient", "HTTPS begin failed");
