@@ -36,11 +36,13 @@ bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
         return true;
     }
 
-    String path = "world.openfoodfacts.org/api/v3/product/" + barcode + ".json";
-    ApiResponse response = api.get("https://" + path);
+    String url = "https://world.openfoodfacts.org/api/v3/product/" + barcode + ".json";
+    // Retry once on transient failures (DNS hiccup, TCP reset, SSL OOM).
+    ApiResponse response = api.get(url);
     if (response.status <= 0) {
-        Logger::warn("OpenFoodFacts", "HTTPS failed, retrying Open Food Facts over HTTP");
-        response = api.get("http://" + path);
+        Logger::warn("OpenFoodFacts", "First attempt failed, retrying...");
+        delay(500);
+        response = api.get(url);
     }
     if (response.status != 200) {
         Logger::warn("OpenFoodFacts", String("HTTP status ") + response.status);
