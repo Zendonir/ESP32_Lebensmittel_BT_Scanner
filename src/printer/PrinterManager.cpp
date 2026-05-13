@@ -27,6 +27,12 @@ uint32_t PrinterManager::baud() const {
     return currentBaud;
 }
 
+void PrinterManager::feed(uint8_t lines) {
+    if (!printer.isReady()) return;
+    printer.feed(lines);
+    printer.flush();
+}
+
 bool PrinterManager::printLabel(const InventoryItem &item) {
     return renderer.printInventoryLabel(item);
 }
