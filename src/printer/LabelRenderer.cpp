@@ -3,17 +3,6 @@
 
 LabelRenderer::LabelRenderer(EscPosPrinter &printer) : printer(printer) {}
 
-static String trunc(const String &s, size_t maxLen) {
-    return s.length() <= maxLen ? s : s.substring(0, maxLen);
-}
-
-static String rule(uint8_t n, char c = '=') {
-    String s;
-    s.reserve(n);
-    for (uint8_t i = 0; i < n; i++) s += c;
-    return s;
-}
-
 bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     if (!printer.isReady()) return false;
 
@@ -21,31 +10,46 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
 
     printer.reset();
 
-    // ── Product name (centered, large, bold) ─────────────────────────────────
-    printer.println(rule(W));
-    printer.setLarge(true);
-    printer.setBold(true);
+    // ── Product name: large if ≤ half the line width, normal otherwise ────────
+    String name = item.name.isEmpty() ? "Unbekanntes Produkt" : item.name;
     printer.setAlign(1);
-    printer.println(trunc(item.name.isEmpty() ? "Lebensmittel" : item.name, W * 2));
+    if (name.length() <= (size_t)(W / 2)) {
+        printer.setLarge(true);
+        printer.setBold(true);
+        printer.println(name);
+        printer.setBold(false);
+        printer.setLarge(false);
+    } else {
+        printer.setBold(true);
+        if (name.length() > W) name = name.substring(0, W);
+        printer.println(name);
+        printer.setBold(false);
+    }
     printer.setAlign(0);
-    printer.setBold(false);
-    printer.setLarge(false);
-    printer.println(rule(W, '-'));
 
-    // ── Field rows: bold label + underlined value ─────────────────────────────
-    printer.printLabelRow("Einlagerung: ", item.addedDate,                W);
-    printer.printLabelRow("MHD:         ", item.expiryDate,               W);
-    printer.printLabelRow("Menge:       ", String(item.quantity) + " St.",W);
-    printer.printLabelRow("Haushalt:    ", trunc(LABEL_HOUSEHOLD, W),     W);
+    // ── Field rows: bold label, plain value, no underline, no separator ───────
+    auto row = [&](const char *label, const String &value) {
+        size_t labelLen = strlen(label);
+        String val = value;
+        if (val.length() > W - labelLen) val = val.substring(0, W - labelLen);
+        printer.setBold(true);
+        printer.writeText(label);
+        printer.setBold(false);
+        printer.println(val);
+    };
 
-    // ── Code 128 barcode (centered, below text) ───────────────────────────────
-    printer.println(rule(W, '-'));
+    row("Einlagerung: ", item.addedDate);
+    row("MHD:         ", item.expiryDate);
+    row("Menge:       ", String(item.quantity) + " St.");
+    row("Haushalt:    ", String(LABEL_HOUSEHOLD));
+
+    // ── Code 128 barcode, no HRI text ────────────────────────────────────────
     printer.barcodeHeight(60);
     printer.barcodeWidth(2);
-    printer.barcodeHRI(2);   // human-readable text below barcode
+    printer.barcodeHRI(0);
     printer.setAlign(1);
-    String barcodeData = item.labelBarcode.isEmpty() ? item.barcode : item.labelBarcode;
-    printer.barcode128(barcodeData);
+    String bc = item.labelBarcode.isEmpty() ? item.barcode : item.labelBarcode;
+    printer.barcode128(bc);
     printer.setAlign(0);
 
     printer.feed(4);
