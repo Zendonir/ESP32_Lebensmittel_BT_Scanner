@@ -104,6 +104,34 @@ void EscPosPrinter::qrCode(const String &data) {
     printerSerial.write(3); printerSerial.write(0); printerSerial.write(49); printerSerial.write(81); printerSerial.write(48);
 }
 
+void EscPosPrinter::barcodeHeight(uint8_t dots) {
+    if (!ready) return;
+    printerSerial.write(0x1D); printerSerial.write('h'); printerSerial.write(dots);
+}
+
+void EscPosPrinter::barcodeWidth(uint8_t mult) {
+    if (!ready) return;
+    printerSerial.write(0x1D); printerSerial.write('w'); printerSerial.write(mult);
+}
+
+void EscPosPrinter::barcodeHRI(uint8_t pos) {
+    if (!ready) return;
+    printerSerial.write(0x1D); printerSerial.write('H'); printerSerial.write(pos);
+}
+
+void EscPosPrinter::barcode128(const String &data) {
+    if (!ready || data.isEmpty()) return;
+    // GS k m n d1..dk  (function-B format), Code 128B subset ("{B" prefix)
+    uint8_t n = (uint8_t)(2 + data.length());
+    printerSerial.write(0x1D);
+    printerSerial.write('k');
+    printerSerial.write((uint8_t)73); // m = 73 = Code 128
+    printerSerial.write(n);
+    printerSerial.write('{');
+    printerSerial.write('B');
+    printerSerial.print(data);
+}
+
 size_t EscPosPrinter::writeBytes(const uint8_t *data, size_t length) {
     if (!ready || data == nullptr || length == 0) return 0;
     return printerSerial.write(data, length);
