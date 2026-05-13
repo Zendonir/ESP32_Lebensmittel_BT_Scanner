@@ -73,5 +73,7 @@
 #define LABEL_PAPER_CHARS   32
 // Household name printed on every label
 #define LABEL_HOUSEHOLD     "Haushalt Müller"
+// Lines to feed before printing so the label is in the correct start position
+#define LABEL_PRE_FEED      3
 
 #endif

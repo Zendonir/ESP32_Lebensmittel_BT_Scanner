@@ -186,26 +186,31 @@ static void draw_tabbar(UiTab activeTab) {
     _spr.fillRect(0, tab_y, SCR_W, TAB_H, C_SURFACE);
     _spr.drawFastHLine(0, tab_y, SCR_W, C_BORDER);
 
-    int btn_w = SCR_W / 4;  // 120 px each
+    int idx      = static_cast<int>(activeTab);
+    int prev_idx = (idx + 3) % 4;
+    int next_idx = (idx + 1) % 4;
+
+    // ← left arrow
+    draw_button(8, tab_y + 8, 56, TAB_H - 16, "<",
+                C_SURFACE2, C_TEXT, 4, _tab_actions[prev_idx]);
+
+    // Current tab name centered
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString(_tab_labels[idx], SCR_W / 2, tab_y + TAB_H / 2 - 6);
+
+    // Page dots below name
     for (int i = 0; i < 4; i++) {
-        bool active = (i == static_cast<int>(activeTab));
-        uint16_t bg = active ? C_ACCENT  : C_SURFACE;
-        uint16_t fg = active ? C_BG      : C_SUBTEXT;
-
-        int tx = i * btn_w;
-        _spr.fillRect(tx, tab_y + 1, btn_w, TAB_H - 1, bg);
-
-        _spr.setTextColor(fg, bg);
-        _spr.setTextFont(2);   // small
-        _spr.setTextDatum(MC_DATUM);
-        _spr.drawString(_tab_labels[i], tx + btn_w / 2, tab_y + TAB_H / 2);
-
-        add_region(tx, tab_y, btn_w, TAB_H, _tab_actions[i]);
-
-        // Divider between tabs
-        if (i > 0)
-            _spr.drawFastVLine(tx, tab_y, TAB_H, C_BORDER);
+        int dot_x = SCR_W / 2 - 30 + i * 20;
+        int dot_y = tab_y + TAB_H - 9;
+        _spr.fillCircle(dot_x, dot_y, (i == idx) ? 4 : 3,
+                        (i == idx) ? C_ACCENT : C_SURFACE2);
     }
+
+    // → right arrow
+    draw_button(SCR_W - 64, tab_y + 8, 56, TAB_H - 16, ">",
+                C_SURFACE2, C_TEXT, 4, _tab_actions[next_idx]);
 }
 
 // ═════════════════════════════════════════════════════════

@@ -8,6 +8,11 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
 
     const uint8_t W = LABEL_PAPER_CHARS;
 
+    // Feed before printing so the label sits at the correct start position.
+    printer.feed(LABEL_PRE_FEED);
+    printer.flush();
+    delay(300);
+
     printer.reset();
 
     // ── Product name: large if ≤ half the line width, normal otherwise ────────
