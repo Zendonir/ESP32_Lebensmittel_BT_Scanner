@@ -32,7 +32,9 @@ enum class OnscreenAction {
     DATE_CONFIRM,
     QTY_MINUS,
     QTY_PLUS,
-    QTY_CONFIRM
+    QTY_CONFIRM,
+    PRINTER_FEED_1,   // feed 1 line (manual paper positioning)
+    PRINTER_FEED_5    // feed 5 lines
 };
 
 enum class UiTab {

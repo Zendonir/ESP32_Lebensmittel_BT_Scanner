@@ -30,16 +30,17 @@ static constexpr int CNT_H  = SCR_H - HDR_H - TAB_H;    // 224
 // Helper: pack RGB888 to RGB565
 #define RGB(r,g,b) ( (uint16_t)(((r)&0xF8)<<8) | (uint16_t)(((g)&0xFC)<<3) | (uint16_t)((b)>>3) )
 
-static constexpr uint16_t C_BG       = RGB(0x0D,0x11,0x17);
-static constexpr uint16_t C_SURFACE  = RGB(0x16,0x1B,0x22);
-static constexpr uint16_t C_SURFACE2 = RGB(0x21,0x26,0x2D);
-static constexpr uint16_t C_BORDER   = RGB(0x30,0x36,0x3D);
-static constexpr uint16_t C_TEXT     = RGB(0xE6,0xED,0xF3);
-static constexpr uint16_t C_SUBTEXT  = RGB(0x8B,0x94,0x9E);
-static constexpr uint16_t C_ACCENT   = RGB(0x58,0xA6,0xFF);
-static constexpr uint16_t C_GREEN    = RGB(0x3F,0xB9,0x50);
-static constexpr uint16_t C_YELLOW   = RGB(0xD2,0x99,0x22);
-static constexpr uint16_t C_RED      = RGB(0xF8,0x51,0x49);
+// Dark mode palette
+static constexpr uint16_t C_BG       = RGB(0x08,0x0C,0x10); // near-black
+static constexpr uint16_t C_SURFACE  = RGB(0x12,0x17,0x1E); // dark card
+static constexpr uint16_t C_SURFACE2 = RGB(0x1C,0x22,0x2A); // button bg
+static constexpr uint16_t C_BORDER   = RGB(0x28,0x2E,0x38); // subtle border
+static constexpr uint16_t C_TEXT     = RGB(0xEC,0xF0,0xF4); // near-white
+static constexpr uint16_t C_SUBTEXT  = RGB(0x7A,0x84,0x90); // muted grey
+static constexpr uint16_t C_ACCENT   = RGB(0x4C,0x9E,0xFF); // blue accent
+static constexpr uint16_t C_GREEN    = RGB(0x2E,0xB0,0x48); // green
+static constexpr uint16_t C_YELLOW   = RGB(0xCC,0x92,0x18); // amber
+static constexpr uint16_t C_RED      = RGB(0xF0,0x46,0x40); // red
 
 // ─────────────────── hit region table ────────────────────
 static constexpr int MAX_REGIONS = 32;
@@ -396,6 +397,16 @@ static void draw_panel_system(const HomeState &s) {
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.drawString("ST7796 | FT6336 | 480x320", 250, py + 54);
 
+    // Printer positioning card
+    int fy = py + 136;
+    draw_card(4, fy, 472, 60, C_SURFACE, C_BORDER);
+    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.setTextDatum(TL_DATUM);
+    _spr.drawString("DRUCKER POSITION", 12, fy + 8);
+    draw_button( 12, fy + 26, 148, 28, "+1 Zeile",  C_SURFACE2, C_TEXT, 2, OnscreenAction::PRINTER_FEED_1);
+    draw_button(166, fy + 26, 148, 28, "+5 Zeilen", C_SURFACE2, C_TEXT, 2, OnscreenAction::PRINTER_FEED_5);
+
     // Refresh button
     draw_button(4, SCR_H - TAB_H - 44, 150, 36,
                 "Refresh",
@@ -466,7 +477,9 @@ void Display::init() {
         // TFT_eSPI will fall back to internal heap automatically
         _spr.createSprite(SCR_W, SCR_H);
     }
-    _spr.setSwapBytes(false);   // TFT_eSPI handles byte order
+    // SPI displays expect big-endian RGB565; setSwapBytes(true) makes the
+    // sprite's pushSprite() swap each 16-bit word before transmission.
+    _spr.setSwapBytes(true);
 
     _initialized = true;
     Serial.printf("[Display] TFT_eSPI sprite ready (%d x %d)\n", SCR_W, SCR_H);

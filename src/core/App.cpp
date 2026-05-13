@@ -343,6 +343,12 @@ void App::processOnscreenAction(OnscreenAction action) {
             state.setState(AppState::MAIN);
             renderDashboard("Vorgang abgebrochen");
             break;
+        case OnscreenAction::PRINTER_FEED_1:
+            if (printer.isReady()) { printer.feed(1); printer.flush(); }
+            break;
+        case OnscreenAction::PRINTER_FEED_5:
+            if (printer.isReady()) { printer.feed(5); printer.flush(); }
+            break;
         default:
             break;
     }
