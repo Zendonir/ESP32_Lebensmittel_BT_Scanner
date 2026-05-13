@@ -49,21 +49,20 @@ void EscPosPrinter::setAlign(uint8_t align) {
 size_t EscPosPrinter::printLabelRow(const String &label, const String &value,
                                     uint8_t paperChars) {
     if (!ready) return 0;
-    // Left-align the label column (bold), right part is the value (underlined).
-    // Pad so label+value fit exactly in paperChars; truncate value if needed.
+    // Truncate value if label+value would exceed paperChars; no space padding –
+    // the underline covers only the actual value characters (clean look).
     size_t labelLen = label.length();
-    size_t available = (paperChars > labelLen + 1) ? (paperChars - labelLen) : 1;
+    size_t maxVal = (paperChars > labelLen) ? (paperChars - labelLen) : 1;
     String val = value;
-    if (val.length() > available) val = val.substring(0, available);
-    // Pad value to fill remaining width (underline extends to edge).
-    while (val.length() < available) val += ' ';
+    if (val.length() > maxVal) val = val.substring(0, maxVal);
 
     setBold(true);
     printerSerial.print(label);
     setBold(false);
     setUnderline(true);
-    size_t written = labelLen + printerSerial.print(val);
+    printerSerial.print(val);
     setUnderline(false);
+    size_t written = labelLen + val.length();
     written += printerSerial.write('\n');
     return written;
 }

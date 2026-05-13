@@ -51,9 +51,11 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     String household = trunc(LABEL_HOUSEHOLD, W);
     printer.printLabelRow("Haushalt:    ", household,        W);
 
-    // ── Bottom rule + centered QR code ───────────────────────
+    // ── Bottom rule + right-justified QR code ────────────────
+    // ESC/POS prints line-by-line, so the QR code cannot truly float beside
+    // the text. Right-alignment places it as far right as the printer allows.
     printer.println(rule(W, '-'));
-    printer.setAlign(1);
+    printer.setAlign(2);  // right
     printer.qrCode(item.labelBarcode);
     printer.setAlign(0);
 
