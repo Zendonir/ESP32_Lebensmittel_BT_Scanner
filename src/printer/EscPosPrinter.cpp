@@ -1,16 +1,42 @@
 #include "EscPosPrinter.h"
 
+// Convert UTF-8 string to Windows-1252 single-byte encoding.
+// All German/Western-European characters (Ä Ö Ü ä ö ü ß etc.) are in the
+// Unicode range U+00A0–U+00FF which maps 1:1 to WPC1252 bytes 0xA0–0xFF.
+static String utf8ToWin1252(const String &s) {
+    String out;
+    out.reserve(s.length());
+    for (size_t i = 0; i < s.length(); ) {
+        uint8_t c = (uint8_t)s[i];
+        if (c < 0x80) {
+            out += (char)c; i++;
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < s.length()) {
+            uint16_t cp = ((c & 0x1F) << 6) | ((uint8_t)s[i+1] & 0x3F);
+            out += (char)((cp >= 0xA0 && cp <= 0xFF) ? (uint8_t)cp : '?');
+            i += 2;
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < s.length()) {
+            out += '?'; i += 3;
+        } else if ((c & 0xF8) == 0xF0 && i + 3 < s.length()) {
+            out += '?'; i += 4;
+        } else {
+            i++;
+        }
+    }
+    return out;
+}
+
 void EscPosPrinter::begin(uint32_t baud) {
     if (ready) printerSerial.end();
     printerSerial.begin(baud, SERIAL_8N1, UART_RX, UART_TX);
     ready = true;
     delay(100);
-    // 0x18 (CAN) asks many printers to discard their input buffer,
-    // then ESC @ resets formatting — clears any boot-time garbage.
+    // 0x18 (CAN) discards residual bytes; ESC @ resets formatting.
     printerSerial.write((uint8_t)0x18);
     printerSerial.flush();
     delay(50);
     reset();
+    // Select Windows-1252 code page so ÄÖÜäöüß print correctly.
+    setCodePage(16);
 }
 
 bool EscPosPrinter::isReady() const { return ready; }
@@ -87,7 +113,8 @@ size_t EscPosPrinter::printLabelRow(const String &label, const String &value,
 
 size_t EscPosPrinter::println(const String &text) {
     if (!ready) return 0;
-    size_t written = printerSerial.print(text);
+    String converted = utf8ToWin1252(text);
+    size_t written = printerSerial.print(converted);
     written += printerSerial.write('\n');
     return written;
 }
@@ -196,10 +223,27 @@ size_t EscPosPrinter::writeBytes(const uint8_t *data, size_t length) {
 
 size_t EscPosPrinter::writeText(const String &text) {
     if (!ready) return 0;
-    return printerSerial.print(text);
+    String converted = utf8ToWin1252(text);
+    return printerSerial.print(converted);
 }
 
 void EscPosPrinter::flush() {
     if (!ready) return;
     printerSerial.flush();
+}
+
+void EscPosPrinter::setCodePage(uint8_t n) {
+    if (!ready) return;
+    printerSerial.write(0x1B);
+    printerSerial.write('t');
+    printerSerial.write(n);
+}
+
+void EscPosPrinter::setDoubleHeight(bool enabled) {
+    if (!ready) return;
+    // GS ! n — bits 0-2: height mult (0=1x,1=2x), bits 4-6: width mult
+    // 0x01 = double height only, normal width → more chars fit per line
+    printerSerial.write(0x1D);
+    printerSerial.write('!');
+    printerSerial.write(enabled ? (uint8_t)0x01 : (uint8_t)0x00);
 }

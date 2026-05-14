@@ -8,7 +8,9 @@ public:
     void begin(uint32_t baud = UART_BAUD);
     bool isReady() const;
     void reset();
-    void setLineSpacing(uint8_t n);  // ESC 3 n — n/180 inch per line; 0=default
+    void setLineSpacing(uint8_t n);   // ESC 3 n — n/180 inch; 0=restore default
+    void setCodePage(uint8_t n);      // ESC t n — 16=WPC1252 (German umlauts)
+    void setDoubleHeight(bool enabled); // GS ! 0x01 — 2× height, normal width
     void setBold(bool enabled);
     void setLarge(bool enabled);
     void setUnderline(bool enabled);

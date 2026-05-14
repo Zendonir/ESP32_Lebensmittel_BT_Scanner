@@ -13,15 +13,17 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     delay(300);
 
     printer.reset();
-    // 24/180 inch ≈ 3.4 mm per line — tighter than the ESC @ default (~4 mm)
-    printer.setLineSpacing(24);
+    printer.setCodePage(16);          // restore WPC1252 after ESC @ reset
+    printer.setLineSpacing(24);       // tighter line spacing (24/180 inch ≈ 3.4 mm)
 
-    // ── Product name: always bold normal size, left-aligned, truncated ──────────
+    // ── Product name: bold, double-height (~5 mm), normal width ─────────────────
     String name = item.name.isEmpty() ? "Unbekanntes Produkt" : item.name;
     if (name.length() > W) name = name.substring(0, W);
+    printer.setDoubleHeight(true);
     printer.setBold(true);
     printer.println(name);
     printer.setBold(false);
+    printer.setDoubleHeight(false);
 
     // ── Field rows: bold label, plain value, no underline, no separator ───────
     auto row = [&](const char *label, const String &value) {
