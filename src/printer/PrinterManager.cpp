@@ -44,6 +44,14 @@ void PrinterManager::setBackfeedConfig(bool enabled, uint8_t lines) {
     backfeedLines   = lines;
 }
 
+bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
+                                   uint16_t delayMs, bool doFlush) {
+    if (!printer.isReady()) return false;
+    printer.rawBackfeed(cmd, dots, chunkSize, delayMs, doFlush);
+    printer.flush();
+    return true;
+}
+
 bool PrinterManager::printLabel(const InventoryItem &item) {
     if (backfeedEnabled && backfeedLines > 0) {
         backFeed(backfeedLines);

@@ -90,19 +90,30 @@ void EscPosPrinter::feed(uint8_t lines) {
 }
 
 void EscPosPrinter::backFeed(uint8_t lines) {
-    if (!ready || lines == 0) return;
-    // ESC K n – reverse feed by n dot-lines. Sent in ≤255-dot chunks with
-    // a flush+delay between chunks so the printer's buffer never overflows.
-    // Each ESC/POS text line is typically 24 dots; we use that as the step.
-    uint16_t dots = (uint16_t)lines * 24;
-    while (dots > 0) {
-        uint8_t chunk = (dots > 255) ? 255 : (uint8_t)dots;
+    rawBackfeed(0x4B, (uint16_t)lines * 24, 255, 50, true);
+}
+
+void EscPosPrinter::rawBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
+                                 uint16_t delayMs, bool doFlush) {
+    if (!ready || dots == 0) return;
+    if (chunkSize == 0) {
+        // Single command – cap at 255 (ESC/POS parameter is 1 byte)
+        uint8_t n = (dots > 255) ? 255 : (uint8_t)dots;
         printerSerial.write(0x1B);
-        printerSerial.write('K');
-        printerSerial.write(chunk);
-        printerSerial.flush();
-        delay((uint16_t)chunk * 2 + 50);
-        dots -= chunk;
+        printerSerial.write(cmd);
+        printerSerial.write(n);
+        if (doFlush) printerSerial.flush();
+        if (delayMs) delay(delayMs);
+    } else {
+        while (dots > 0) {
+            uint8_t n = (dots > chunkSize) ? chunkSize : (uint8_t)dots;
+            printerSerial.write(0x1B);
+            printerSerial.write(cmd);
+            printerSerial.write(n);
+            if (doFlush) printerSerial.flush();
+            if (delayMs) delay(delayMs);
+            dots -= n;
+        }
     }
 }
 

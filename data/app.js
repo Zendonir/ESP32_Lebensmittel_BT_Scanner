@@ -1336,6 +1336,33 @@ Pages.printer = {
       Toast.error('Fehler: ' + e.message);
     }
   },
+
+  // Backfeed variant tester
+  async bf(cmd, dots, chunk, delay, flush) {
+    const el = document.getElementById('bfResult');
+    const label = `${cmd} · ${dots} dots · chunk=${chunk} · delay=${delay}ms · flush=${flush}`;
+    if (el) el.textContent = `Sende: ${label} …`;
+    try {
+      const res = await API.post('/api/test-backfeed', { cmd, dots, chunk, delay, flush });
+      const msg = res.ok ? `OK: ${label}` : `Fehler: ${res.message || res.error}`;
+      if (el) el.style.color = res.ok ? 'var(--ok)' : 'var(--warn)';
+      if (el) el.textContent = msg;
+      if (res.ok) Toast.success('Backfeed: ' + label);
+      else        Toast.warn('Backfeed fehlgeschlagen');
+    } catch(e) {
+      if (el) { el.textContent = 'Fehler: ' + e.message; el.style.color = 'var(--warn)'; }
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async bfCustom() {
+    const cmd   = document.getElementById('bfCmd').value;
+    const dots  = parseInt(document.getElementById('bfDots').value)   || 72;
+    const chunk = parseInt(document.getElementById('bfChunk').value);
+    const delay = parseInt(document.getElementById('bfDelay').value)  || 0;
+    const flush = document.getElementById('bfFlush').checked;
+    await this.bf(cmd, dots, chunk, delay, flush);
+  },
 };
 
 /* ---- SCANNER ---- */

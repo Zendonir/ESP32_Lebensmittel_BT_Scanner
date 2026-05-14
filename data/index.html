@@ -323,6 +323,60 @@
         <div id="printerStatus" class="status-badge-row"></div>
       </div>
     </div>
+
+    <!-- Backfeed Varianten-Test -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Backfeed Varianten-Test</div>
+      <p style="font-size:0.82em;color:var(--text-muted);margin:0 0 12px">Teste alle möglichen Rücklaufbefehle um die passende Variante für diesen Drucker zu finden. Nach jedem Test läuft der Drucker kurz vorwärts damit man das Ergebnis sieht.</p>
+
+      <div class="card-title" style="font-size:0.78em;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">ESC j (0x1B 0x6A) — Standard Epson/Star</div>
+      <div class="btn-group" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_j',24,0,0,true)">j·24 dots (1 Z.)</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_j',48,0,0,true)">j·48 dots (2 Z.)</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_j',72,0,0,true)">j·72 dots (3 Z.)</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_j',96,0,0,true)">j·96 dots (4 Z.)</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_j',120,0,0,true)">j·120 dots (5 Z.)</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_j',72,24,50,true)">j·72 dots 3×24 flush+50ms</button>
+      </div>
+
+      <div class="card-title" style="font-size:0.78em;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">ESC K (0x1B 0x4B) — Xprinter / Chinese OEM</div>
+      <div class="btn-group" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',24,0,0,false)">K·24 kein flush</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',24,0,50,true)">K·24 flush+50ms</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',72,0,0,false)">K·72 kein flush</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',72,0,50,true)">K·72 flush+50ms</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',72,24,50,true)">K·72 3×24 flush+50ms</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',72,24,100,true)">K·72 3×24 flush+100ms</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',72,24,200,true)">K·72 3×24 flush+200ms</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_K',96,24,50,true)">K·96 4×24 flush+50ms</button>
+      </div>
+
+      <div class="card-title" style="font-size:0.78em;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">ESC e (0x1B 0x65) — Zeilenbasiert (einige Drucker)</div>
+      <div class="btn-group" style="flex-wrap:wrap;gap:6px;margin-bottom:12px">
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_e',1,0,50,true)">e·1 Zeile</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_e',2,0,50,true)">e·2 Zeilen</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_e',3,0,50,true)">e·3 Zeilen</button>
+        <button class="btn btn-sm" onclick="Pages.printer.bf('ESC_e',4,0,50,true)">e·4 Zeilen</button>
+      </div>
+
+      <div class="card-title" style="font-size:0.78em;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Individuell konfigurierbar</div>
+      <div class="form-stack" style="max-width:420px">
+        <div class="form-field"><label>Befehl</label>
+          <select id="bfCmd" class="select">
+            <option value="ESC_j">ESC j (0x1B 0x6A)</option>
+            <option value="ESC_K" selected>ESC K (0x1B 0x4B)</option>
+            <option value="ESC_e">ESC e (0x1B 0x65)</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Dots (24=1 Zeile bei 203dpi)</label><input type="number" id="bfDots" class="input" value="72" min="1" max="510"></div>
+        <div class="form-field"><label>Chunk-Größe (0=kein Chunking)</label><input type="number" id="bfChunk" class="input" value="24" min="0" max="255"></div>
+        <div class="form-field"><label>Delay ms pro Chunk</label><input type="number" id="bfDelay" class="input" value="50" min="0" max="1000"></div>
+        <div class="form-field"><label>Flush pro Chunk</label><label class="switch"><input type="checkbox" id="bfFlush" checked><span class="slider"></span></label></div>
+        <button type="button" class="btn btn-ok" onclick="Pages.printer.bfCustom()">Senden</button>
+      </div>
+
+      <div id="bfResult" style="margin-top:10px;font-size:0.82em;color:var(--text-muted)"></div>
+    </div>
   </section>
 
   <!-- SCANNER -->
