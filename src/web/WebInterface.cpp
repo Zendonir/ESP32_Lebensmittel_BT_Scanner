@@ -132,10 +132,7 @@ void WebInterface::begin() {
         if (loadJson("/printer_config.json", printerConfig, "{}")) {
             uint32_t baud = printerConfig["baudrate"] | 0;
             if (baud > 0) _printer->configure(baud);
-            bool     backfeed     = printerConfig["backfeed"]     | false;
-            uint16_t backfeedDots = (uint16_t)(printerConfig["backfeedDots"] | 72);
-            uint16_t postFeed     = (uint16_t)(printerConfig["postFeed"] | 100);
-            _printer->setBackfeedConfig(backfeed, backfeedDots);
+            uint16_t postFeed = (uint16_t)(printerConfig["postFeed"] | 100);
             _printer->setPostFeed(postFeed);
         }
     }
@@ -648,11 +645,8 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/printer-config", HTTP_GET, [this](AsyncWebServerRequest *req) {
         JsonDocument doc;
         loadJson("/printer_config.json", doc, "{}");
-        if (!doc["baudrate"].is<uint32_t>())    doc["baudrate"]      = _printer ? _printer->baud() : UART_BAUD;
-        if (!doc["labelLen"].is<int>())          doc["labelLen"]      = 40;
-        if (!doc["backfeedDots"].is<int>())      doc["backfeedDots"]  = 72;
-        if (!doc["backfeed"].is<bool>())         doc["backfeed"]      = false;
-        if (!doc["postFeed"].is<int>())          doc["postFeed"]      = 100;
+        if (!doc["baudrate"].is<uint32_t>()) doc["baudrate"] = _printer ? _printer->baud() : UART_BAUD;
+        if (!doc["postFeed"].is<int>())      doc["postFeed"]  = 100;
         doc["ready"] = _printer && _printer->isReady();
         doc["txPin"] = UART_TX;
         doc["rxPin"] = UART_RX;
@@ -667,16 +661,12 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
                 return;
             }
-            uint32_t baud         = incoming["baudrate"]      | UART_BAUD;
-            bool     backfeed     = incoming["backfeed"]     | false;
-            uint16_t backfeedDots = (uint16_t)(incoming["backfeedDots"] | 72);
-            uint16_t postFeed     = (uint16_t)(incoming["postFeed"] | 100);
-            Logger::info("Printer", String("Web config update baud=") + baud
-                + " backfeed=" + backfeed + " dots=" + backfeedDots + " postFeed=" + postFeed);
+            uint32_t baud     = incoming["baudrate"] | UART_BAUD;
+            uint16_t postFeed = (uint16_t)(incoming["postFeed"] | 100);
+            Logger::info("Printer", String("Web config update baud=") + baud + " postFeed=" + postFeed);
             mergePost(req, "/printer_config.json", "{}");
             if (_printer) {
                 _printer->configure(baud);
-                _printer->setBackfeedConfig(backfeed, backfeedDots);
                 _printer->setPostFeed(postFeed);
             }
         },
@@ -877,48 +867,6 @@ void WebInterface::registerApiRoutes() {
             req->send(printed ? 200 : 503, "application/json", body);
         },
         nullptr, bodyCollect);
-    _server.on("/api/test-backfeed", HTTP_POST,
-        [this](AsyncWebServerRequest *req) {
-            if (!_printer) {
-                req->send(503, "application/json", "{\"ok\":false,\"error\":\"printer not initialized\"}");
-                return;
-            }
-            JsonDocument inp;
-            deserializeJson(inp, _body);
-            // cmd: "ESC_j"=0x6A, "ESC_K"=0x4B, "ESC_e"=0x65, or raw hex string "0x??"
-            String cmdStr     = inp["cmd"]     | "ESC_K";
-            uint16_t dots     = inp["dots"]    | 72;
-            uint8_t  chunk    = (uint8_t)(inp["chunk"]   | 0);
-            uint16_t delayMs  = inp["delay"]   | 50;
-            bool     doFlush  = inp["flush"]   | true;
-
-            uint8_t cmdByte = 0x4B; // default ESC K
-            if      (cmdStr == "ESC_j") cmdByte = 0x6A;
-            else if (cmdStr == "ESC_K") cmdByte = 0x4B;
-            else if (cmdStr == "ESC_e") cmdByte = 0x65;
-            else if (cmdStr.startsWith("0x") || cmdStr.startsWith("0X"))
-                cmdByte = (uint8_t)strtol(cmdStr.c_str(), nullptr, 16);
-
-            Logger::info("Printer", String("Backfeed test: ESC 0x") + String(cmdByte, HEX)
-                + " dots=" + dots + " chunk=" + chunk + " delay=" + delayMs + " flush=" + doFlush);
-
-            bool ok = _printer->testBackfeed(cmdByte, dots, chunk, delayMs, doFlush);
-
-            JsonDocument doc;
-            doc["ok"]      = ok;
-            doc["cmd"]     = cmdStr;
-            doc["cmdByte"] = "0x" + String(cmdByte, HEX);
-            doc["dots"]    = dots;
-            doc["chunk"]   = chunk;
-            doc["delay"]   = delayMs;
-            doc["flush"]   = doFlush;
-            doc["message"] = ok ? "Rücklauf gesendet" : "Drucker nicht bereit";
-            String body;
-            serializeJson(doc, body);
-            req->send(ok ? 200 : 503, "application/json", body);
-        },
-        nullptr, bodyCollect);
-
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
     _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));

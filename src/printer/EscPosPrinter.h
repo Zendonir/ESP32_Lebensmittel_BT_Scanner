@@ -21,11 +21,6 @@ public:
     size_t printLabelRow(const String &label, const String &value, uint8_t paperChars);
     void feed(uint8_t lines = 3);      // ESC d — forward feed n lines
     void feedDots(uint16_t dots);      // ESC J — forward feed n dots (chunked)
-    void backFeed(uint8_t lines);
-    // Raw reverse feed: cmd=0x6A(ESC j), 0x4B(ESC K), 0x65(ESC e)
-    // chunkSize=0 → single command, >0 → split into chunks of chunkSize dots
-    // delayMs per chunk (0=no delay), doFlush=flush after each chunk
-    void rawBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize, uint16_t delayMs, bool doFlush);
     void qrCode(const String &data);
     // Code 128 barcode (GS k); call barcodeHeight/Width before barcode128 if needed
     void barcodeHeight(uint8_t dots);     // GS h  (default 162)

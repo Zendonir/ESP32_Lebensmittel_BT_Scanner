@@ -140,33 +140,6 @@ void EscPosPrinter::feedDots(uint16_t dots) {
     }
 }
 
-void EscPosPrinter::backFeed(uint8_t lines) {
-    rawBackfeed(0x4B, (uint16_t)lines * 24, 0, 50, true);
-}
-
-void EscPosPrinter::rawBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
-                                 uint16_t delayMs, bool doFlush) {
-    if (!ready || dots == 0) return;
-    if (chunkSize == 0) {
-        // Single command – cap at 255 (ESC/POS parameter is 1 byte)
-        uint8_t n = (dots > 255) ? 255 : (uint8_t)dots;
-        printerSerial.write(0x1B);
-        printerSerial.write(cmd);
-        printerSerial.write(n);
-        if (doFlush) printerSerial.flush();
-        if (delayMs) delay(delayMs);
-    } else {
-        while (dots > 0) {
-            uint8_t n = (dots > chunkSize) ? chunkSize : (uint8_t)dots;
-            printerSerial.write(0x1B);
-            printerSerial.write(cmd);
-            printerSerial.write(n);
-            if (doFlush) printerSerial.flush();
-            if (delayMs) delay(delayMs);
-            dots -= n;
-        }
-    }
-}
 
 void EscPosPrinter::qrCode(const String &data) {
     if (!ready) return;

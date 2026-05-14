@@ -33,37 +33,11 @@ void PrinterManager::feed(uint8_t lines) {
     printer.flush();
 }
 
-void PrinterManager::backFeed(uint8_t lines) {
-    if (!printer.isReady()) return;
-    printer.backFeed(lines);
-    printer.flush();
-}
-
-void PrinterManager::setBackfeedConfig(bool enabled, uint16_t dots) {
-    backfeedEnabled = enabled;
-    backfeedDots    = dots;
-}
-
 void PrinterManager::setPostFeed(uint16_t lines) {
     postFeedDots = lines;
 }
 
-bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
-                                   uint16_t delayMs, bool doFlush) {
-    if (!printer.isReady()) return false;
-    printer.rawBackfeed(cmd, dots, chunkSize, delayMs, doFlush);
-    printer.flush();
-    return true;
-}
-
 bool PrinterManager::printLabel(const InventoryItem &item) {
-    if (backfeedEnabled && backfeedDots > 0) {
-        // ESC j (0x6A) is the standard reverse feed — no extra data bytes
-        // expected, unlike ESC K (graphics command) which caused symbols.
-        printer.rawBackfeed(0x6A, backfeedDots, 0, 50, true);
-        printer.reset();
-        delay(100);
-    }
     renderer.setPostFeed(postFeedDots);
     return renderer.printInventoryLabel(item);
 }
