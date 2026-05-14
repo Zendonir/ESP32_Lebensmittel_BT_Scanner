@@ -22,5 +22,5 @@ private:
     EscPosPrinter printer;
     LabelRenderer renderer;
     uint32_t currentBaud  = 0;
-    uint16_t postFeedDots = 100;
+    uint16_t postFeedDots = 86;
 };

@@ -144,16 +144,31 @@ Audio::Audio() : volume_level(70), is_initialized(false), _queue(nullptr) {}
 void Audio::init() {
     _queue = xQueueCreate(8, sizeof(ToneCmd));
 
+    // I2C-Probe: prüfe ob ES8311 auf Adresse 0x18 antwortet
+    Wire.beginTransmission(ES8311_ADDR);
+    uint8_t i2c_err = Wire.endTransmission();
+    Logger::info("Audio", String("ES8311 I2C probe 0x18 → ") +
+        (i2c_err == 0 ? "OK" : String("FEHLER code=") + i2c_err));
+    if (i2c_err != 0) {
+        Logger::info("Audio", "ES8311 nicht gefunden – Audio deaktiviert");
+        return;
+    }
+
     if (!i2s_audio_init()) {
         Logger::info("Audio", "I2S init fehlgeschlagen");
         return;
     }
+    Logger::info("Audio", String("I2S bereit MCLK=GPIO") + I2S_MCLK
+        + " BCLK=GPIO" + I2S_BCLK + " LRCK=GPIO" + I2S_LRCK
+        + " DOUT=GPIO" + I2S_DOUT);
+
     delay(100);
     es8311_init(volume_level);
 
     is_initialized = true;
-    xTaskCreatePinnedToCore(toneTask, "audio_tone", 4096, this, 5, nullptr, 1);
-    Logger::info("Audio", "ES8311 + I2S bereit, 44100 Hz 32-Bit Stereo");
+    BaseType_t ok = xTaskCreatePinnedToCore(toneTask, "audio_tone", 4096, this, 5, nullptr, 1);
+    Logger::info("Audio", String("ES8311 bereit, Task=") + (ok == pdPASS ? "OK" : "FEHLER")
+        + " vol=" + volume_level + "%");
 }
 
 void Audio::playTone(uint16_t frequency, uint16_t duration_ms) {

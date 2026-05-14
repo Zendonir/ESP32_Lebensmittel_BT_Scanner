@@ -8,7 +8,11 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
 
     const uint8_t W = LABEL_PAPER_CHARS;
 
-    // Reset as the very first command — flushes any stray bytes/state in printer
+    // Double reset: first ESC@ absorbs any incomplete command still in the
+    // printer's input buffer; second ESC@ ensures a fully clean slate.
+    printer.reset();
+    printer.flush();
+    delay(40);
     printer.reset();
     printer.setCodePage(16);          // restore WPC1252 after ESC @ reset
     printer.flush();

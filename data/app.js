@@ -1302,7 +1302,7 @@ Pages.printer = {
     try {
       const cfg = await API.get('/api/printer-config');
       document.getElementById('prBaud').value     = cfg.baudrate  || 9600;
-      document.getElementById('prPostFeed').value = cfg.postFeed ?? 100;
+      document.getElementById('prPostFeed').value = cfg.postFeed ?? 86;
       document.getElementById('printerStatus').innerHTML =
         `<span class="status-dot ${cfg.ready ? 'ok' : 'warn'}"></span><span>${cfg.ready ? 'Bereit' : 'Nicht bereit'} · TTL TX ${cfg.txPin ?? '-'} / RX ${cfg.rxPin ?? '-'} · ${cfg.baudrate || 9600} Baud</span>`;
     } catch(e) {
@@ -1323,12 +1323,26 @@ Pages.printer = {
     }
   },
 
-  async testLabel() {
+  async testLabel() { return this.test('label'); },
+
+  async test(type) {
+    const labels = {
+      label: 'Testlabel (vollständig)',
+      text:  'ESC/POS Testseite',
+      qr:    'ESC/POS + QR',
+      plain: 'UART Plain',
+      baud:  'Baudrate Probe',
+    };
+    const el = document.getElementById('prTestResult');
+    if (el) el.textContent = `⏳ ${labels[type] || type} …`;
     try {
-      const res = await API.post('/api/test-print', { type: 'label' });
-      const bytes = Number.isFinite(res.bytes) ? ` (${res.bytes} Bytes)` : '';
-      Toast.success((res.message || 'Testlabel gesendet') + bytes);
+      const res = await API.post('/api/test-print', { type });
+      const bytes = Number.isFinite(res.bytes) ? ` · ${res.bytes} B` : '';
+      const msg = `${res.ok ? '✓' : '✗'} ${labels[type] || type}${bytes}`;
+      if (el) el.textContent = msg;
+      res.ok ? Toast.success(res.message || 'Gesendet') : Toast.error(res.message || 'Fehler');
     } catch(e) {
+      if (el) el.textContent = `✗ Fehler`;
       Toast.error('Fehler: ' + e.message);
     }
   },

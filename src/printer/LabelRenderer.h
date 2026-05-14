@@ -14,5 +14,5 @@ public:
 private:
     EscPosPrinter &printer;
     uint8_t  preFeedLines  = LABEL_PRE_FEED;
-    uint16_t postFeedDots = 100;
+    uint16_t postFeedDots = 86;
 };

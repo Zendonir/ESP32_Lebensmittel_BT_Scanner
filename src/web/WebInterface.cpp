@@ -646,7 +646,7 @@ void WebInterface::registerApiRoutes() {
         JsonDocument doc;
         loadJson("/printer_config.json", doc, "{}");
         if (!doc["baudrate"].is<uint32_t>()) doc["baudrate"] = _printer ? _printer->baud() : UART_BAUD;
-        if (!doc["postFeed"].is<int>())      doc["postFeed"]  = 100;
+        if (!doc["postFeed"].is<int>())      doc["postFeed"]  = 86;
         doc["ready"] = _printer && _printer->isReady();
         doc["txPin"] = UART_TX;
         doc["rxPin"] = UART_RX;
