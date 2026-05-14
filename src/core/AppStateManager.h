@@ -14,12 +14,7 @@ enum class AppState {
     PRINTING,
     SUCCESS,
     ERROR,
-    RETRIEVE,
-    PRODUCT_LIST,
-    INVENTORY_BROWSE,
-    HOUSEHOLD_SELECT,
-    HOUSEHOLD_INVENTORY,
-    POWER_SAVE
+    RETRIEVE
 };
 
 class AppStateManager {

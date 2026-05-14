@@ -40,7 +40,6 @@ private:
     void initFilesystem();
     void initWebServer();
     void handleSerialCommand(const String &command);
-    void renderWiFiStatus();
     void renderDashboard(const String &message = "");
     void renderActiveTab(const String &message = "", bool force = false);
     String buildUiSignature() const;

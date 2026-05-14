@@ -29,11 +29,6 @@ const char *AppStateManager::toString(AppState state) {
         case AppState::SUCCESS: return "SUCCESS";
         case AppState::ERROR: return "ERROR";
         case AppState::RETRIEVE: return "RETRIEVE";
-        case AppState::PRODUCT_LIST: return "PRODUCT_LIST";
-        case AppState::INVENTORY_BROWSE: return "INVENTORY_BROWSE";
-        case AppState::HOUSEHOLD_SELECT: return "HOUSEHOLD_SELECT";
-        case AppState::HOUSEHOLD_INVENTORY: return "HOUSEHOLD_INVENTORY";
-        case AppState::POWER_SAVE: return "POWER_SAVE";
     }
     return "UNKNOWN";
 }

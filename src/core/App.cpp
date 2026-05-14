@@ -36,6 +36,7 @@ void App::begin() {
 
     Logger::info("Touch", "Initializing FT6336");
     touch_obj.init(&i2c_bus);
+    display_obj.startTouchTask(); // touch polling now runs on Core 0 independently
 
     Logger::info("Audio", "Initializing audio feedback");
     audio_obj.init();
@@ -67,8 +68,7 @@ void App::begin() {
         WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
         uint32_t t0 = millis();
         while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && millis() - t0 < 5000) {
-            display_obj.tick();
-            delay(30);
+            delay(30); // touch task handles polling independently
         }
         int n = WiFi.scanComplete();
         if (n >= 0) {
@@ -169,10 +169,6 @@ void App::resetLCDViaTCA9554() {
     tca_write(REG_OUTPUT, 0xFF);         // EXIO1 high (release reset)
     delay(200);                          // ST7796 needs ~120 ms to wake
     Logger::info("Display", "TCA9554 LCD reset done");
-}
-
-void App::renderWiFiStatus() {
-    renderDashboard();
 }
 
 void App::renderDashboard(const String &message) {
