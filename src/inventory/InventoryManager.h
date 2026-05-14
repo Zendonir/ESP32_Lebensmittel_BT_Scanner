@@ -11,6 +11,7 @@ public:
     bool begin();
     bool addItem(const InventoryItem &item);
     bool removeByLabel(const String &labelBarcode);
+    bool removeByBarcode(const String &barcode);
     const std::vector<InventoryItem> &items() const;
 
 private:

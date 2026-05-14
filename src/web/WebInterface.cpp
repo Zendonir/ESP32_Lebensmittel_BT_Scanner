@@ -1,6 +1,8 @@
 #include "WebInterface.h"
 #include "../core/Logger.h"
 #include "../storage/JsonStorage.h"
+#include "../inventory/InventoryManager.h"
+#include "../models/InventoryItem.h"
 #include "wifi_manager.h"
 #include "../scanner/BarcodeManager.h"
 #include "../printer/PrinterManager.h"
@@ -428,42 +430,62 @@ void WebInterface::registerApiRoutes() {
     });
 
     // ---- INVENTORY (GET) ----
-    _server.on("/api/inventory", HTTP_GET, [](AsyncWebServerRequest *req) {
-        sendFile(req, "/inventory.json", "[]");
+    _server.on("/api/inventory", HTTP_GET, [this](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        JsonArray arr = doc.to<JsonArray>();
+        if (_invMgr) {
+            for (const auto &it : _invMgr->items()) {
+                JsonObject obj = arr.add<JsonObject>();
+                obj["barcode"]      = it.barcode;
+                obj["name"]         = it.name;
+                obj["brand"]        = it.brand;
+                obj["category"]     = it.category;
+                obj["expiryDate"]   = it.expiryDate;
+                obj["addedDate"]    = it.addedDate;
+                obj["quantity"]     = it.quantity;
+                obj["labelBarcode"] = it.labelBarcode;
+            }
+        }
+        sendJson(req, doc);
     });
 
     // ---- INVENTORY (POST – add) ----
     _server.on("/api/inventory", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            JsonDocument arr, item;
-            loadJson("/inventory.json", arr, "[]");
-            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            if (deserializeJson(item, _body) == DeserializationError::Ok)
-                arr.as<JsonArray>().add(item.as<JsonObject>());
-            saveJson("/inventory.json", arr);
-            req->send(200, "application/json", "{\"ok\":true}");
+        [this](AsyncWebServerRequest *req) {
+            if (!_invMgr) { sendError(req, "Inventory nicht verfügbar"); return; }
+            JsonDocument body;
+            if (deserializeJson(body, _body) != DeserializationError::Ok) {
+                sendError(req, "Ungültiges JSON", 400); return;
+            }
+            InventoryItem item;
+            item.barcode      = body["barcode"]      | "";
+            item.name         = body["name"]         | "";
+            item.brand        = body["brand"]        | "";
+            item.category     = body["category"]     | "";
+            item.expiryDate   = body["expiryDate"]   | "";
+            item.addedDate    = body["addedDate"]    | "";
+            item.quantity     = body["quantity"]     | 1;
+            item.labelBarcode = body["labelBarcode"] | "";
+            _invMgr->addItem(item);
+            sendOk(req);
         },
         nullptr, bodyCollect);
 
     // ---- INVENTORY DELETE ----
     _server.on("/api/inventory/delete", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            JsonDocument arr, key, out;
-            out.to<JsonArray>();
-            loadJson("/inventory.json", arr, "[]");
-            if (deserializeJson(key, _body) == DeserializationError::Ok
-                && arr.is<JsonArray>()) {
-                String lb = key["labelBarcode"] | "";
-                String bc = key["barcode"]      | "";
-                for (JsonVariant v : arr.as<JsonArray>()) {
-                    String vlb = v["labelBarcode"] | "";
-                    String vbc = v["barcode"]      | "";
-                    if (vlb == lb || vbc == bc) continue;
-                    out.as<JsonArray>().add(v);
-                }
-                saveJson("/inventory.json", out);
+        [this](AsyncWebServerRequest *req) {
+            if (!_invMgr) { sendError(req, "Inventory nicht verfügbar"); return; }
+            JsonDocument key;
+            if (deserializeJson(key, _body) != DeserializationError::Ok) {
+                sendError(req, "Ungültiges JSON", 400); return;
             }
-            req->send(200, "application/json", "{\"ok\":true}");
+            String lb = key["labelBarcode"] | "";
+            String bc = key["barcode"]      | "";
+            if (!lb.isEmpty())
+                _invMgr->removeByLabel(lb);
+            else if (!bc.isEmpty())
+                _invMgr->removeByBarcode(bc);
+            sendOk(req);
         },
         nullptr, bodyCollect);
 
@@ -886,19 +908,16 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/ota-url",              HTTP_POST, stub("{\"ok\":true,\"message\":\"OTA gestartet\"}"), nullptr, bodyCollect);
 
     // ---- STATS ----
-    _server.on("/api/stats", HTTP_GET, [](AsyncWebServerRequest *req) {
-        JsonDocument inv, doc;
-        loadJson("/inventory.json", inv, "[]");
-        doc["totalStored"]    = inv.is<JsonArray>() ? inv.as<JsonArray>().size() : 0;
+    _server.on("/api/stats", HTTP_GET, [this](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["totalStored"]    = _invMgr ? (int)_invMgr->items().size() : 0;
         doc["totalConsumed"]  = 0;
         doc["totalWasted"]    = 0;
         doc["avgStorageDays"] = 0;
         doc["topProducts"].to<JsonArray>();
         doc["categoryUsage"].to<JsonArray>();
         doc["history"].to<JsonArray>();
-        String body;
-        serializeJson(doc, body);
-        req->send(200, "application/json", body);
+        sendJson(req, doc);
     });
 
     // ---- SCAN LOG ----

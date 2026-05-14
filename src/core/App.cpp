@@ -483,6 +483,8 @@ void App::initFilesystem() {
 
 void App::initWebServer() {
     Logger::info("Web", "Starting web server on port 80");
+    web.setInventoryManager(&inventory);
+    web.setJsonStorage(&json);
     web.setPrinterManager(&printer);
     web.begin();
 

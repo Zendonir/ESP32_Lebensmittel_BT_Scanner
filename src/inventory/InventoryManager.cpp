@@ -21,6 +21,16 @@ bool InventoryManager::removeByLabel(const String &labelBarcode) {
     return false;
 }
 
+bool InventoryManager::removeByBarcode(const String &barcode) {
+    for (auto it = inventory.begin(); it != inventory.end(); ++it) {
+        if (it->barcode == barcode) {
+            inventory.erase(it);
+            return storage.save(inventory);
+        }
+    }
+    return false;
+}
+
 const std::vector<InventoryItem> &InventoryManager::items() const {
     return inventory;
 }
