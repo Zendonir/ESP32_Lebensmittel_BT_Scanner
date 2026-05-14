@@ -90,7 +90,7 @@ void EscPosPrinter::feed(uint8_t lines) {
 }
 
 void EscPosPrinter::backFeed(uint8_t lines) {
-    rawBackfeed(0x4B, (uint16_t)lines * 24, 255, 50, true);
+    rawBackfeed(0x4B, (uint16_t)lines * 24, 0, 50, true);
 }
 
 void EscPosPrinter::rawBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,

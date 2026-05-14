@@ -1304,7 +1304,7 @@ Pages.printer = {
       document.getElementById('prBaud').value          = cfg.baudrate      || 9600;
       document.getElementById('prLabelLen').value      = cfg.labelLen      || 40;
       document.getElementById('prBackfeed').checked    = !!cfg.backfeed;
-      document.getElementById('prBackfeedLines').value = cfg.backfeedLines || 3;
+      document.getElementById('prBackfeedDots').value = cfg.backfeedDots || 72;
       document.getElementById('printerStatus').innerHTML =
         `<span class="status-dot ${cfg.ready ? 'ok' : 'warn'}"></span><span>${cfg.ready ? 'Bereit' : 'Nicht bereit'} · TTL TX ${cfg.txPin ?? '-'} / RX ${cfg.rxPin ?? '-'} · ${cfg.baudrate || 9600} Baud</span>`;
     } catch(e) {
@@ -1319,7 +1319,7 @@ Pages.printer = {
         baudrate:      parseInt(document.getElementById('prBaud').value),
         labelLen:      parseInt(document.getElementById('prLabelLen').value),
         backfeed:      document.getElementById('prBackfeed').checked,
-        backfeedLines: parseInt(document.getElementById('prBackfeedLines').value),
+        backfeedDots: parseInt(document.getElementById('prBackfeedDots').value),
       });
       Toast.success('Drucker-Einstellungen gespeichert');
     } catch(e) {

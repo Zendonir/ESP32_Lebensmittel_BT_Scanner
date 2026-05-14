@@ -132,9 +132,9 @@ void WebInterface::begin() {
         if (loadJson("/printer_config.json", printerConfig, "{}")) {
             uint32_t baud = printerConfig["baudrate"] | 0;
             if (baud > 0) _printer->configure(baud);
-            bool    backfeed      = printerConfig["backfeed"]      | false;
-            uint8_t backfeedLines = (uint8_t)(printerConfig["backfeedLines"] | 3);
-            _printer->setBackfeedConfig(backfeed, backfeedLines);
+            bool     backfeed     = printerConfig["backfeed"]     | false;
+            uint16_t backfeedDots = (uint16_t)(printerConfig["backfeedDots"] | 72);
+            _printer->setBackfeedConfig(backfeed, backfeedDots);
         }
     }
 
@@ -648,7 +648,7 @@ void WebInterface::registerApiRoutes() {
         loadJson("/printer_config.json", doc, "{}");
         if (!doc["baudrate"].is<uint32_t>())    doc["baudrate"]      = _printer ? _printer->baud() : UART_BAUD;
         if (!doc["labelLen"].is<int>())          doc["labelLen"]      = 40;
-        if (!doc["backfeedLines"].is<int>())     doc["backfeedLines"] = 3;
+        if (!doc["backfeedDots"].is<int>())      doc["backfeedDots"]  = 72;
         if (!doc["backfeed"].is<bool>())         doc["backfeed"]      = false;
         doc["ready"] = _printer && _printer->isReady();
         doc["txPin"] = UART_TX;
@@ -665,14 +665,14 @@ void WebInterface::registerApiRoutes() {
                 return;
             }
             uint32_t baud         = incoming["baudrate"]      | UART_BAUD;
-            bool     backfeed     = incoming["backfeed"]      | false;
-            uint8_t  backfeedLines= (uint8_t)(incoming["backfeedLines"] | 3);
+            bool     backfeed     = incoming["backfeed"]     | false;
+            uint16_t backfeedDots = (uint16_t)(incoming["backfeedDots"] | 72);
             Logger::info("Printer", String("Web config update baud=") + baud
-                + " backfeed=" + backfeed + " lines=" + backfeedLines);
+                + " backfeed=" + backfeed + " dots=" + backfeedDots);
             mergePost(req, "/printer_config.json", "{}");
             if (_printer) {
                 _printer->configure(baud);
-                _printer->setBackfeedConfig(backfeed, backfeedLines);
+                _printer->setBackfeedConfig(backfeed, backfeedDots);
             }
         },
         nullptr, bodyCollect);
