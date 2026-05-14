@@ -1305,6 +1305,7 @@ Pages.printer = {
       document.getElementById('prLabelLen').value      = cfg.labelLen      || 40;
       document.getElementById('prBackfeed').checked    = !!cfg.backfeed;
       document.getElementById('prBackfeedDots').value = cfg.backfeedDots || 72;
+      document.getElementById('prPostFeed').value     = cfg.postFeed ?? 4;
       document.getElementById('printerStatus').innerHTML =
         `<span class="status-dot ${cfg.ready ? 'ok' : 'warn'}"></span><span>${cfg.ready ? 'Bereit' : 'Nicht bereit'} · TTL TX ${cfg.txPin ?? '-'} / RX ${cfg.rxPin ?? '-'} · ${cfg.baudrate || 9600} Baud</span>`;
     } catch(e) {
@@ -1319,7 +1320,8 @@ Pages.printer = {
         baudrate:      parseInt(document.getElementById('prBaud').value),
         labelLen:      parseInt(document.getElementById('prLabelLen').value),
         backfeed:      document.getElementById('prBackfeed').checked,
-        backfeedDots: parseInt(document.getElementById('prBackfeedDots').value),
+        backfeedDots:  parseInt(document.getElementById('prBackfeedDots').value),
+        postFeed:      parseInt(document.getElementById('prPostFeed').value),
       });
       Toast.success('Drucker-Einstellungen gespeichert');
     } catch(e) {
@@ -1337,32 +1339,6 @@ Pages.printer = {
     }
   },
 
-  // Backfeed variant tester
-  async bf(cmd, dots, chunk, delay, flush) {
-    const el = document.getElementById('bfResult');
-    const label = `${cmd} · ${dots} dots · chunk=${chunk} · delay=${delay}ms · flush=${flush}`;
-    if (el) el.textContent = `Sende: ${label} …`;
-    try {
-      const res = await API.post('/api/test-backfeed', { cmd, dots, chunk, delay, flush });
-      const msg = res.ok ? `OK: ${label}` : `Fehler: ${res.message || res.error}`;
-      if (el) el.style.color = res.ok ? 'var(--ok)' : 'var(--warn)';
-      if (el) el.textContent = msg;
-      if (res.ok) Toast.success('Backfeed: ' + label);
-      else        Toast.warn('Backfeed fehlgeschlagen');
-    } catch(e) {
-      if (el) { el.textContent = 'Fehler: ' + e.message; el.style.color = 'var(--warn)'; }
-      Toast.error('Fehler: ' + e.message);
-    }
-  },
-
-  async bfCustom() {
-    const cmd   = document.getElementById('bfCmd').value;
-    const dots  = parseInt(document.getElementById('bfDots').value)   || 72;
-    const chunk = parseInt(document.getElementById('bfChunk').value);
-    const delay = parseInt(document.getElementById('bfDelay').value)  || 0;
-    const flush = document.getElementById('bfFlush').checked;
-    await this.bf(cmd, dots, chunk, delay, flush);
-  },
 };
 
 /* ---- SCANNER ---- */

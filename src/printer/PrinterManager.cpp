@@ -44,6 +44,10 @@ void PrinterManager::setBackfeedConfig(bool enabled, uint16_t dots) {
     backfeedDots    = dots;
 }
 
+void PrinterManager::setPostFeed(uint8_t lines) {
+    postFeedLines = lines;
+}
+
 bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
                                    uint16_t delayMs, bool doFlush) {
     if (!printer.isReady()) return false;
@@ -55,6 +59,7 @@ bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
 bool PrinterManager::printLabel(const InventoryItem &item) {
     if (backfeedEnabled && backfeedDots > 0)
         printer.rawBackfeed(0x4B, backfeedDots, 0, 50, true);
+    renderer.setPostFeed(postFeedLines);
     return renderer.printInventoryLabel(item);
 }
 

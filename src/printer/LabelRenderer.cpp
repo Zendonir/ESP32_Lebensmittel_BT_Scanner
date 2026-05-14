@@ -56,7 +56,7 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     printer.barcode128(bc);
     printer.setAlign(0);
 
-    printer.feed(4);
+    printer.feed(postFeedLines);
     printer.flush();
     return true;
 }
