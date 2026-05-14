@@ -7,6 +7,7 @@
 #include "display.h"
 
 #include <WiFi.h>
+#include <esp_log.h>
 
 App app;
 
@@ -20,6 +21,9 @@ App::App()
 
 void App::begin() {
     Logger::begin(115200);
+    // Suppress ESP-IDF internal log output on UART0 (GPIO43 = printer TX).
+    // esp_log uses UART0 by default; only errors are critical enough to keep.
+    esp_log_level_set("*", ESP_LOG_ERROR);
     Logger::info("App", "ESP32-S3 Lebensmittel-Scanner booting");
     state.begin(AppState::BOOTING);
 

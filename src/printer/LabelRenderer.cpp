@@ -8,13 +8,20 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
 
     const uint8_t W = LABEL_PAPER_CHARS;
 
-    printer.feed(preFeedLines);
-    printer.flush();
-    delay(300);
-
+    // Reset as the very first command — flushes any stray bytes/state in printer
     printer.reset();
     printer.setCodePage(16);          // restore WPC1252 after ESC @ reset
+    printer.flush();
+    delay(80);                        // let printer settle after reset
+
     printer.setLineSpacing(24);       // tighter line spacing (24/180 inch ≈ 3.4 mm)
+
+    // Optional pre-feed (default 0 — previous label's nachlauf handles positioning)
+    if (preFeedLines > 0) {
+        printer.feed(preFeedLines);
+        printer.flush();
+        delay((uint32_t)preFeedLines * 60);
+    }
 
     // ── Product name: bold, double-height (~5 mm), 2-space indent ───────────────
     String name = item.name.isEmpty() ? "Unbekanntes Produkt" : item.name;
