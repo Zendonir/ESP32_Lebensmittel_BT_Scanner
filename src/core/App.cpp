@@ -349,6 +349,12 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::PRINTER_FEED_5:
             printer.feed(5);
             break;
+        case OnscreenAction::PRINTER_FEED_BACK_1:
+            printer.backFeed(1);
+            break;
+        case OnscreenAction::PRINTER_FEED_BACK_5:
+            printer.backFeed(5);
+            break;
         default:
             break;
     }
@@ -390,12 +396,32 @@ void App::startProductLookup(const String &barcode) {
     display_obj.showFetchingProduct(barcode);
 }
 
+void App::fetchTaskFn(void *param) {
+    App *self = static_cast<App *>(param);
+    self->_fetchOk = self->openFoodFacts.fetchProduct(self->_pendingBarcode, self->_fetchedProduct);
+    self->_fetchDone = true;
+    vTaskDelete(nullptr);
+}
+
 void App::processWorkflow() {
     if (workflow != WorkflowMode::FETCHING_PRODUCT) return;
 
-    ProductInfo product;
-    bool ok = openFoodFacts.fetchProduct(_pendingBarcode, product);
-    if (!ok) {
+    if (!_fetchStarted) {
+        // Launch fetch on core 0 (network core) – UI loop continues on core 1
+        _fetchStarted = true;
+        _fetchDone    = false;
+        _fetchOk      = false;
+        _fetchedProduct = ProductInfo();
+        xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, nullptr, 0);
+        return;
+    }
+
+    if (!_fetchDone) return; // Still fetching – keep rendering
+
+    // Fetch complete
+    _fetchStarted = false;
+    ProductInfo product = _fetchedProduct;
+    if (!_fetchOk) {
         product.barcode = _pendingBarcode;
         product.name = "Unbekanntes Produkt";
         product.brand = "Manuell pruefen";

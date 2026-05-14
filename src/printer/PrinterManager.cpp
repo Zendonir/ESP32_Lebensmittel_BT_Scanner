@@ -33,6 +33,12 @@ void PrinterManager::feed(uint8_t lines) {
     printer.flush();
 }
 
+void PrinterManager::backFeed(uint8_t lines) {
+    if (!printer.isReady()) return;
+    printer.backFeed(lines);
+    printer.flush();
+}
+
 bool PrinterManager::printLabel(const InventoryItem &item) {
     return renderer.printInventoryLabel(item);
 }

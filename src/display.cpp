@@ -397,15 +397,19 @@ static void draw_panel_system(const HomeState &s) {
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.drawString("ST7796 | FT6336 | 480x320", 250, py + 54);
 
-    // Printer positioning card
+    // Printer positioning card (two rows: forward feed + back feed)
     int fy = py + 136;
-    draw_card(4, fy, 472, 60, C_SURFACE, C_BORDER);
+    draw_card(4, fy, 472, 84, C_SURFACE, C_BORDER);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextFont(2);
     _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("DRUCKER POSITION", 12, fy + 8);
-    draw_button( 12, fy + 26, 148, 28, "+1 Zeile",  C_SURFACE2, C_TEXT, 2, OnscreenAction::PRINTER_FEED_1);
-    draw_button(166, fy + 26, 148, 28, "+5 Zeilen", C_SURFACE2, C_TEXT, 2, OnscreenAction::PRINTER_FEED_5);
+    _spr.drawString("DRUCKER POSITION", 12, fy + 6);
+    // Forward feed row
+    draw_button( 12, fy + 22, 112, 26, "+1 Zeile",  C_SURFACE2, C_TEXT,  2, OnscreenAction::PRINTER_FEED_1);
+    draw_button(132, fy + 22, 112, 26, "+5 Zeilen", C_SURFACE2, C_TEXT,  2, OnscreenAction::PRINTER_FEED_5);
+    // Back feed row
+    draw_button( 12, fy + 54, 112, 26, "-1 Zeile",  C_SURFACE2, C_YELLOW, 2, OnscreenAction::PRINTER_FEED_BACK_1);
+    draw_button(132, fy + 54, 112, 26, "-5 Zeilen", C_SURFACE2, C_YELLOW, 2, OnscreenAction::PRINTER_FEED_BACK_5);
 
     // Refresh button
     draw_button(4, SCR_H - TAB_H - 44, 150, 36,
@@ -467,6 +471,7 @@ void Display::init() {
 
     _tft.init();
     _tft.setRotation(1);   // landscape 480×320
+    _tft.invertDisplay(true); // ST7796 on this board needs INVON for correct colors
     _tft.fillScreen(TFT_BLACK);
 
     // Allocate full-screen sprite in PSRAM

@@ -89,6 +89,15 @@ void EscPosPrinter::feed(uint8_t lines) {
     printerSerial.write(lines);
 }
 
+void EscPosPrinter::backFeed(uint8_t lines) {
+    if (!ready || lines == 0) return;
+    // ESC e n – reverse line feed; supported by many thermal printers.
+    // If the printer ignores it the command is silently discarded.
+    printerSerial.write(0x1B);
+    printerSerial.write('e');
+    printerSerial.write(lines);
+}
+
 void EscPosPrinter::qrCode(const String &data) {
     if (!ready) return;
     uint16_t storeLen = data.length() + 3;

@@ -17,6 +17,7 @@ public:
     // Print a two-column row; right value is underlined; total width = paperChars
     size_t printLabelRow(const String &label, const String &value, uint8_t paperChars);
     void feed(uint8_t lines = 3);
+    void backFeed(uint8_t lines);  // ESC e n – reverse feed (printer must support it)
     void qrCode(const String &data);
     // Code 128 barcode (GS k); call barcodeHeight/Width before barcode128 if needed
     void barcodeHeight(uint8_t dots);     // GS h  (default 162)

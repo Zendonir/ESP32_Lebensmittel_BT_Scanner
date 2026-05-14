@@ -52,6 +52,7 @@ private:
     bool finishStorageWorkflow();
     bool formatDateDraft(String &formatted) const;
     char digitForAction(OnscreenAction action) const;
+    static void fetchTaskFn(void *param);
 
     TwoWire         i2c_bus;
     AppStateManager state;
@@ -80,6 +81,12 @@ private:
     String          _resultTitle;
     String          _resultMessage;
     bool            _resultSuccess = false;
+
+    // Async product fetch (runs on core 0 to avoid blocking UI)
+    volatile bool   _fetchStarted = false;
+    volatile bool   _fetchDone    = false;
+    bool            _fetchOk      = false;
+    ProductInfo     _fetchedProduct;
 };
 
 extern App app;

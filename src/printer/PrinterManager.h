@@ -11,7 +11,8 @@ public:
     void configure(uint32_t baud);
     bool isReady() const;
     uint32_t baud() const;
-    void feed(uint8_t lines);   // advance paper (manual positioning)
+    void feed(uint8_t lines);      // advance paper forward
+    void backFeed(uint8_t lines);  // reverse feed (printer must support ESC e)
     bool printLabel(const InventoryItem &item);
     size_t printTestPage(bool includeQr = false);
     size_t printPlainTest();
