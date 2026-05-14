@@ -8,6 +8,7 @@ public:
     void begin(uint32_t baud = UART_BAUD);
     bool isReady() const;
     void reset();
+    void setLineSpacing(uint8_t n);  // ESC 3 n — n/180 inch per line; 0=default
     void setBold(bool enabled);
     void setLarge(bool enabled);
     void setUnderline(bool enabled);

@@ -58,9 +58,9 @@ bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
 
 bool PrinterManager::printLabel(const InventoryItem &item) {
     if (backfeedEnabled && backfeedDots > 0) {
-        printer.rawBackfeed(0x4B, backfeedDots, 0, 50, true);
-        // 0x18 (CAN) discards any garbage in the printer's input buffer
-        // caused by ESC K; ESC @ then resets formatting state.
+        // ESC j (0x6A) is the standard reverse feed — no extra data bytes
+        // expected, unlike ESC K (graphics command) which caused symbols.
+        printer.rawBackfeed(0x6A, backfeedDots, 0, 50, true);
         uint8_t can = 0x18;
         printer.writeBytes(&can, 1);
         printer.reset();

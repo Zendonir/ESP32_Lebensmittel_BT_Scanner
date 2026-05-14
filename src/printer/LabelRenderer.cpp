@@ -13,6 +13,8 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     delay(300);
 
     printer.reset();
+    // 24/180 inch ≈ 3.4 mm per line — tighter than the ESC @ default (~4 mm)
+    printer.setLineSpacing(24);
 
     // ── Product name: always bold normal size, left-aligned, truncated ──────────
     String name = item.name.isEmpty() ? "Unbekanntes Produkt" : item.name;

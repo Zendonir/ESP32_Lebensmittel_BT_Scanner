@@ -23,6 +23,19 @@ void EscPosPrinter::reset() {
     delay(50);
 }
 
+void EscPosPrinter::setLineSpacing(uint8_t n) {
+    if (!ready) return;
+    if (n == 0) {
+        // ESC 2 restores default line spacing
+        printerSerial.write(0x1B);
+        printerSerial.write('2');
+    } else {
+        printerSerial.write(0x1B);
+        printerSerial.write('3');
+        printerSerial.write(n);
+    }
+}
+
 void EscPosPrinter::setBold(bool enabled) {
     if (!ready) return;
     printerSerial.write(0x1B);
