@@ -347,10 +347,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             printer.feed(5);
             break;
         case OnscreenAction::PRINTER_FEED_BACK_1:
-            printer.backFeed(1);
-            break;
         case OnscreenAction::PRINTER_FEED_BACK_5:
-            printer.backFeed(5);
             break;
         default:
             break;

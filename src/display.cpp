@@ -418,10 +418,6 @@ static void draw_panel_system(const HomeState &s) {
     // Forward feed row
     draw_button( 12, fy + 22, 112, 26, "+1 Zeile",  C_SURFACE2, C_TEXT,  2, OnscreenAction::PRINTER_FEED_1);
     draw_button(132, fy + 22, 112, 26, "+5 Zeilen", C_SURFACE2, C_TEXT,  2, OnscreenAction::PRINTER_FEED_5);
-    // Back feed row
-    draw_button( 12, fy + 54, 112, 26, "-1 Zeile",  C_SURFACE2, C_YELLOW, 2, OnscreenAction::PRINTER_FEED_BACK_1);
-    draw_button(132, fy + 54, 112, 26, "-5 Zeilen", C_SURFACE2, C_YELLOW, 2, OnscreenAction::PRINTER_FEED_BACK_5);
-
     // Refresh button
     draw_button(4, SCR_H - TAB_H - 44, 150, 36,
                 "Refresh",

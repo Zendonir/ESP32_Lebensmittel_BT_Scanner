@@ -33,10 +33,8 @@ enum class OnscreenAction {
     QTY_MINUS,
     QTY_PLUS,
     QTY_CONFIRM,
-    PRINTER_FEED_1,      // feed 1 line forward
-    PRINTER_FEED_5,      // feed 5 lines forward
-    PRINTER_FEED_BACK_1, // reverse feed 1 line
-    PRINTER_FEED_BACK_5  // reverse feed 5 lines
+    PRINTER_FEED_1, // feed 1 line forward
+    PRINTER_FEED_5  // feed 5 lines forward
 };
 
 enum class UiTab {
