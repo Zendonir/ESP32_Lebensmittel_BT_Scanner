@@ -134,7 +134,7 @@ void WebInterface::begin() {
             if (baud > 0) _printer->configure(baud);
             bool     backfeed     = printerConfig["backfeed"]     | false;
             uint16_t backfeedDots = (uint16_t)(printerConfig["backfeedDots"] | 72);
-            uint8_t  postFeed     = (uint8_t)(printerConfig["postFeed"] | 4);
+            uint8_t  postFeed     = (uint16_t)(printerConfig["postFeed"] | 4);
             _printer->setBackfeedConfig(backfeed, backfeedDots);
             _printer->setPostFeed(postFeed);
         }
@@ -670,7 +670,7 @@ void WebInterface::registerApiRoutes() {
             uint32_t baud         = incoming["baudrate"]      | UART_BAUD;
             bool     backfeed     = incoming["backfeed"]     | false;
             uint16_t backfeedDots = (uint16_t)(incoming["backfeedDots"] | 72);
-            uint8_t  postFeed     = (uint8_t)(incoming["postFeed"] | 4);
+            uint8_t  postFeed     = (uint16_t)(incoming["postFeed"] | 4);
             Logger::info("Printer", String("Web config update baud=") + baud
                 + " backfeed=" + backfeed + " dots=" + backfeedDots + " postFeed=" + postFeed);
             mergePost(req, "/printer_config.json", "{}");

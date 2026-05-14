@@ -56,7 +56,12 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     printer.barcode128(bc);
     printer.setAlign(0);
 
-    printer.feed(postFeedLines);
+    uint16_t remaining = postFeedLines;
+    while (remaining > 0) {
+        uint8_t chunk = remaining > 255 ? 255 : (uint8_t)remaining;
+        printer.feed(chunk);
+        remaining -= chunk;
+    }
     printer.flush();
     return true;
 }

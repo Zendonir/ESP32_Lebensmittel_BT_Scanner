@@ -44,7 +44,7 @@ void PrinterManager::setBackfeedConfig(bool enabled, uint16_t dots) {
     backfeedDots    = dots;
 }
 
-void PrinterManager::setPostFeed(uint8_t lines) {
+void PrinterManager::setPostFeed(uint16_t lines) {
     postFeedLines = lines;
 }
 
