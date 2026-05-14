@@ -14,22 +14,12 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
 
     printer.reset();
 
-    // ── Product name: large if ≤ half the line width, normal otherwise ────────
+    // ── Product name: always bold normal size, left-aligned, truncated ──────────
     String name = item.name.isEmpty() ? "Unbekanntes Produkt" : item.name;
-    printer.setAlign(1);
-    if (name.length() <= (size_t)(W / 2)) {
-        printer.setLarge(true);
-        printer.setBold(true);
-        printer.println(name);
-        printer.setBold(false);
-        printer.setLarge(false);
-    } else {
-        printer.setBold(true);
-        if (name.length() > W) name = name.substring(0, W);
-        printer.println(name);
-        printer.setBold(false);
-    }
-    printer.setAlign(0);
+    if (name.length() > W) name = name.substring(0, W);
+    printer.setBold(true);
+    printer.println(name);
+    printer.setBold(false);
 
     // ── Field rows: bold label, plain value, no underline, no separator ───────
     auto row = [&](const char *label, const String &value) {

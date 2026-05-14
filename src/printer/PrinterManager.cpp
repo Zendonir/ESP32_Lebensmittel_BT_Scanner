@@ -59,8 +59,10 @@ bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
 bool PrinterManager::printLabel(const InventoryItem &item) {
     if (backfeedEnabled && backfeedDots > 0) {
         printer.rawBackfeed(0x4B, backfeedDots, 0, 50, true);
-        // ESC K puts some printers into graphics mode; reset clears it
-        // before the label content starts printing.
+        // 0x18 (CAN) discards any garbage in the printer's input buffer
+        // caused by ESC K; ESC @ then resets formatting state.
+        uint8_t can = 0x18;
+        printer.writeBytes(&can, 1);
         printer.reset();
         delay(100);
     }
