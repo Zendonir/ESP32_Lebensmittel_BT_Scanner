@@ -29,7 +29,8 @@ public:
     void _setConnected(bool c);
     void _setConnecting(bool c);
     void _startScan();
-    String _targetName; // filter for HID scan; empty = any HID device
+    String  _targetName; // filter for HID scan; empty = any HID device
+    uint8_t _addrType = 0; // BLE_ADDR_PUBLIC=0, BLE_ADDR_RANDOM=1
 
     bool readCode(String &code);
     void injectCode(const String &code);
@@ -63,7 +64,6 @@ private:
     String lastScan;
     String lastError;
     uint8_t reconnectFailures = 0;
-    uint8_t _addrType = 0; // BLE_ADDR_PUBLIC=0, BLE_ADDR_RANDOM=1
 
     SemaphoreHandle_t _mutex = nullptr;
 };
