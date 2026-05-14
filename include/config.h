@@ -47,15 +47,15 @@
 #define SD_CS       -1
 
 // ============ UART (TTL Drucker) ============
-#define UART_TX     43
-#define UART_RX     44
+// GPIO35/36 are used (not the UART0 flash pins 43/44) to avoid
+// the printer reacting to the firmware upload stream.
+#define UART_TX     35
+#define UART_RX     36
 #define UART_NUM    UART_NUM_1
 #define UART_BAUD   9600
 
 // ============ FREE GPIOs ============
-#define FREE_GPIO_1 35
-#define FREE_GPIO_2 36
-#define FREE_GPIO_3 37
+#define FREE_GPIO_1 37
 
 // ============ POWER/SYSTEM ============
 #define BOOT_BTN    0
