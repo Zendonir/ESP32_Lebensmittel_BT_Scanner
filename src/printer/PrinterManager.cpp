@@ -39,7 +39,15 @@ void PrinterManager::backFeed(uint8_t lines) {
     printer.flush();
 }
 
+void PrinterManager::setBackfeedConfig(bool enabled, uint8_t lines) {
+    backfeedEnabled = enabled;
+    backfeedLines   = lines;
+}
+
 bool PrinterManager::printLabel(const InventoryItem &item) {
+    if (backfeedEnabled && backfeedLines > 0) {
+        backFeed(backfeedLines);
+    }
     return renderer.printInventoryLabel(item);
 }
 

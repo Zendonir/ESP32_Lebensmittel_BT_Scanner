@@ -132,6 +132,9 @@ void WebInterface::begin() {
         if (loadJson("/printer_config.json", printerConfig, "{}")) {
             uint32_t baud = printerConfig["baudrate"] | 0;
             if (baud > 0) _printer->configure(baud);
+            bool    backfeed      = printerConfig["backfeed"]      | false;
+            uint8_t backfeedLines = (uint8_t)(printerConfig["backfeedLines"] | 3);
+            _printer->setBackfeedConfig(backfeed, backfeedLines);
         }
     }
 
@@ -643,10 +646,10 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/printer-config", HTTP_GET, [this](AsyncWebServerRequest *req) {
         JsonDocument doc;
         loadJson("/printer_config.json", doc, "{}");
-        if (!doc["baudrate"].is<uint32_t>()) doc["baudrate"] = _printer ? _printer->baud() : UART_BAUD;
-        if (!doc["labelLen"].is<int>()) doc["labelLen"] = 40;
-        if (!doc["gap"].is<int>()) doc["gap"] = 3;
-        if (!doc["feedOffset"].is<int>()) doc["feedOffset"] = 0;
+        if (!doc["baudrate"].is<uint32_t>())    doc["baudrate"]      = _printer ? _printer->baud() : UART_BAUD;
+        if (!doc["labelLen"].is<int>())          doc["labelLen"]      = 40;
+        if (!doc["backfeedLines"].is<int>())     doc["backfeedLines"] = 3;
+        if (!doc["backfeed"].is<bool>())         doc["backfeed"]      = false;
         doc["ready"] = _printer && _printer->isReady();
         doc["txPin"] = UART_TX;
         doc["rxPin"] = UART_RX;
@@ -661,10 +664,16 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
                 return;
             }
-            uint32_t baud = incoming["baudrate"] | UART_BAUD;
-            Logger::info("Printer", String("Web config update baud=") + baud);
+            uint32_t baud         = incoming["baudrate"]      | UART_BAUD;
+            bool     backfeed     = incoming["backfeed"]      | false;
+            uint8_t  backfeedLines= (uint8_t)(incoming["backfeedLines"] | 3);
+            Logger::info("Printer", String("Web config update baud=") + baud
+                + " backfeed=" + backfeed + " lines=" + backfeedLines);
             mergePost(req, "/printer_config.json", "{}");
-            if (_printer) _printer->configure(baud);
+            if (_printer) {
+                _printer->configure(baud);
+                _printer->setBackfeedConfig(backfeed, backfeedLines);
+            }
         },
         nullptr, bodyCollect);
 
@@ -839,8 +848,14 @@ void WebInterface::registerApiRoutes() {
             } else if (type == "baud") {
                 bytes = _printer->printBaudProbe();
             } else {
-                mode = "text";
-                bytes = _printer->printTestPage(false);
+                mode = "label";
+                InventoryItem testItem;
+                testItem.name       = "Testprodukt";
+                testItem.barcode    = "4000417025005";
+                testItem.addedDate  = "14.05.2026";
+                testItem.expiryDate = "31.12.2026";
+                testItem.quantity   = 1;
+                bytes = _printer->printLabel(testItem) ? 1 : 0;
             }
 
             bool printed = bytes > 0;

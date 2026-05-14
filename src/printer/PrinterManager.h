@@ -11,8 +11,9 @@ public:
     void configure(uint32_t baud);
     bool isReady() const;
     uint32_t baud() const;
-    void feed(uint8_t lines);      // advance paper forward
-    void backFeed(uint8_t lines);  // reverse feed (printer must support ESC e)
+    void feed(uint8_t lines);
+    void backFeed(uint8_t lines);
+    void setBackfeedConfig(bool enabled, uint8_t lines);
     bool printLabel(const InventoryItem &item);
     size_t printTestPage(bool includeQr = false);
     size_t printPlainTest();
@@ -21,5 +22,7 @@ public:
 private:
     EscPosPrinter printer;
     LabelRenderer renderer;
-    uint32_t currentBaud = 0;
+    uint32_t currentBaud     = 0;
+    bool     backfeedEnabled = false;
+    uint8_t  backfeedLines   = 3;
 };

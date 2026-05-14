@@ -1301,12 +1301,10 @@ Pages.printer = {
   async load() {
     try {
       const cfg = await API.get('/api/printer-config');
-      document.getElementById('prBaud').value       = cfg.baudrate  || 9600;
-      document.getElementById('prLabelLen').value   = cfg.labelLen  || 40;
-      document.getElementById('prGap').value        = cfg.gap       || 3;
-      document.getElementById('prFeedOffset').value = cfg.feedOffset|| 0;
-      document.getElementById('prCutter').checked   = !!cfg.cutter;
-      document.getElementById('prBackfeed').checked = !!cfg.backfeed;
+      document.getElementById('prBaud').value          = cfg.baudrate      || 9600;
+      document.getElementById('prLabelLen').value      = cfg.labelLen      || 40;
+      document.getElementById('prBackfeed').checked    = !!cfg.backfeed;
+      document.getElementById('prBackfeedLines').value = cfg.backfeedLines || 3;
       document.getElementById('printerStatus').innerHTML =
         `<span class="status-dot ${cfg.ready ? 'ok' : 'warn'}"></span><span>${cfg.ready ? 'Bereit' : 'Nicht bereit'} · TTL TX ${cfg.txPin ?? '-'} / RX ${cfg.rxPin ?? '-'} · ${cfg.baudrate || 9600} Baud</span>`;
     } catch(e) {
@@ -1318,12 +1316,10 @@ Pages.printer = {
     e.preventDefault();
     try {
       await API.post('/api/printer-config', {
-        baudrate:   parseInt(document.getElementById('prBaud').value),
-        labelLen:   parseInt(document.getElementById('prLabelLen').value),
-        gap:        parseInt(document.getElementById('prGap').value),
-        feedOffset: parseInt(document.getElementById('prFeedOffset').value),
-        cutter:     document.getElementById('prCutter').checked,
-        backfeed:   document.getElementById('prBackfeed').checked,
+        baudrate:      parseInt(document.getElementById('prBaud').value),
+        labelLen:      parseInt(document.getElementById('prLabelLen').value),
+        backfeed:      document.getElementById('prBackfeed').checked,
+        backfeedLines: parseInt(document.getElementById('prBackfeedLines').value),
       });
       Toast.success('Drucker-Einstellungen gespeichert');
     } catch(e) {
@@ -1331,43 +1327,11 @@ Pages.printer = {
     }
   },
 
-  showPrintResult(res, fallback) {
-    const bytes = Number.isFinite(res.bytes) ? ` (${res.bytes} Bytes)` : '';
-    Toast.success((res.message || fallback) + bytes);
-  },
-
-  async testPrint() {
+  async testLabel() {
     try {
-      const res = await API.post('/api/test-print', { type: 'text' });
-      this.showPrintResult(res, 'Testdruck gesendet');
-    } catch(e) {
-      Toast.error('Fehler: ' + e.message);
-    }
-  },
-
-  async testPlain() {
-    try {
-      const res = await API.post('/api/test-print', { type: 'plain' });
-      this.showPrintResult(res, 'Nur-Text-Test gesendet');
-    } catch(e) {
-      Toast.error('Fehler: ' + e.message);
-    }
-  },
-
-  async testQr() {
-    try {
-      const res = await API.post('/api/test-print', { type: 'qr' });
-      this.showPrintResult(res, 'QR-Testdruck gesendet');
-    } catch(e) {
-      Toast.error('Fehler: ' + e.message);
-    }
-  },
-
-  async testBaudProbe() {
-    try {
-      Toast.info('Sende Baudraten-Test…');
-      const res = await API.post('/api/test-print', { type: 'baud' });
-      this.showPrintResult(res, 'Baudraten-Test gesendet');
+      const res = await API.post('/api/test-print', { type: 'label' });
+      const bytes = Number.isFinite(res.bytes) ? ` (${res.bytes} Bytes)` : '';
+      Toast.success((res.message || 'Testlabel gesendet') + bytes);
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
