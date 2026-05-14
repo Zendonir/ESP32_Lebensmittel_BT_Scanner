@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <freertos/semphr.h>
 
 struct BLEScannerDevice {
     String address;
@@ -15,40 +16,44 @@ public:
     void begin();
     void loop();
 
+    // Returns all found BLE devices after a blocking scan of durationSeconds.
     std::vector<BLEScannerDevice> scanDevices(uint32_t durationSeconds = 5);
+
     bool connectToDevice(const String &address, const String &name = "");
     void requestConnect(const String &address, const String &name = "");
     void disconnect();
+
+    // Called from NimBLE callbacks – do not call directly
     void handleClientDisconnect();
+    void handleNotify(uint8_t *data, size_t length);
+    void _setConnected(bool c);
+    void _setConnecting(bool c);
+    void _startScan();
+    String _targetName; // filter for HID scan; empty = any HID device
 
     bool readCode(String &code);
     void injectCode(const String &code);
-    void handleNotify(uint8_t *data, size_t length);
 
     void setAutoReconnect(bool enabled);
     bool getAutoReconnect() const { return autoReconnect; }
-    bool isConnected() const { return connected; }
-    bool isConnecting() const { return connecting; }
+    bool isConnected()  const { return connected; }
+    bool isConnecting() const { return connecting || connectRequested; }
     String getDeviceAddress() const { return deviceAddress; }
-    String getDeviceName() const { return deviceName; }
-    String getLastScan() const { return lastScan; }
-    String getLastError() const { return lastError; }
+    String getDeviceName()    const { return deviceName; }
+    String getLastScan()      const { return lastScan; }
+    String getLastError()     const { return lastError; }
     String getStatus() const;
 
 private:
     void loadSettings();
     void saveSettings();
-    void appendKey(uint8_t keycode, uint8_t modifiers);
-    void finishCode();
-    bool connectInternal(const String &address, const String &name, bool persist);
-    void cleanupClient(bool releaseClient = false);
 
-    bool initialized = false;
-    bool autoReconnect = true;
-    bool connected = false;
-    bool connecting = false;
+    bool initialized      = false;
+    bool autoReconnect    = true;
+    bool connected        = false;
+    bool connecting       = false;
     bool connectRequested = false;
-    bool reconnectPaused = false;
+    bool reconnectPaused  = false;
     String deviceAddress;
     String deviceName;
     String requestedAddress;
@@ -57,9 +62,9 @@ private:
     String currentCode;
     String lastScan;
     String lastError;
-    uint32_t lastReconnectAttempt = 0;
-    uint32_t reconnectIntervalMs = 30000;
     uint8_t reconnectFailures = 0;
+
+    SemaphoreHandle_t _mutex = nullptr;
 };
 
 extern BLEScanner ble_scanner;

@@ -91,11 +91,19 @@ void EscPosPrinter::feed(uint8_t lines) {
 
 void EscPosPrinter::backFeed(uint8_t lines) {
     if (!ready || lines == 0) return;
-    // ESC e n – reverse line feed; supported by many thermal printers.
-    // If the printer ignores it the command is silently discarded.
-    printerSerial.write(0x1B);
-    printerSerial.write('e');
-    printerSerial.write(lines);
+    // ESC K n – reverse feed by n dot-lines. Sent in ≤255-dot chunks with
+    // a flush+delay between chunks so the printer's buffer never overflows.
+    // Each ESC/POS text line is typically 24 dots; we use that as the step.
+    uint16_t dots = (uint16_t)lines * 24;
+    while (dots > 0) {
+        uint8_t chunk = (dots > 255) ? 255 : (uint8_t)dots;
+        printerSerial.write(0x1B);
+        printerSerial.write('K');
+        printerSerial.write(chunk);
+        printerSerial.flush();
+        delay((uint16_t)chunk * 2 + 50);
+        dots -= chunk;
+    }
 }
 
 void EscPosPrinter::qrCode(const String &data) {

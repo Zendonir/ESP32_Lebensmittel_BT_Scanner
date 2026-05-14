@@ -1,393 +1,384 @@
 #include "BLEScanner.h"
-
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEScan.h>
-#include <BLEClient.h>
-#include <BLEAdvertisedDevice.h>
-#include <BLERemoteService.h>
-#include <BLERemoteCharacteristic.h>
-#include <BLESecurity.h>
+#include <NimBLEDevice.h>
 #include <Preferences.h>
 
-namespace {
-constexpr uint16_t HID_SERVICE_UUID = 0x1812;
-constexpr uint16_t HID_REPORT_UUID = 0x2A4D;
-constexpr uint16_t HID_BOOT_KEYBOARD_INPUT_UUID = 0x2A22;
-constexpr uint16_t HID_PROTOCOL_MODE_UUID = 0x2A4E;
-BLEUUID hidServiceUuid((uint16_t)HID_SERVICE_UUID);
-BLEUUID hidReportUuid((uint16_t)HID_REPORT_UUID);
-BLEUUID hidBootKeyboardInputUuid((uint16_t)HID_BOOT_KEYBOARD_INPUT_UUID);
-BLEUUID hidProtocolModeUuid((uint16_t)HID_PROTOCOL_MODE_UUID);
-BLEClient *client = nullptr;
-BLEScanner *activeScanner = nullptr;
-BLESecurity *security = nullptr;
+// ── Static singletons used by NimBLE callbacks ───────────────
+static BLEScanner   *s_scanner  = nullptr;
+static NimBLEClient *s_client   = nullptr;
+static bool          s_nimInit  = false;
 
-class ScannerClientCallbacks : public BLEClientCallbacks {
-public:
-    void onConnect(BLEClient *) override {}
-    void onDisconnect(BLEClient *) override {
-        if (activeScanner) activeScanner->handleClientDisconnect();
-    }
-};
+// ── Discovery list (shared between scan callbacks) ───────────
+static std::vector<BLEScannerDevice> s_discovered;
+static SemaphoreHandle_t s_discMutex  = nullptr;
+static volatile bool     s_discovering = false;
 
-ScannerClientCallbacks clientCallbacks;
-
-char keyToChar(uint8_t keycode, bool shift) {
-    if (keycode >= 0x04 && keycode <= 0x1D) {
-        char c = 'a' + (keycode - 0x04);
-        return shift ? static_cast<char>(toupper(c)) : c;
+// ── HID keycode → ASCII ──────────────────────────────────────
+static char hidKey(uint8_t mod, uint8_t key) {
+    bool shift = mod & 0x22;
+    if (key >= 0x04 && key <= 0x1D) {
+        char c = 'a' + (key - 0x04);
+        return shift ? (char)(c - 32) : c;
     }
-    if (keycode >= 0x1E && keycode <= 0x27) {
-        const char normal[] = {'1','2','3','4','5','6','7','8','9','0'};
-        const char shifted[] = {'!','@','#','$','%','^','&','*','(',')'};
-        return shift ? shifted[keycode - 0x1E] : normal[keycode - 0x1E];
+    if (key >= 0x1E && key <= 0x27) {
+        const char *n = "1234567890", *s = "!@#$%^&*()";
+        return shift ? s[key - 0x1E] : n[key - 0x1E];
     }
-    switch (keycode) {
+    switch (key) {
+        case 0x28: return '\n';
+        case 0x2C: return ' ';
         case 0x2D: return shift ? '_' : '-';
         case 0x2E: return shift ? '+' : '=';
-        case 0x2F: return shift ? '{' : '[';
-        case 0x30: return shift ? '}' : ']';
-        case 0x31: return shift ? '|' : '\\';
-        case 0x33: return shift ? ':' : ';';
-        case 0x34: return shift ? '"' : '\'';
-        case 0x35: return shift ? '~' : '`';
         case 0x36: return shift ? '<' : ',';
         case 0x37: return shift ? '>' : '.';
         case 0x38: return shift ? '?' : '/';
-        case 0x2C: return ' ';
+        default:   return 0;
     }
-    return 0;
 }
 
-} // namespace
+// ── NimBLE HID notify callback ───────────────────────────────
+static void hidNotifyCB(NimBLERemoteCharacteristic *, uint8_t *data,
+                        size_t len, bool) {
+    if (s_scanner && len >= 3) s_scanner->handleNotify(data, len);
+}
+
+// ── Client callbacks (disconnect → trigger reconnect scan) ───
+class BLEClientCB : public NimBLEClientCallbacks {
+    void onDisconnect(NimBLEClient *, int reason) override {
+        Serial.printf("[BLE] Disconnected (reason=%d)\n", reason);
+        if (s_scanner) s_scanner->handleClientDisconnect();
+    }
+};
+static BLEClientCB s_clientCB;
+
+// ── Connection task (spawned from scan callback) ─────────────
+static void connectTask(void *arg) {
+    NimBLEAddress *addr = reinterpret_cast<NimBLEAddress *>(arg);
+
+    if (!s_client) {
+        s_client = NimBLEDevice::createClient();
+        s_client->setClientCallbacks(&s_clientCB, false);
+    }
+    s_client->setConnectionParams(12, 12, 0, 51);
+
+    Serial.printf("[BLE] Connecting to %s\n", addr->toString().c_str());
+    if (!s_client->connect(*addr)) {
+        delete addr;
+        Serial.println("[BLE] Connect failed, restarting scan");
+        if (s_scanner) {
+            s_scanner->handleClientDisconnect();
+            s_scanner->_startScan();
+        }
+        vTaskDelete(nullptr);
+        return;
+    }
+    delete addr;
+    Serial.println("[BLE] Connected, subscribing HID...");
+
+    NimBLERemoteService *svc = s_client->getService(NimBLEUUID((uint16_t)0x1812));
+    if (!svc) {
+        Serial.println("[BLE] HID service not found");
+        s_client->disconnect();
+        if (s_scanner) { s_scanner->handleClientDisconnect(); s_scanner->_startScan(); }
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    bool subscribed = false;
+    const auto &chars = svc->getCharacteristics(true);
+    for (auto *chr : chars) {
+        if (chr->getUUID() == NimBLEUUID((uint16_t)0x2A4D) && chr->canNotify()) {
+            if (chr->subscribe(true, hidNotifyCB)) subscribed = true;
+        }
+    }
+
+    if (subscribed) {
+        Serial.println("[BLE] HID subscribed OK");
+        if (s_scanner) s_scanner->_setConnected(true);
+    } else {
+        Serial.println("[BLE] No notifiable HID characteristic");
+        s_client->disconnect();
+        if (s_scanner) { s_scanner->handleClientDisconnect(); s_scanner->_startScan(); }
+    }
+    vTaskDelete(nullptr);
+}
+
+// ── HID-scanner scan callback (connects on HID device found) ─
+class BLEScanCB : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice *dev) override {
+        if (!s_scanner) return;
+        const String &target = s_scanner->_targetName;
+        if (!target.isEmpty()) {
+            if (String(dev->getName().c_str()).indexOf(target) < 0) return;
+        } else if (!dev->isAdvertisingService(NimBLEUUID((uint16_t)0x1812))) {
+            return;
+        }
+
+        if (!s_discMutex) s_discMutex = xSemaphoreCreateMutex();
+        BLEScannerDevice info;
+        info.address = dev->getAddress().toString().c_str();
+        info.name    = dev->getName().c_str();
+        info.rssi    = dev->getRSSI();
+        info.hid     = true;
+        if (info.name.isEmpty()) info.name = "(kein Name)";
+
+        xSemaphoreTake(s_discMutex, portMAX_DELAY);
+        bool dup = false;
+        for (auto &d : s_discovered) if (d.address == info.address) { dup = true; break; }
+        if (!dup) s_discovered.push_back(info);
+        xSemaphoreGive(s_discMutex);
+
+        Serial.printf("[BLE] HID device found: %s '%s'\n", info.address.c_str(), info.name.c_str());
+        NimBLEDevice::getScan()->stop();
+
+        NimBLEAddress *a = new NimBLEAddress(dev->getAddress());
+        s_scanner->_setConnecting(true);
+        xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+    }
+};
+static BLEScanCB s_scanCB;
+
+// ── Discovery-only scan callback (all devices, no connect) ───
+class BLEDiscoveryCB : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice *dev) override {
+        if (!s_discMutex) s_discMutex = xSemaphoreCreateMutex();
+        BLEScannerDevice info;
+        info.address = dev->getAddress().toString().c_str();
+        info.name    = dev->getName().c_str();
+        info.rssi    = dev->getRSSI();
+        info.hid     = dev->isAdvertisingService(NimBLEUUID((uint16_t)0x1812));
+        if (info.name.isEmpty()) info.name = "(kein Name)";
+
+        xSemaphoreTake(s_discMutex, portMAX_DELAY);
+        bool dup = false;
+        for (auto &d : s_discovered) if (d.address == info.address) { dup = true; break; }
+        if (!dup) s_discovered.push_back(info);
+        xSemaphoreGive(s_discMutex);
+    }
+
+    void onScanEnd(const NimBLEScanResults &, int) override {
+        s_discovering = false;
+        // Resume HID auto-connect scan
+        if (s_scanner) {
+            NimBLEDevice::getScan()->setScanCallbacks(&s_scanCB, false);
+            s_scanner->_startScan();
+        }
+    }
+};
+static BLEDiscoveryCB s_discoveryCB;
+
+// ═══════════════════════════════════════════════════════════
+//   BLEScanner implementation
+// ═══════════════════════════════════════════════════════════
 
 BLEScanner ble_scanner;
 
-// Arduino BLE notify callbacks are plain functions. Route them through the singleton.
-static void scannerNotifyCallback(BLERemoteCharacteristic *, uint8_t *data, size_t length, bool) {
-    ble_scanner.handleNotify(data, length);
-}
-
 void BLEScanner::begin() {
-    if (!initialized) {
-        BLEDevice::init("Lebensmittel-Scanner");
-        security = new BLESecurity();
-        security->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_BOND);
-        security->setCapability(ESP_IO_CAP_NONE);
-        security->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
-        security->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
-        initialized = true;
-        activeScanner = this;
+    if (!s_discMutex) s_discMutex = xSemaphoreCreateMutex();
+    if (!_mutex)      _mutex      = xSemaphoreCreateMutex();
+
+    if (!s_nimInit) {
+        NimBLEDevice::init("FoodScanner");
+        NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+        s_nimInit = true;
     }
+    s_scanner = this;
+
+    NimBLEScan *scan = NimBLEDevice::getScan();
+    scan->setScanCallbacks(&s_scanCB, false);
+    scan->setActiveScan(true);
+    scan->setInterval(100);
+    scan->setWindow(99);
+
     loadSettings();
-    Serial.printf("[BLEScanner] Started. autoReconnect=%d savedDevice=%s\n",
-                  autoReconnect, deviceAddress.c_str());
-    Serial.flush();
-}
+    initialized = true;
 
-void BLEScanner::loadSettings() {
-    Preferences prefs;
-    if (!prefs.begin("scanner", false)) {
-        autoReconnect = true;
-        deviceAddress = "";
-        deviceName = "";
-        return;
+    Serial.printf("[BLE] NimBLE ready. autoReconnect=%d saved=%s '%s'\n",
+                  autoReconnect, deviceAddress.c_str(), deviceName.c_str());
+
+    if (autoReconnect && !deviceAddress.isEmpty()) {
+        _targetName = deviceName;
+        _startScan();
     }
-    autoReconnect = prefs.getBool("autoReconnect", true);
-    deviceAddress = prefs.isKey("addr") ? prefs.getString("addr", "") : "";
-    deviceName = prefs.isKey("name") ? prefs.getString("name", "") : "";
-    prefs.end();
 }
 
-void BLEScanner::saveSettings() {
-    Preferences prefs;
-    if (!prefs.begin("scanner", false)) return;
-    prefs.putBool("autoReconnect", autoReconnect);
-    prefs.putString("addr", deviceAddress);
-    prefs.putString("name", deviceName);
-    prefs.end();
+void BLEScanner::loop() {
+    if (!connectRequested) return;
+    connectRequested = false;
+
+    // Stop any active scan before connecting
+    if (NimBLEDevice::getScan()->isScanning())
+        NimBLEDevice::getScan()->stop();
+
+    deviceAddress = requestedAddress;
+    if (!requestedName.isEmpty()) deviceName = requestedName;
+    saveSettings();
+
+    NimBLEAddress *a = new NimBLEAddress(requestedAddress.c_str());
+    _setConnecting(true);
+    xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+}
+
+void BLEScanner::_startScan() {
+    if (s_discovering || reconnectPaused) return;
+    NimBLEScan *scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) return;
+    scan->start(0, false, true); // continuous, non-blocking
+}
+
+void BLEScanner::_setConnected(bool c) {
+    connected  = c;
+    connecting = false;
+    if (c) {
+        reconnectFailures = 0;
+        reconnectPaused   = false;
+        lastError         = "";
+    }
+}
+
+void BLEScanner::_setConnecting(bool c) {
+    connecting = c;
+    if (c) connected = false;
+}
+
+void BLEScanner::requestConnect(const String &address, const String &name) {
+    if (address.isEmpty()) return;
+    requestedAddress  = address;
+    requestedName     = name;
+    connectRequested  = true;
+    reconnectPaused   = false;
+    reconnectFailures = 0;
+    lastError         = "";
+}
+
+bool BLEScanner::connectToDevice(const String &address, const String &name) {
+    requestConnect(address, name);
+    return true; // actual result comes asynchronously
+}
+
+void BLEScanner::disconnect() {
+    connectRequested = false;
+    reconnectPaused  = true;
+    _setConnected(false);
+    if (s_client && s_client->isConnected())
+        s_client->disconnect();
+    Serial.println("[BLE] Disconnected by request");
+}
+
+void BLEScanner::handleClientDisconnect() {
+    bool was = connected || connecting;
+    _setConnected(false);
+    reconnectFailures++;
+    if (was) Serial.println("[BLE] Client disconnected");
+    if (autoReconnect && !reconnectPaused && initialized)
+        _startScan();
 }
 
 std::vector<BLEScannerDevice> BLEScanner::scanDevices(uint32_t durationSeconds) {
     if (!initialized) begin();
-    Serial.printf("[BLEScanner] Scanning BLE devices for %lus\n", static_cast<unsigned long>(durationSeconds));
-    Serial.flush();
+    if (!s_discMutex) s_discMutex = xSemaphoreCreateMutex();
 
-    std::vector<BLEScannerDevice> devices;
+    xSemaphoreTake(s_discMutex, portMAX_DELAY);
+    s_discovered.clear();
+    xSemaphoreGive(s_discMutex);
 
-    class ScanCallbacks : public BLEAdvertisedDeviceCallbacks {
-    public:
-        explicit ScanCallbacks(std::vector<BLEScannerDevice> &out) : devices(out) {}
-
-        void onResult(BLEAdvertisedDevice dev) override {
-            BLEScannerDevice item;
-            item.address = dev.getAddress().toString().c_str();
-            item.name = dev.haveName() ? dev.getName().c_str() : "";
-            item.rssi = dev.getRSSI();
-            item.hid = dev.haveServiceUUID() && dev.isAdvertisingService(hidServiceUuid);
-
-            // Prefer HID devices but include named devices too because many barcode scanners do not advertise UUIDs.
-            if (!item.hid && item.name.isEmpty()) return;
-            for (auto &existing : devices) {
-                if (existing.address == item.address) {
-                    if (item.rssi > existing.rssi) existing = item;
-                    return;
-                }
-            }
-            devices.push_back(item);
-            Serial.printf("[BLEScanner] Found %s '%s' RSSI=%d HID=%d\n",
-                          item.address.c_str(), item.name.c_str(), item.rssi, item.hid);
-        }
-
-    private:
-        std::vector<BLEScannerDevice> &devices;
-    };
-
-    ScanCallbacks *callbacks = new ScanCallbacks(devices);
-    BLEScan *scan = BLEDevice::getScan();
-    scan->setAdvertisedDeviceCallbacks(callbacks, true);
+    s_discovering = true;
+    NimBLEScan *scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) scan->stop();
+    scan->setScanCallbacks(&s_discoveryCB, false);
     scan->setActiveScan(true);
-    scan->setInterval(80);
-    scan->setWindow(40);
-    scan->start(durationSeconds, false);
+    scan->setInterval(100);
+    scan->setWindow(99);
+
+    // Non-blocking start; block caller with vTaskDelay so RTOS can run
+    scan->start(0, false, true);
+    vTaskDelay(pdMS_TO_TICKS(durationSeconds * 1000));
     scan->stop();
-    scan->setAdvertisedDeviceCallbacks(nullptr);
-    scan->clearResults();
-    delete callbacks;
-    Serial.printf("[BLEScanner] Scan complete: %u candidate(s)\n", static_cast<unsigned>(devices.size()));
-    Serial.flush();
-    return devices;
-}
 
-bool BLEScanner::connectToDevice(const String &address, const String &name) {
-    return connectInternal(address, name, true);
-}
+    s_discovering = false;
+    scan->setScanCallbacks(&s_scanCB, false);
 
-void BLEScanner::requestConnect(const String &address, const String &name) {
-    if (address.isEmpty()) {
-        lastError = "address required";
-        return;
-    }
-    requestedAddress = address;
-    requestedName = name;
-    connectRequested = true;
-    connecting = true;
-    reconnectPaused = false;
-    reconnectFailures = 0;
-    lastError = "";
-    Serial.printf("[BLEScanner] Queued connect to %s '%s'\n", address.c_str(), name.c_str());
-    Serial.flush();
-}
+    xSemaphoreTake(s_discMutex, portMAX_DELAY);
+    auto result = s_discovered;
+    xSemaphoreGive(s_discMutex);
 
-bool BLEScanner::connectInternal(const String &address, const String &name, bool persist) {
-    if (!initialized) begin();
-    if (address.isEmpty()) {
-        lastError = "address required";
-        return false;
-    }
-
-    connecting = true;
-    connected = false;
-    lastError = "";
-    Serial.printf("[BLEScanner] Connecting to %s '%s'\n", address.c_str(), name.c_str());
-    Serial.flush();
-
-    cleanupClient(true);
-
-    client = BLEDevice::createClient();
-    client->setClientCallbacks(&clientCallbacks);
-
-    bool ok = client->connect(BLEAddress(address.c_str()));
-    if (!ok) {
-        lastError = "connect failed";
-        Serial.println("[BLEScanner] Connect failed");
-        connecting = false;
-        reconnectFailures++;
-        cleanupClient(true);
-        Serial.flush();
-        return false;
-    }
-
-    Serial.println("[BLEScanner] Securing BLE HID connection");
-    Serial.flush();
-    bool secured = client->secureConnection();
-    Serial.printf("[BLEScanner] secureConnection=%d\n", secured);
-    Serial.flush();
-    delay(250);
-
-    BLERemoteService *service = client->getService(hidServiceUuid);
-    if (!service) {
-        lastError = "HID service not found";
-        Serial.println("[BLEScanner] HID service not found");
-        connecting = false;
-        reconnectFailures++;
-        cleanupClient(true);
-        Serial.flush();
-        return false;
-    }
-
-    BLERemoteCharacteristic *protocolMode = service->getCharacteristic(hidProtocolModeUuid);
-    if (protocolMode && protocolMode->canWrite()) {
-        uint8_t bootMode = 0;
-        protocolMode->writeValue(&bootMode, 1, false);
-        Serial.println("[BLEScanner] HID protocol mode set to boot");
-    }
-
-    BLERemoteCharacteristic *characteristic = service->getCharacteristic(hidBootKeyboardInputUuid);
-    if (!characteristic || !characteristic->canNotify()) {
-        characteristic = service->getCharacteristic(hidReportUuid);
-    }
-
-    if (!characteristic || !characteristic->canNotify()) {
-        lastError = secured
-            ? "HID notify characteristic not found"
-            : "HID pairing/encryption failed";
-        Serial.printf("[BLEScanner] %s\n", lastError.c_str());
-        connecting = false;
-        reconnectFailures++;
-        cleanupClient(true);
-        Serial.flush();
-        return false;
-    }
-
-    characteristic->registerForNotify(scannerNotifyCallback);
-    deviceAddress = address;
-    if (!name.isEmpty()) deviceName = name;
-    connected = true;
-    connecting = false;
-    reconnectPaused = false;
-    reconnectFailures = 0;
-    if (persist) saveSettings();
-    lastError = "";
-    Serial.printf("[BLEScanner] Connected to %s '%s'\n", deviceAddress.c_str(), deviceName.c_str());
-    Serial.flush();
-    return true;
-}
-
-void BLEScanner::cleanupClient(bool releaseClient) {
-    if (!client) return;
-    if (client->isConnected()) {
-        client->disconnect();
-        delay(250);
-    }
-    if (releaseClient) {
-        delete client;
-        client = nullptr;
-    }
-}
-
-void BLEScanner::handleClientDisconnect() {
-    bool wasConnected = connected || connecting;
-    connected = false;
-    connecting = false;
-    if (wasConnected) {
-        Serial.println("[BLEScanner] Client disconnected");
-        Serial.flush();
-    }
-}
-
-void BLEScanner::disconnect() {
-    bool wasConnected = connected || connecting || client;
-    connectRequested = false;
-    reconnectPaused = true;
-    connected = false;
-    connecting = false;
-    cleanupClient(true);
-    if (wasConnected) {
-        Serial.println("[BLEScanner] Disconnected");
-        Serial.flush();
-    }
+    Serial.printf("[BLE] Discovery done: %d device(s)\n", (int)result.size());
+    return result;
 }
 
 void BLEScanner::setAutoReconnect(bool enabled) {
-    autoReconnect = enabled;
-    if (enabled) {
-        reconnectPaused = false;
-        reconnectFailures = 0;
-    }
+    autoReconnect   = enabled;
+    reconnectPaused = !enabled;
+    if (enabled) reconnectFailures = 0;
     saveSettings();
 }
 
-void BLEScanner::loop() {
-    if (client && connected && !client->isConnected()) {
-        handleClientDisconnect();
+void BLEScanner::handleNotify(uint8_t *data, size_t len) {
+    if (!_mutex || len < 3) return;
+    uint8_t mod = data[0];
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    for (size_t i = 2; i < len && i < 8; i++) {
+        if (!data[i]) continue;
+        char c = hidKey(mod, data[i]);
+        if (c == '\n') {
+            currentCode.trim();
+            if (currentCode.length() > 3) {
+                pendingCode = currentCode;
+                lastScan    = currentCode;
+                Serial.printf("[BLE] Scan: %s\n", lastScan.c_str());
+            }
+            currentCode = "";
+        } else if (c) {
+            currentCode += c;
+        }
     }
-
-    if (connectRequested) {
-        String address = requestedAddress;
-        String name = requestedName;
-        connectRequested = false;
-        connectInternal(address, name, true);
-        return;
-    }
-
-    if (!autoReconnect || reconnectPaused || connected || connecting || deviceAddress.isEmpty()) return;
-    uint32_t now = millis();
-    uint32_t backoff = reconnectIntervalMs;
-    if (reconnectFailures > 0) {
-        uint8_t cappedFailures = reconnectFailures + 1;
-        if (cappedFailures > 6) cappedFailures = 6;
-        backoff = reconnectIntervalMs * cappedFailures;
-    }
-    if (now - lastReconnectAttempt < backoff) return;
-    lastReconnectAttempt = now;
-    Serial.printf("[BLEScanner] Auto-reconnect to %s (attempt %u, next backoff %lus)\n",
-                  deviceAddress.c_str(), reconnectFailures + 1, static_cast<unsigned long>(backoff / 1000));
-    Serial.flush();
-    connectInternal(deviceAddress, deviceName, false);
-}
-
-void BLEScanner::handleNotify(uint8_t *data, size_t length) {
-    if (length < 3) return;
-    uint8_t modifiers = data[0];
-    for (size_t i = 2; i < length; i++) {
-        uint8_t key = data[i];
-        if (!key) continue;
-        appendKey(key, modifiers);
-    }
-}
-
-void BLEScanner::appendKey(uint8_t keycode, uint8_t modifiers) {
-    if (keycode == 0x28 || keycode == 0x58) {
-        finishCode();
-        return;
-    }
-    bool shift = modifiers & 0x22;
-    char c = keyToChar(keycode, shift);
-    if (c) currentCode += c;
-}
-
-void BLEScanner::injectCode(const String &code) {
-    if (code == "\n") {
-        finishCode();
-        return;
-    }
-    currentCode += code;
-}
-
-void BLEScanner::finishCode() {
-    currentCode.trim();
-    if (currentCode.isEmpty()) return;
-    pendingCode = currentCode;
-    lastScan = currentCode;
-    Serial.printf("[BLEScanner] Scan: %s\n", lastScan.c_str());
-    Serial.flush();
-    currentCode = "";
+    xSemaphoreGive(_mutex);
 }
 
 bool BLEScanner::readCode(String &code) {
-    if (pendingCode.isEmpty()) return false;
-    code = pendingCode;
-    pendingCode = "";
-    return true;
+    if (!_mutex) return false;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    bool has = !pendingCode.isEmpty();
+    if (has) { code = pendingCode; pendingCode = ""; }
+    xSemaphoreGive(_mutex);
+    return has;
+}
+
+void BLEScanner::injectCode(const String &raw) {
+    if (!_mutex) return;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    if (raw == "\n") {
+        currentCode.trim();
+        if (currentCode.length() > 3) pendingCode = lastScan = currentCode;
+        currentCode = "";
+    } else {
+        currentCode += raw;
+    }
+    xSemaphoreGive(_mutex);
 }
 
 String BLEScanner::getStatus() const {
-    if (connected) return "connected";
-    if (connecting || connectRequested) return "connecting";
-    if (reconnectPaused) return "paused";
-    if (!lastError.isEmpty()) return "error";
-    if (!deviceAddress.isEmpty() && autoReconnect) return "reconnecting";
+    if (connected)                                  return "connected";
+    if (connecting || connectRequested)             return "connecting";
+    if (reconnectPaused)                            return "paused";
+    if (!lastError.isEmpty())                       return "error";
+    if (!deviceAddress.isEmpty() && autoReconnect)  return "reconnecting";
     return "disconnected";
+}
+
+void BLEScanner::loadSettings() {
+    Preferences p;
+    if (!p.begin("scanner", true)) return;
+    autoReconnect = p.getBool("autoReconnect", true);
+    deviceAddress = p.getString("addr", "");
+    deviceName    = p.getString("name", "");
+    p.end();
+}
+
+void BLEScanner::saveSettings() {
+    Preferences p;
+    if (!p.begin("scanner", false)) return;
+    p.putBool("autoReconnect", autoReconnect);
+    p.putString("addr", deviceAddress);
+    p.putString("name", deviceName);
+    p.end();
 }
