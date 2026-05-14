@@ -61,8 +61,6 @@ bool PrinterManager::printLabel(const InventoryItem &item) {
         // ESC j (0x6A) is the standard reverse feed — no extra data bytes
         // expected, unlike ESC K (graphics command) which caused symbols.
         printer.rawBackfeed(0x6A, backfeedDots, 0, 50, true);
-        uint8_t can = 0x18;
-        printer.writeBytes(&can, 1);
         printer.reset();
         delay(100);
     }

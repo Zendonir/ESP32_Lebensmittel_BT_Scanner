@@ -30,12 +30,7 @@ void EscPosPrinter::begin(uint32_t baud) {
     printerSerial.begin(baud, SERIAL_8N1, UART_RX, UART_TX);
     ready = true;
     delay(100);
-    // 0x18 (CAN) discards residual bytes; ESC @ resets formatting.
-    printerSerial.write((uint8_t)0x18);
-    printerSerial.flush();
-    delay(50);
     reset();
-    // Select Windows-1252 code page so ÄÖÜäöüß print correctly.
     setCodePage(16);
 }
 
