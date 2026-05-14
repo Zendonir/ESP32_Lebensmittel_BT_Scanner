@@ -1305,7 +1305,7 @@ Pages.printer = {
       document.getElementById('prLabelLen').value      = cfg.labelLen      || 40;
       document.getElementById('prBackfeed').checked    = !!cfg.backfeed;
       document.getElementById('prBackfeedDots').value = cfg.backfeedDots || 72;
-      document.getElementById('prPostFeed').value     = cfg.postFeed ?? 4;
+      document.getElementById('prPostFeed').value     = cfg.postFeed ?? 100;
       document.getElementById('printerStatus').innerHTML =
         `<span class="status-dot ${cfg.ready ? 'ok' : 'warn'}"></span><span>${cfg.ready ? 'Bereit' : 'Nicht bereit'} · TTL TX ${cfg.txPin ?? '-'} / RX ${cfg.rxPin ?? '-'} · ${cfg.baudrate || 9600} Baud</span>`;
     } catch(e) {

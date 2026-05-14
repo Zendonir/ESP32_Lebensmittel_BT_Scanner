@@ -8,11 +8,11 @@ class LabelRenderer {
 public:
     explicit LabelRenderer(EscPosPrinter &printer);
     void setPreFeed(uint8_t lines)   { preFeedLines  = lines; }
-    void setPostFeed(uint16_t lines) { postFeedLines = lines; }
+    void setPostFeed(uint16_t dots)  { postFeedDots = dots; }
     bool printInventoryLabel(const InventoryItem &item);
 
 private:
     EscPosPrinter &printer;
     uint8_t  preFeedLines  = LABEL_PRE_FEED;
-    uint16_t postFeedLines = 4;
+    uint16_t postFeedDots = 100;
 };

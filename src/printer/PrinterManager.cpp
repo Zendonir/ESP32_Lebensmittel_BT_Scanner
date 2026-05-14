@@ -45,7 +45,7 @@ void PrinterManager::setBackfeedConfig(bool enabled, uint16_t dots) {
 }
 
 void PrinterManager::setPostFeed(uint16_t lines) {
-    postFeedLines = lines;
+    postFeedDots = lines;
 }
 
 bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
@@ -64,7 +64,7 @@ bool PrinterManager::printLabel(const InventoryItem &item) {
         printer.reset();
         delay(100);
     }
-    renderer.setPostFeed(postFeedLines);
+    renderer.setPostFeed(postFeedDots);
     return renderer.printInventoryLabel(item);
 }
 

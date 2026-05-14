@@ -28,5 +28,5 @@ private:
     uint32_t currentBaud     = 0;
     bool     backfeedEnabled = false;
     uint16_t backfeedDots    = 72;
-    uint16_t postFeedLines   = 4;
+    uint16_t postFeedDots    = 100;
 };

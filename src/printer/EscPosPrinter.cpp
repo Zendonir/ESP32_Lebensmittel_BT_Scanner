@@ -89,6 +89,17 @@ void EscPosPrinter::feed(uint8_t lines) {
     printerSerial.write(lines);
 }
 
+void EscPosPrinter::feedDots(uint16_t dots) {
+    if (!ready || dots == 0) return;
+    while (dots > 0) {
+        uint8_t chunk = dots > 255 ? 255 : (uint8_t)dots;
+        printerSerial.write(0x1B);
+        printerSerial.write('J');  // ESC J — print and feed n dots
+        printerSerial.write(chunk);
+        dots -= chunk;
+    }
+}
+
 void EscPosPrinter::backFeed(uint8_t lines) {
     rawBackfeed(0x4B, (uint16_t)lines * 24, 0, 50, true);
 }

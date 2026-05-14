@@ -134,7 +134,7 @@ void WebInterface::begin() {
             if (baud > 0) _printer->configure(baud);
             bool     backfeed     = printerConfig["backfeed"]     | false;
             uint16_t backfeedDots = (uint16_t)(printerConfig["backfeedDots"] | 72);
-            uint8_t  postFeed     = (uint16_t)(printerConfig["postFeed"] | 4);
+            uint16_t postFeed     = (uint16_t)(printerConfig["postFeed"] | 100);
             _printer->setBackfeedConfig(backfeed, backfeedDots);
             _printer->setPostFeed(postFeed);
         }
@@ -652,7 +652,7 @@ void WebInterface::registerApiRoutes() {
         if (!doc["labelLen"].is<int>())          doc["labelLen"]      = 40;
         if (!doc["backfeedDots"].is<int>())      doc["backfeedDots"]  = 72;
         if (!doc["backfeed"].is<bool>())         doc["backfeed"]      = false;
-        if (!doc["postFeed"].is<int>())          doc["postFeed"]      = 4;
+        if (!doc["postFeed"].is<int>())          doc["postFeed"]      = 100;
         doc["ready"] = _printer && _printer->isReady();
         doc["txPin"] = UART_TX;
         doc["rxPin"] = UART_RX;
@@ -670,7 +670,7 @@ void WebInterface::registerApiRoutes() {
             uint32_t baud         = incoming["baudrate"]      | UART_BAUD;
             bool     backfeed     = incoming["backfeed"]     | false;
             uint16_t backfeedDots = (uint16_t)(incoming["backfeedDots"] | 72);
-            uint8_t  postFeed     = (uint16_t)(incoming["postFeed"] | 4);
+            uint16_t postFeed     = (uint16_t)(incoming["postFeed"] | 100);
             Logger::info("Printer", String("Web config update baud=") + baud
                 + " backfeed=" + backfeed + " dots=" + backfeedDots + " postFeed=" + postFeed);
             mergePost(req, "/printer_config.json", "{}");

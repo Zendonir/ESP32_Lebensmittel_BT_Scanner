@@ -16,7 +16,8 @@ public:
     size_t printlnCrLf(const String &text);
     // Print a two-column row; right value is underlined; total width = paperChars
     size_t printLabelRow(const String &label, const String &value, uint8_t paperChars);
-    void feed(uint8_t lines = 3);
+    void feed(uint8_t lines = 3);      // ESC d — forward feed n lines
+    void feedDots(uint16_t dots);      // ESC J — forward feed n dots (chunked)
     void backFeed(uint8_t lines);
     // Raw reverse feed: cmd=0x6A(ESC j), 0x4B(ESC K), 0x65(ESC e)
     // chunkSize=0 → single command, >0 → split into chunks of chunkSize dots
