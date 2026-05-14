@@ -63,6 +63,7 @@ private:
     String lastScan;
     String lastError;
     uint8_t reconnectFailures = 0;
+    uint8_t _addrType = 0; // BLE_ADDR_PUBLIC=0, BLE_ADDR_RANDOM=1
 
     SemaphoreHandle_t _mutex = nullptr;
 };

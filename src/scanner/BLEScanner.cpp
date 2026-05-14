@@ -130,7 +130,9 @@ class BLEScanCB : public NimBLEScanCallbacks {
         Serial.printf("[BLE] HID device found: %s '%s'\n", info.address.c_str(), info.name.c_str());
         NimBLEDevice::getScan()->stop();
 
-        NimBLEAddress *a = new NimBLEAddress(dev->getAddress());
+        // Persist address type so requestConnect() can reconstruct correctly
+        if (s_scanner) s_scanner->_addrType = dev->getAddress().getType();
+        NimBLEAddress *a = new NimBLEAddress(dev->getAddress()); // copy with type
         s_scanner->_setConnecting(true);
         xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
     }
@@ -213,7 +215,7 @@ void BLEScanner::loop() {
     if (!requestedName.isEmpty()) deviceName = requestedName;
     saveSettings();
 
-    NimBLEAddress *a = new NimBLEAddress(requestedAddress.c_str());
+    NimBLEAddress *a = new NimBLEAddress(std::string(requestedAddress.c_str()), _addrType);
     _setConnecting(true);
     xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
 }
@@ -371,6 +373,7 @@ void BLEScanner::loadSettings() {
     autoReconnect = p.getBool("autoReconnect", true);
     deviceAddress = p.getString("addr", "");
     deviceName    = p.getString("name", "");
+    _addrType     = (uint8_t)p.getUChar("addrType", 0);
     p.end();
 }
 
@@ -380,5 +383,6 @@ void BLEScanner::saveSettings() {
     p.putBool("autoReconnect", autoReconnect);
     p.putString("addr", deviceAddress);
     p.putString("name", deviceName);
+    p.putUChar("addrType", _addrType);
     p.end();
 }
