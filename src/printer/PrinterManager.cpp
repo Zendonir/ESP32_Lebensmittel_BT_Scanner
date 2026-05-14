@@ -57,8 +57,13 @@ bool PrinterManager::testBackfeed(uint8_t cmd, uint16_t dots, uint8_t chunkSize,
 }
 
 bool PrinterManager::printLabel(const InventoryItem &item) {
-    if (backfeedEnabled && backfeedDots > 0)
+    if (backfeedEnabled && backfeedDots > 0) {
         printer.rawBackfeed(0x4B, backfeedDots, 0, 50, true);
+        // ESC K puts some printers into graphics mode; reset clears it
+        // before the label content starts printing.
+        printer.reset();
+        delay(100);
+    }
     renderer.setPostFeed(postFeedLines);
     return renderer.printInventoryLabel(item);
 }
