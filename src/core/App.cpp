@@ -346,9 +346,6 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::PRINTER_FEED_5:
             printer.feed(5);
             break;
-        case OnscreenAction::PRINTER_FEED_BACK_1:
-        case OnscreenAction::PRINTER_FEED_BACK_5:
-            break;
         default:
             break;
     }
