@@ -87,7 +87,8 @@ void App::begin() {
 }
 
 void App::loop() {
-    display_obj.tick();   // LVGL timer/renderer – must be called every iteration
+    // Touch polling runs in its own FreeRTOS task (startTouchTask in begin()).
+    // No tick() call needed here.
 
     // If WiFi just connected (e.g. after web-UI credential submit) and the AP
     // is still up, shut it down and stop the captive-portal DNS server.

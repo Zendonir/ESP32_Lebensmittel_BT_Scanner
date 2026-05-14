@@ -53,8 +53,11 @@ public:
 
     void init();
 
-    /* Called every loop() iteration – drives the LVGL timer/renderer */
+    /* Polled by the dedicated touch task – also safe to call manually */
     void tick();
+
+    /* Start the background touch-polling task (call once after touch_obj.init()) */
+    void startTouchTask();
 
     /* Screen transitions (same API as before, now backed by LVGL) */
     void showSplash();

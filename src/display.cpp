@@ -53,11 +53,20 @@ struct HitRegion {
 static HitRegion  _regions[MAX_REGIONS];
 static int        _region_count = 0;
 
-static void clear_regions() { _region_count = 0; }
+// Spinlock protecting _regions[] between draw (Core 1) and touch task (Core 0)
+static portMUX_TYPE _regions_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void clear_regions() {
+    portENTER_CRITICAL(&_regions_mux);
+    _region_count = 0;
+    portEXIT_CRITICAL(&_regions_mux);
+}
 
 static void add_region(int16_t x, int16_t y, int16_t w, int16_t h, OnscreenAction a) {
-    if (_region_count >= MAX_REGIONS) return;
-    _regions[_region_count++] = {x, y, w, h, a};
+    portENTER_CRITICAL(&_regions_mux);
+    if (_region_count < MAX_REGIONS)
+        _regions[_region_count++] = {x, y, w, h, a};
+    portEXIT_CRITICAL(&_regions_mux);
 }
 
 // ─────────────────── touch debounce state ────────────────
@@ -67,6 +76,8 @@ static int16_t  _touch_press_x     = 0;
 static int16_t  _touch_press_y     = 0;
 
 // ─────────────────── action queue (single-slot) ──────────
+// Written by touch task (Core 0), read+cleared by main loop (Core 1).
+// 32-bit enum read/write on ESP32 is atomic – no lock needed here.
 static volatile OnscreenAction _pending_action = OnscreenAction::NONE;
 
 // ─────────────────── TFT + sprite ────────────────────────
@@ -497,7 +508,6 @@ void Display::tick() {
 
     if (tp.pressed) {
         if (!_touch_was_pressed) {
-            // Rising edge – record press location and time
             _touch_was_pressed = true;
             _touch_press_ms    = millis();
             _touch_press_x     = tp.x;
@@ -505,15 +515,20 @@ void Display::tick() {
         }
     } else {
         if (_touch_was_pressed) {
-            // Falling edge – check debounce and hit
             uint32_t held = millis() - _touch_press_ms;
             if (held >= 50) {
-                // Fire action for the press location
-                for (int i = 0; i < _region_count; i++) {
-                    const HitRegion &r = _regions[i];
-                    if (_touch_press_x >= r.x && _touch_press_x < r.x + r.w &&
-                        _touch_press_y >= r.y && _touch_press_y < r.y + r.h) {
-                        _pending_action = r.action;
+                // Hit-test under spinlock so draw functions can't swap _regions mid-read
+                portENTER_CRITICAL(&_regions_mux);
+                int count = _region_count;
+                HitRegion snap[MAX_REGIONS];
+                memcpy(snap, _regions, count * sizeof(HitRegion));
+                portEXIT_CRITICAL(&_regions_mux);
+
+                int16_t px = _touch_press_x, py = _touch_press_y;
+                for (int i = 0; i < count; i++) {
+                    if (px >= snap[i].x && px < snap[i].x + snap[i].w &&
+                        py >= snap[i].y && py < snap[i].y + snap[i].h) {
+                        _pending_action = snap[i].action;
                         break;
                     }
                 }
@@ -521,6 +536,20 @@ void Display::tick() {
             _touch_was_pressed = false;
         }
     }
+}
+
+// ─────────────────── dedicated touch task ────────────────
+// Runs on Core 0 at 10 ms intervals so touch is never starved by the
+// main-loop work (BLE, HTTP, printing) running on Core 1.
+static void touch_task_fn(void * /*param*/) {
+    for (;;) {
+        display_obj.tick();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void Display::startTouchTask() {
+    xTaskCreatePinnedToCore(touch_task_fn, "touch_poll", 4096, nullptr, 5, nullptr, 0);
 }
 
 OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {
