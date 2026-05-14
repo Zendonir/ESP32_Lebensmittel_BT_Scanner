@@ -18,11 +18,10 @@ ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
     HTTPClient http;
     http.setTimeout(timeoutMs);
     http.setReuse(false);
-    // STRICT only follows same-protocol redirects; OpenFoodFacts HTTP→HTTPS
-    // would need FORCE, but that just hits the same SSL-memory wall, so we
-    // skip redirect following here and always use HTTPS directly.
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.useHTTP10(true);
+    // Required by OpenFoodFacts – requests without a User-Agent are throttled.
+    http.setUserAgent("ESP32-FoodScanner/1.0 (ESP32-S3; github.com/user/foodscanner)");
 
     if (url.startsWith("https://")) {
         WiFiClientSecure client;
