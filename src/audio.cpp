@@ -32,8 +32,8 @@ static void es8311_init(uint8_t vol_pct) {
     es_write(0x00, 0x00);
     delay(10);
 
-    // Clock manager: external MCLK from MCLK pin, enable all dividers
-    es_write(0x01, 0x3F);   // MCLK_SEL=external, enable ADC/DAC clocks
+    // Clock manager: external MCLK from MCLK pin, enable clocks, no pre-division
+    es_write(0x01, 0x30);   // bit7=0: ext MCLK, bits5:4=11: clock enables, bits3:0=0: div=1
     es_write(0x02, 0x00);   // ADC CLK pre-div = 1
     es_write(0x03, 0x04);   // BCLK_DIV = 4 → MCLK/4 = 3 072 000 Hz
     es_write(0x04, 0x10);   // ADC OSR = 16 (256/16 = 16)
@@ -183,11 +183,11 @@ void Audio::init() {
         return;
     }
 
-    // Start I2S first so MCLK is running before codec init
-    if (!i2s_audio_init()) return;
-    delay(50);  // let MCLK stabilise before touching codec registers
-
+    // Configure ES8311 via I2C first (register writes work without MCLK running)
     es8311_init(volume_level);
+
+    // Then start I2S master — this begins MCLK/BCLK/LRCK output to the codec
+    if (!i2s_audio_init()) return;
 
     is_initialized = true;
     BaseType_t ok = xTaskCreatePinnedToCore(toneTask, "audio_tone", 4096, this, 5, nullptr, 1);
