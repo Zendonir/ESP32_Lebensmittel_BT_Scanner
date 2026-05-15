@@ -820,8 +820,10 @@ void Display::showListScreen(const char *title,
     _spr.drawString(title, 12, HDR_H / 2);
 
     if (showBack) {
-        draw_button(SCR_W - 100, 6, 90, HDR_H - 12, "< Zurück",
-                    C_SURFACE2, C_TEXT, 2, OnscreenAction::CANCEL);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MR_DATUM);
+        _spr.drawString("< wischen = zurück", SCR_W - 8, HDR_H / 2);
     }
 
     // List rows — 7 rows × 40px = 280px (fits in 320-44-0 = 276px content area)
@@ -872,10 +874,10 @@ void Display::showTemplateMHD(const String &productName,
     _spr.setTextColor(C_TEXT, C_SURFACE);
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString(trunc(productName, 28).c_str(), 8, HDR_H / 2);
-    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.drawString(trunc(productName, 22).c_str(), 8, HDR_H / 2);
+    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
-    _spr.drawString("Einlagern bestätigen", SCR_W - 8, HDR_H / 2);
+    _spr.drawString("< wischen = zurück", SCR_W - 8, HDR_H / 2);
 
     // MHD display (no day-adjust buttons)
     int mhd_y = HDR_H + 6;

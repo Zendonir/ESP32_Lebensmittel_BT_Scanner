@@ -300,6 +300,22 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
+    // Swipe-right = back inside template workflow
+    if (action == OnscreenAction::SWIPE_RIGHT) {
+        if (workflow == WorkflowMode::TMPL_PRODUCT) {
+            audio_obj.playSwipeTone();
+            workflow = WorkflowMode::TMPL_CATEGORY;
+            showTmplCategories();
+            return;
+        }
+        if (workflow == WorkflowMode::TMPL_MHD) {
+            audio_obj.playSwipeTone();
+            workflow = WorkflowMode::TMPL_PRODUCT;
+            showTmplProducts();
+            return;
+        }
+    }
+
     // Template list selection
     if (action >= OnscreenAction::LIST_ITEM_0 && action <= OnscreenAction::LIST_ITEM_6) {
         int idx = static_cast<int>(action) - static_cast<int>(OnscreenAction::LIST_ITEM_0);
