@@ -291,7 +291,7 @@ void Audio::init(TwoWire &wire) {
     delay(20);
 
     axp2101_enable_audio_power();
-    delay(50);  // let power rails stabilise before codec init
+    delay(100);  // official Waveshare factory demo uses 100ms between AXP2101 and ES8311 init
 
     es8311_init(volume_level);
     is_initialized = true;
