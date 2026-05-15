@@ -3,11 +3,45 @@
 #include <driver/i2s.h>
 #include <math.h>
 
-#define ES8311_ADDR 0x18
+#define ES8311_ADDR  0x18
+#define AXP2101_ADDR 0x34
 
-// ── ES8311 I2C helpers ────────────────────────────────────────────────────────
+// ── AXP2101 PMIC helpers ──────────────────────────────────────────────────────
 
 static TwoWire *s_wire = nullptr;
+
+static void axp_write(uint8_t reg, uint8_t val) {
+    s_wire->beginTransmission(AXP2101_ADDR);
+    s_wire->write(reg);
+    s_wire->write(val);
+    s_wire->endTransmission();
+}
+
+static uint8_t axp_read(uint8_t reg) {
+    s_wire->beginTransmission(AXP2101_ADDR);
+    s_wire->write(reg);
+    s_wire->endTransmission(false);
+    s_wire->requestFrom((uint8_t)AXP2101_ADDR, (uint8_t)1);
+    return s_wire->available() ? s_wire->read() : 0xFF;
+}
+
+// Enable ALDO1 (3.3V = ES8311 AVDD), BLDO1 (1.5V = DVDD), BLDO2 (2.8V)
+// Register map: 0x90 = LDO enable (bit0=ALDO1, bit4=BLDO1, bit5=BLDO2)
+//               0x92 = ALDO1 voltage, 0x96 = BLDO1 voltage, 0x97 = BLDO2 voltage
+//               Voltage formula: (mV - 500) / 100
+static void axp2101_enable_audio_power() {
+    axp_write(0x92, (3300 - 500) / 100);  // ALDO1 = 3.3V
+    axp_write(0x96, (1500 - 500) / 100);  // BLDO1 = 1.5V
+    axp_write(0x97, (2800 - 500) / 100);  // BLDO2 = 2.8V
+    uint8_t en = axp_read(0x90);
+    axp_write(0x90, en | 0x31);            // enable ALDO1 + BLDO1 + BLDO2
+    Logger::info("Audio", String("AXP2101: LDO_EN=0x") + String(axp_read(0x90), HEX)
+        + " ALDO1=0x" + String(axp_read(0x92), HEX)
+        + " BLDO1=0x" + String(axp_read(0x96), HEX)
+        + " BLDO2=0x" + String(axp_read(0x97), HEX));
+}
+
+// ── ES8311 I2C helpers ────────────────────────────────────────────────────────
 
 static void es_write(uint8_t reg, uint8_t val) {
     s_wire->beginTransmission(ES8311_ADDR);
@@ -235,6 +269,12 @@ void Audio::init(TwoWire &wire) {
     s_wire = &wire;
     _queue = xQueueCreate(16, sizeof(ToneCmd));
 
+    // Probe AXP2101
+    wire.beginTransmission(AXP2101_ADDR);
+    uint8_t axp_err = wire.endTransmission();
+    Logger::info("Audio", String("AXP2101 I2C 0x34 → ")
+        + (axp_err == 0 ? "OK" : String("FEHLER code=") + axp_err));
+
     wire.beginTransmission(ES8311_ADDR);
     uint8_t i2c_err = wire.endTransmission();
     Logger::info("Audio", String("ES8311 I2C 0x18 → ")
@@ -249,6 +289,9 @@ void Audio::init(TwoWire &wire) {
         return;
     }
     delay(20);
+
+    axp2101_enable_audio_power();
+    delay(50);  // let power rails stabilise before codec init
 
     es8311_init(volume_level);
     is_initialized = true;
