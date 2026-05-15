@@ -45,7 +45,7 @@ void App::begin() {
     display_obj.startTouchTask(); // touch polling now runs on Core 0 independently
 
     Logger::info("Audio", "Initializing audio feedback");
-    audio_obj.init();  // plays startup tone internally
+    audio_obj.init(i2c_bus);  // plays startup tone internally
 
     state.setState(AppState::WIFI_CONNECTING);
     Logger::info("WiFi", "Initializing network manager");

@@ -1,6 +1,5 @@
 #include "audio.h"
 #include "core/Logger.h"
-#include <Wire.h>
 #include <driver/i2s.h>
 #include <math.h>
 
@@ -8,20 +7,22 @@
 
 // ── ES8311 I2C helpers ────────────────────────────────────────────────────────
 
+static TwoWire *s_wire = nullptr;
+
 static void es_write(uint8_t reg, uint8_t val) {
-    Wire.beginTransmission(ES8311_ADDR);
-    Wire.write(reg);
-    Wire.write(val);
-    uint8_t err = Wire.endTransmission();
+    s_wire->beginTransmission(ES8311_ADDR);
+    s_wire->write(reg);
+    s_wire->write(val);
+    uint8_t err = s_wire->endTransmission();
     if (err) Logger::info("Audio", String("I2C REG0x") + String(reg, HEX) + " err=" + err);
 }
 
 static uint8_t es_read(uint8_t reg) {
-    Wire.beginTransmission(ES8311_ADDR);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom((uint8_t)ES8311_ADDR, (uint8_t)1);
-    return Wire.available() ? Wire.read() : 0xFF;
+    s_wire->beginTransmission(ES8311_ADDR);
+    s_wire->write(reg);
+    s_wire->endTransmission(false);
+    s_wire->requestFrom((uint8_t)ES8311_ADDR, (uint8_t)1);
+    return s_wire->available() ? s_wire->read() : 0xFF;
 }
 
 // ── ES8311 codec init ─────────────────────────────────────────────────────────
@@ -215,13 +216,13 @@ void Audio::toneTask(void *param) {
 Audio audio_obj;
 Audio::Audio() : volume_level(70), is_initialized(false), _queue(nullptr) {}
 
-void Audio::init() {
+void Audio::init(TwoWire &wire) {
+    s_wire = &wire;
     _queue = xQueueCreate(16, sizeof(ToneCmd));
 
-    Wire.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
-
-    Wire.beginTransmission(ES8311_ADDR);
-    uint8_t i2c_err = Wire.endTransmission();
+    // Wire already initialized by App::initI2C() — just probe for ES8311
+    wire.beginTransmission(ES8311_ADDR);
+    uint8_t i2c_err = wire.endTransmission();
     Logger::info("Audio", String("ES8311 I2C 0x18 → ")
         + (i2c_err == 0 ? "OK" : String("FEHLER code=") + i2c_err));
     if (i2c_err != 0) {

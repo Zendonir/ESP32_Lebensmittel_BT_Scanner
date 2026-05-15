@@ -2,6 +2,7 @@
 #define AUDIO_H
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "config.h"
@@ -9,7 +10,7 @@
 class Audio {
 public:
     Audio();
-    void init();
+    void init(TwoWire &wire);
 
     // Core playback
     void playTone(uint16_t frequency, uint16_t duration_ms);
