@@ -5,23 +5,28 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClient.h>
-#include <WiFiClientSecure.h>
 
 SyncManager sync_manager;
 
 static constexpr const char *QUEUE_FILE  = "/sync_queue.json";
 static constexpr const char *CONFIG_FILE = "/server_sync_config.json";
 
+// Derive the sync_bridge URL from the stored IP
+static String bridgeUrl(const String &ip) {
+    if (ip.isEmpty()) return "";
+    return "http://" + ip + "/sync_bridge.php";
+}
+
 void SyncManager::begin() {
     loadConfig();
     loadQueue();
-    Logger::info("Sync", String("begin url=") + _url + " queued=" + _queue.size());
+    Logger::info("Sync", String("begin ip=") + _ip + " queued=" + _queue.size());
 }
 
 void SyncManager::loop() {
     if (_queue.empty()) return;
     if (WiFi.status() != WL_CONNECTED) return;
-    if (_url.isEmpty()) return;
+    if (_ip.isEmpty()) return;
 
     uint32_t now = millis();
     if (now - _lastAttemptMs < RETRY_INTERVAL_MS) return;
@@ -54,7 +59,7 @@ void SyncManager::enqueue(const String &type, const String &jsonPayload) {
     ev.createdMs = millis();
     _queue.push_back(ev);
     saveQueue();
-    _lastAttemptMs = 0; // trigger immediate send attempt next loop
+    _lastAttemptMs = 0;
 }
 
 void SyncManager::clearQueue() {
@@ -69,7 +74,6 @@ String SyncManager::getQueueJson() const {
         JsonObject o = arr.add<JsonObject>();
         o["type"]    = ev.type;
         o["retries"] = ev.retries;
-        // include a shortened preview of the payload
         JsonDocument inner;
         if (deserializeJson(inner, ev.payload) == DeserializationError::Ok) {
             o["data"] = inner["name"] | inner["labelBarcode"] | ev.type;
@@ -83,8 +87,8 @@ String SyncManager::getQueueJson() const {
 }
 
 bool SyncManager::testConnection(String &outMsg) {
-    if (_url.isEmpty()) {
-        outMsg = "Keine Server-URL konfiguriert";
+    if (_ip.isEmpty()) {
+        outMsg = "Keine Server-IP konfiguriert";
         return false;
     }
     if (WiFi.status() != WL_CONNECTED) {
@@ -92,22 +96,16 @@ bool SyncManager::testConnection(String &outMsg) {
         return false;
     }
 
-    // POST a ping event to test reachability
     JsonDocument doc;
-    doc["type"]       = "PING";
-    doc["deviceId"]   = _deviceId;
-    doc["deviceName"] = _deviceName;
-    doc["household"]  = _householdId;
+    doc["type"] = "PING";
     String body;
     serializeJson(doc, body);
 
     int code = 0;
     bool ok  = postJson(body, &code);
-    if (ok) {
-        outMsg = "Verbindung erfolgreich (HTTP " + String(code) + ")";
-    } else {
-        outMsg = "Verbindung fehlgeschlagen (HTTP " + String(code) + ")";
-    }
+    outMsg = ok
+        ? "Verbindung erfolgreich (HTTP " + String(code) + ")"
+        : "Verbindung fehlgeschlagen (HTTP " + String(code) + ")";
     return ok;
 }
 
@@ -120,11 +118,9 @@ void SyncManager::loadConfig() {
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
     f.close();
-    _url        = doc["url"]         | "";
-    _deviceId   = doc["deviceId"]    | "";
-    _deviceName = doc["deviceName"]  | "";
-    _room       = doc["room"]        | "";
-    _householdId = doc["householdId"] | "";
+    _ip   = doc["ip"]   | "";
+    _user = doc["user"] | "";
+    _pass = doc["pass"] | "";
 }
 
 void SyncManager::saveQueue() {
@@ -161,33 +157,23 @@ void SyncManager::loadQueue() {
 }
 
 bool SyncManager::postJson(const String &json, int *outCode) {
+    String url = bridgeUrl(_ip);
     HTTPClient http;
     http.setTimeout(8000);
     http.setReuse(false);
 
-    bool ok = false;
+    bool ok   = false;
     int  code = 0;
 
-    if (_url.startsWith("https://")) {
-        WiFiClientSecure client;
-        client.setInsecure();
-        client.setTimeout(8);
-        if (http.begin(client, _url)) {
-            http.addHeader("Content-Type", "application/json");
-            http.addHeader("X-Device-Id", _deviceId);
-            code = http.POST((uint8_t *)json.c_str(), json.length());
-            http.end();
-            ok = (code >= 200 && code < 300);
-        }
-    } else {
-        WiFiClient client;
-        if (http.begin(client, _url)) {
-            http.addHeader("Content-Type", "application/json");
-            http.addHeader("X-Device-Id", _deviceId);
-            code = http.POST((uint8_t *)json.c_str(), json.length());
-            http.end();
-            ok = (code >= 200 && code < 300);
-        }
+    WiFiClient client;
+    if (http.begin(client, url)) {
+        http.addHeader("Content-Type", "application/json");
+        // Send credentials as headers — bridge uses them to connect to MySQL
+        http.addHeader("X-DB-User", _user);
+        http.addHeader("X-DB-Pass", _pass);
+        code = http.POST((uint8_t *)json.c_str(), json.length());
+        http.end();
+        ok = (code >= 200 && code < 300);
     }
 
     if (outCode) *outCode = code;

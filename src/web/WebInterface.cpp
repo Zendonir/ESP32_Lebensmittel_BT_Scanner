@@ -939,12 +939,16 @@ void WebInterface::registerApiRoutes() {
             int code = hc.POST((uint8_t *)fwdBody.c_str(), fwdBody.length());
             if (code > 0) result = hc.getString();
             hc.end();
-            // On success auto-save the sync URL so the user doesn't have to type it
+            // On success save ip/user/pass — the JS layer also does this,
+            // but we do it here too so the device is configured even if the
+            // browser page is closed before the JS success handler fires.
             JsonDocument res;
             if (deserializeJson(res, result) == DeserializationError::Ok && res["ok"].as<bool>()) {
                 JsonDocument cfg;
                 loadJson("/server_sync_config.json", cfg, "{}");
-                cfg["url"] = "http://" + host + "/sync_bridge.php";
+                cfg["ip"]   = host;
+                cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
+                cfg["pass"] = syncPass;
                 saveJson("/server_sync_config.json", cfg);
                 sync_manager.begin();
             }

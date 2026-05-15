@@ -24,7 +24,7 @@ public:
     bool   wasLastSyncOk() const { return _lastSyncOk; }
 
 private:
-    String _url, _deviceId, _deviceName, _room, _householdId;
+    String _ip, _user, _pass;
     std::vector<SyncEvent> _queue;
     time_t   _lastSyncTime  = 0;
     bool     _lastSyncOk    = false;

@@ -2,36 +2,35 @@
 /**
  * Lebensmittel_Scanner – Sync Bridge
  *
- * Deploy this file on your web server.
- * Set the ESP32 Server-Sync URL to:  https://your-server.example.com/sync_bridge.php
+ * Deploy this file on your web server alongside lebensmittel_setup.php.
+ * The ESP32 sends credentials in X-DB-User / X-DB-Pass headers – no
+ * credentials need to be hardcoded here.
  *
  * Requirements: PHP 7.4+, PDO with MySQL driver
  */
 
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'Lebensmittel_Scanner');
-define('DB_USER', 'lebensmittel');   // change to your DB user
-define('DB_PASS', 'changeme');       // change to your DB password
-
-// Optional: shared secret header (set same value in future firmware extension)
-define('API_SECRET', '');  // leave empty to disable check
 
 header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Headers: Content-Type, X-DB-User, X-DB-Pass');
 
-// ---- secret check ----
-if (API_SECRET !== '') {
-    $hdr = $_SERVER['HTTP_X_API_SECRET'] ?? '';
-    if ($hdr !== API_SECRET) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Forbidden']);
-        exit;
-    }
-}
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
-// ---- only POST ----
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'Method not allowed']);
+    exit;
+}
+
+// ---- credentials from request headers ----
+$dbUser = trim($_SERVER['HTTP_X_DB_USER'] ?? '');
+$dbPass = $_SERVER['HTTP_X_DB_PASS'] ?? '';
+
+if (empty($dbUser)) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'X-DB-User header fehlt']);
     exit;
 }
 
@@ -46,22 +45,31 @@ if (!$data) {
 
 $type = $data['type'] ?? 'UNKNOWN';
 
-// PING – just acknowledge
+// PING – test credentials without writing to DB
 if ($type === 'PING') {
-    echo json_encode(['ok' => true, 'message' => 'pong']);
+    try {
+        $pdo = new PDO(
+            "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+            $dbUser, $dbPass,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        echo json_encode(['ok' => true, 'message' => 'pong']);
+    } catch (PDOException $e) {
+        echo json_encode(['ok' => false, 'error' => 'DB-Login fehlgeschlagen: ' . $e->getMessage()]);
+    }
     exit;
 }
 
 // ---- connect to DB ----
 try {
-    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-    $pdo = new PDO($dsn, DB_USER, DB_PASS, [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
+    $pdo = new PDO(
+        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+        $dbUser, $dbPass,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+    );
 } catch (PDOException $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'DB connection failed: ' . $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'DB-Verbindung fehlgeschlagen: ' . $e->getMessage()]);
     exit;
 }
 

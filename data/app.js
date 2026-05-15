@@ -1657,11 +1657,9 @@ Pages.serversync = {
   async load() {
     try {
       const cfg = await API.get('/api/server-sync');
-      document.getElementById('syncUrl').value        = cfg.url        || '';
-      document.getElementById('syncDeviceId').value   = cfg.deviceId   || '';
-      document.getElementById('syncDeviceName').value = cfg.deviceName || '';
-      document.getElementById('syncRoom').value       = cfg.room       || '';
-      document.getElementById('syncHousehold').value  = cfg.householdId|| '';
+      document.getElementById('syncIp').value   = cfg.ip   || '';
+      document.getElementById('syncUser').value = cfg.user || '';
+      document.getElementById('syncPass').value = cfg.pass || '';
       document.getElementById('syncLastSync').textContent = cfg.lastSync ? formatDate(cfg.lastSync) : '—';
       const dot = cfg.connected ? 'ok' : 'danger';
       document.getElementById('syncStatus').innerHTML =
@@ -1675,13 +1673,11 @@ Pages.serversync = {
     e.preventDefault();
     try {
       await API.post('/api/server-sync', {
-        url:         document.getElementById('syncUrl').value.trim(),
-        deviceId:    document.getElementById('syncDeviceId').value.trim(),
-        deviceName:  document.getElementById('syncDeviceName').value.trim(),
-        room:        document.getElementById('syncRoom').value.trim(),
-        householdId: document.getElementById('syncHousehold').value.trim(),
+        ip:   document.getElementById('syncIp').value.trim(),
+        user: document.getElementById('syncUser').value.trim(),
+        pass: document.getElementById('syncPass').value,
       });
-      Toast.success('Server-Sync-Einstellungen gespeichert');
+      Toast.success('Verbindungseinstellungen gespeichert');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
@@ -1765,21 +1761,27 @@ Pages.serversync = {
       const out = document.getElementById('syncWizStep3');
 
       if (r.ok) {
+        const syncUser = r.syncUser || 'lebensmittel_sync';
+        // Auto-fill and save the connection settings
+        document.getElementById('syncIp').value   = host;
+        document.getElementById('syncUser').value = syncUser;
+        document.getElementById('syncPass').value = sPass;
+        try {
+          await API.post('/api/server-sync', { ip: host, user: syncUser, pass: sPass });
+        } catch(_) {}
+
         out.innerHTML = `
           <div style="border:1px solid var(--ok);border-radius:8px;padding:16px;background:rgba(80,200,100,.08)">
             <div style="font-weight:600;color:var(--ok);margin-bottom:8px">&#10003; Einrichtung erfolgreich</div>
             <div style="font-size:.85rem;line-height:1.7">
               ${esc(r.message || '')}<br>
-              Benutzer: <strong>${esc(r.syncUser || 'lebensmittel_sync')}</strong><br>
-              Die Server-URL wurde automatisch gesetzt.
+              Die Verbindungsdaten wurden automatisch gespeichert.
             </div>
             <button class="btn btn-ok" style="margin-top:12px" onclick="Pages.serversync.load()">&#8635; Status aktualisieren</button>
           </div>`;
-        // Reload the settings form so the auto-saved URL appears
-        Pages.serversync.load();
-        // Clear credentials from DOM
-        document.getElementById('wizRootPass').value = '';
-        document.getElementById('wizSyncPass').value = '';
+        // Clear root credentials from DOM
+        document.getElementById('wizRootPass').value  = '';
+        document.getElementById('wizSyncPass').value  = '';
         document.getElementById('wizSyncPass2').value = '';
       } else {
         out.innerHTML = `

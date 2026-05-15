@@ -483,13 +483,11 @@
     <div class="page-header"><h1>Server-Sync</h1></div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Einstellungen</div>
+        <div class="card-title">Verbindung</div>
         <form id="syncForm" class="form-stack" onsubmit="Pages.serversync.save(event)">
-          <div class="form-field"><label>Server-URL</label><input type="url" id="syncUrl" class="input" placeholder="https://mein-server.de"></div>
-          <div class="form-field"><label>Device-ID</label><input type="text" id="syncDeviceId" class="input"></div>
-          <div class="form-field"><label>Gerätename</label><input type="text" id="syncDeviceName" class="input" placeholder="Kühlschrank"></div>
-          <div class="form-field"><label>Raum</label><input type="text" id="syncRoom" class="input" placeholder="Küche"></div>
-          <div class="form-field"><label>Household-ID</label><input type="text" id="syncHousehold" class="input"></div>
+          <div class="form-field"><label>Server IP</label><input type="text" id="syncIp" class="input" placeholder="192.168.1.100"></div>
+          <div class="form-field"><label>Benutzer</label><input type="text" id="syncUser" class="input" placeholder="lebensmittel_sync" autocomplete="off"></div>
+          <div class="form-field"><label>Passwort</label><input type="password" id="syncPass" class="input" autocomplete="off"></div>
           <button type="submit" class="btn btn-ok">Speichern</button>
         </form>
       </div>
