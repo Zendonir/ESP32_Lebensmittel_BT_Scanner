@@ -507,6 +507,28 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
+    _server.on("/api/custom-products/update", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, item;
+            loadJson("/custom_products.json", arr, "[]");
+            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
+            if (deserializeJson(item, _body) == DeserializationError::Ok) {
+                int idx = item["_idx"] | -1;
+                item.remove("_idx");
+                JsonArray a = arr.as<JsonArray>();
+                int pos = 0;
+                for (JsonVariant v : a) {
+                    if (pos == idx) {
+                        v.set(item.as<JsonObject>());
+                        break;
+                    }
+                    pos++;
+                }
+                saveJson("/custom_products.json", arr);
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
     _server.on("/api/custom-products/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument arr, key, out;
@@ -514,12 +536,11 @@ void WebInterface::registerApiRoutes() {
             loadJson("/custom_products.json", arr, "[]");
             if (deserializeJson(key, _body) == DeserializationError::Ok
                 && arr.is<JsonArray>()) {
-                String bc   = key["barcode"] | "";
-                String name = key["name"]    | "";
+                int idx = key["_idx"] | -1;
+                int pos = 0;
                 for (JsonVariant v : arr.as<JsonArray>()) {
-                    if ((String)(v["barcode"] | "") == bc) continue;
-                    if ((String)(v["name"]    | "") == name) continue;
-                    out.as<JsonArray>().add(v);
+                    if (pos != idx) out.as<JsonArray>().add(v);
+                    pos++;
                 }
                 saveJson("/custom_products.json", out);
             }

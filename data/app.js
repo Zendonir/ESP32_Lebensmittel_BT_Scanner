@@ -561,9 +561,10 @@ Pages.templates = {
         API.get('/api/custom-products'),
         API.get('/api/categories'),
       ]);
-      State.templates  = Array.isArray(tpls) ? tpls : [];
       State.categories = Array.isArray(cats) ? cats : [];
-      this._all = State.templates;
+      // Annotate each template with its array index so edit/delete are index-based
+      this._all = (Array.isArray(tpls) ? tpls : []).map((t, i) => ({ ...t, _idx: i }));
+      State.templates = this._all;
       this.filter();
     } catch(e) {
       Toast.error('Vorlagen: ' + e.message);
@@ -655,7 +656,11 @@ Pages.templates = {
       askQty:      document.getElementById('tfAskQty').checked,
     };
     try {
-      await API.post('/api/custom-products', data);
+      if (original !== null && original._idx !== undefined) {
+        await API.post('/api/custom-products/update', { _idx: original._idx, ...data });
+      } else {
+        await API.post('/api/custom-products', data);
+      }
       Toast.success('Vorlage gespeichert');
       Modal.hide();
       this.load();
@@ -668,7 +673,7 @@ Pages.templates = {
     const t = this._displayed[i];
     Modal.confirm('Vorlage löschen', `"${esc(t.name)}" löschen?`, async () => {
       try {
-        await API.post('/api/custom-products/delete', { barcode: t.barcode, name: t.name });
+        await API.post('/api/custom-products/delete', { _idx: t._idx });
         Toast.success('Vorlage gelöscht');
         this.load();
       } catch(e) {
