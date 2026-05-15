@@ -7,6 +7,7 @@
 #include "wifi_manager.h"
 #include "../scanner/BarcodeManager.h"
 #include "../printer/PrinterManager.h"
+#include "../network/SyncManager.h"
 #include "audio.h"
 #include "config.h"
 
@@ -773,8 +774,19 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/telegram",      HTTP_GET,  cfgGet("/telegram_config.json"));
     _server.on("/api/telegram",      HTTP_POST, cfgPost("/telegram_config.json"), nullptr, bodyCollect);
 
-    _server.on("/api/server-sync",   HTTP_GET,  cfgGet("/server_sync_config.json"));
-    _server.on("/api/server-sync",   HTTP_POST, cfgPost("/server_sync_config.json"), nullptr, bodyCollect);
+    _server.on("/api/server-sync", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        loadJson("/server_sync_config.json", doc, "{}");
+        doc["connected"] = sync_manager.wasLastSyncOk();
+        doc["lastSync"]  = (long)sync_manager.getLastSync();
+        doc["pending"]   = (int)sync_manager.pending();
+        String body; serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/server-sync",   HTTP_POST, [](AsyncWebServerRequest *req) {
+        mergePost(req, "/server_sync_config.json", "{}");
+        sync_manager.begin(); // reload config after save
+    }, nullptr, bodyCollect);
 
     // ---- WIFI ----
     _server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -872,9 +884,22 @@ void WebInterface::registerApiRoutes() {
     };
     _server.on("/api/mqtt/test",            HTTP_POST, stub("{\"ok\":false,\"message\":\"MQTT nicht konfiguriert\"}"));
     _server.on("/api/telegram/test",        HTTP_POST, stub("{\"ok\":false,\"message\":\"Telegram nicht konfiguriert\"}"));
-    _server.on("/api/server-sync/test",     HTTP_POST, stub("{\"ok\":false,\"message\":\"Sync nicht konfiguriert\"}"));
-    _server.on("/api/server-sync/queue",    HTTP_GET,  stub("[]"));
-    _server.on("/api/server-sync/queue/clear", HTTP_POST, stub("{\"ok\":true}"));
+    _server.on("/api/server-sync/test", HTTP_POST, [](AsyncWebServerRequest *req) {
+        String msg;
+        bool ok = sync_manager.testConnection(msg);
+        JsonDocument doc;
+        doc["ok"]      = ok;
+        doc["message"] = msg;
+        String body; serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/server-sync/queue", HTTP_GET, [](AsyncWebServerRequest *req) {
+        req->send(200, "application/json", sync_manager.getQueueJson());
+    });
+    _server.on("/api/server-sync/queue/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
+        sync_manager.clearQueue();
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
     _server.on("/api/test-print", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             if (!_printer) {

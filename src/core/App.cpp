@@ -59,6 +59,7 @@ void App::begin() {
     labelCounter.begin();
     inventory.begin();
     printer.begin();
+    sync_manager.begin();
 
     Serial.flush();
     Logger::info("Scanner", "Initializing BLE barcode scanner");
@@ -116,6 +117,7 @@ void App::loop() {
     }
 
     time_manager.loop();
+    sync_manager.loop();
     barcode_manager.loop();
     handleTouch();
     processWorkflow();
@@ -551,8 +553,19 @@ void App::handleScan(const ScanResult &scan) {
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
         bool removed = inventory.removeByLabel(scan.code);
-        if (removed) audio_obj.playCheckoutTone();
-        else         audio_obj.playErrorTone();
+        if (removed) {
+            audio_obj.playCheckoutTone();
+            JsonDocument sdoc;
+            sdoc["type"]         = "REMOVE_LABEL";
+            sdoc["labelBarcode"] = scan.code;
+            sdoc["household"]    = device_config.getHousehold();
+            sdoc["deviceName"]   = device_config.getDeviceName();
+            sdoc["timestamp"]    = (long)time(nullptr);
+            String sp; serializeJson(sdoc, sp);
+            sync_manager.enqueue("REMOVE_LABEL", sp);
+        } else {
+            audio_obj.playErrorTone();
+        }
         workflow = WorkflowMode::RESULT;
         _resultSuccess = removed;
         _resultTitle = removed ? "Ausgelagert" : "Nicht gefunden";
@@ -567,6 +580,23 @@ void App::handleScan(const ScanResult &scan) {
         InventoryItem reItem = *recent;
         inventory.addItem(reItem);
         audio_obj.playSuccessTone();
+        {
+            JsonDocument sdoc;
+            sdoc["type"]         = "ADD";
+            sdoc["barcode"]      = reItem.barcode;
+            sdoc["name"]         = reItem.name;
+            sdoc["brand"]        = reItem.brand;
+            sdoc["category"]     = reItem.category;
+            sdoc["expiryDate"]   = reItem.expiryDate;
+            sdoc["addedDate"]    = reItem.addedDate;
+            sdoc["quantity"]     = reItem.quantity;
+            sdoc["labelBarcode"] = reItem.labelBarcode;
+            sdoc["household"]    = device_config.getHousehold();
+            sdoc["deviceName"]   = device_config.getDeviceName();
+            sdoc["timestamp"]    = (long)time(nullptr);
+            String sp; serializeJson(sdoc, sp);
+            sync_manager.enqueue("ADD", sp);
+        }
         workflow = WorkflowMode::RESULT;
         _resultSuccess = true;
         _resultTitle = "Wieder eingebucht";
@@ -654,6 +684,23 @@ bool App::finishStorageWorkflow() {
     item.labelBarcode = labelCounter.nextLabel();
 
     bool stored = inventory.addItem(item);
+    if (stored) {
+        JsonDocument sdoc;
+        sdoc["type"]         = "ADD";
+        sdoc["barcode"]      = item.barcode;
+        sdoc["name"]         = item.name;
+        sdoc["brand"]        = item.brand;
+        sdoc["category"]     = item.category;
+        sdoc["expiryDate"]   = item.expiryDate;
+        sdoc["addedDate"]    = item.addedDate;
+        sdoc["quantity"]     = item.quantity;
+        sdoc["labelBarcode"] = item.labelBarcode;
+        sdoc["household"]    = device_config.getHousehold();
+        sdoc["deviceName"]   = device_config.getDeviceName();
+        sdoc["timestamp"]    = (long)time(nullptr);
+        String sp; serializeJson(sdoc, sp);
+        sync_manager.enqueue("ADD", sp);
+    }
     bool printed = stored && printer.printLabel(item);
     workflow = WorkflowMode::RESULT;
     state.setState(stored ? AppState::SUCCESS : AppState::ERROR);

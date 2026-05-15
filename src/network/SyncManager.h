@@ -2,19 +2,41 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <time.h>
 
 struct SyncEvent {
-    String type;
-    String payload;
-    uint8_t retries = 0;
+    String   type;       // "ADD", "REMOVE_LABEL", "REMOVE_BARCODE"
+    String   payload;    // JSON string (includes device/household context)
+    uint8_t  retries  = 0;
+    uint32_t createdMs = 0;
 };
 
 class SyncManager {
 public:
-    void enqueue(const SyncEvent &event);
-    void loop();
-    size_t pending() const;
+    void   begin();
+    void   loop();
+    void   enqueue(const String &type, const String &jsonPayload);
+    size_t pending() const { return _queue.size(); }
+    void   clearQueue();
+    String getQueueJson() const;
+    bool   testConnection(String &outMsg);
+    time_t getLastSync()   const { return _lastSyncTime; }
+    bool   wasLastSyncOk() const { return _lastSyncOk; }
 
 private:
-    std::vector<SyncEvent> queue;
+    String _url, _deviceId, _deviceName, _room, _householdId;
+    std::vector<SyncEvent> _queue;
+    time_t   _lastSyncTime  = 0;
+    bool     _lastSyncOk    = false;
+    uint32_t _lastAttemptMs = 0;
+
+    static constexpr uint32_t RETRY_INTERVAL_MS = 30000;
+    static constexpr uint8_t  MAX_RETRIES        = 5;
+
+    void loadConfig();
+    void saveQueue();
+    void loadQueue();
+    bool postJson(const String &json, int *outCode = nullptr);
 };
+
+extern SyncManager sync_manager;

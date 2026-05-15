@@ -20,6 +20,7 @@
 #include "../inventory/InventoryManager.h"
 #include "../inventory/LabelCounter.h"
 #include "../printer/PrinterManager.h"
+#include "../network/SyncManager.h"
 
 class App {
 public:
