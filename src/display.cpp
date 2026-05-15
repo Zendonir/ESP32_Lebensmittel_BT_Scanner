@@ -651,39 +651,63 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
 //   Quantity entry
 // ─────────────────────────────────────────────────────────
 
+// ── Quantity grid helper (shared by showQuantityEntry and showTemplateMHD) ──
+// Draws a 4-column × 3-row grid of quantity buttons (1–12).
+// Highlighted button = current quantity. Returns nothing.
+static void draw_qty_grid(int top_y, int selected) {
+    static const OnscreenAction QTY_ACTIONS[12] = {
+        OnscreenAction::QTY_1,  OnscreenAction::QTY_2,  OnscreenAction::QTY_3,
+        OnscreenAction::QTY_4,  OnscreenAction::QTY_5,  OnscreenAction::QTY_6,
+        OnscreenAction::QTY_7,  OnscreenAction::QTY_8,  OnscreenAction::QTY_9,
+        OnscreenAction::QTY_10, OnscreenAction::QTY_11, OnscreenAction::QTY_12,
+    };
+    const int COLS = 4, ROWS = 3;
+    const int BTN_W = 108, BTN_H = 52, GAP = 6;
+    const int grid_w = COLS * BTN_W + (COLS - 1) * GAP;
+    const int x0 = (SCR_W - grid_w) / 2;
+
+    for (int r = 0; r < ROWS; r++) {
+        for (int c = 0; c < COLS; c++) {
+            int n = r * COLS + c + 1;  // 1..12
+            int bx = x0 + c * (BTN_W + GAP);
+            int by = top_y + r * (BTN_H + GAP);
+            bool sel = (n == selected);
+            uint16_t bg  = sel ? C_ACCENT  : C_SURFACE2;
+            uint16_t fg  = sel ? C_BG      : C_TEXT;
+            uint8_t  rad = sel ? 8 : 6;
+            draw_button(bx, by, BTN_W, BTN_H, String(n).c_str(), bg, fg, rad, QTY_ACTIONS[n - 1]);
+        }
+    }
+}
+
 void Display::showQuantityEntry(const ProductInfo &product,
                                  const String &expiryDate, int quantity) {
     if (!_initialized) return;
     _spr.fillSprite(C_BG);
     clear_regions();
 
+    // Header: product name + MHD
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
     _spr.setTextColor(C_TEXT, C_SURFACE);
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString(trunc(product.name, 24).c_str(), 8, HDR_H / 2);
-    String mhd_str = "MHD " + expiryDate;
+    _spr.drawString(trunc(product.name, 22).c_str(), 8, HDR_H / 2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
-    _spr.drawString(mhd_str.c_str(), SCR_W - 8, HDR_H / 2);
+    _spr.drawString(("MHD " + expiryDate).c_str(), SCR_W - 8, HDR_H / 2);
 
+    // Subheader
     _spr.setTextColor(C_ACCENT, C_BG);
-    _spr.setTextFont(4);
+    _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge bestaetigen", SCR_W / 2, HDR_H + 12);
+    _spr.drawString("Menge auswählen", SCR_W / 2, HDR_H + 8);
 
-    int qty_center_y = HDR_H + 100;
-    _spr.setTextColor(C_TEXT, C_BG);
-    _spr.setTextFont(6);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(String(quantity).c_str(), SCR_W / 2, qty_center_y);
+    // 4×3 quantity grid
+    draw_qty_grid(HDR_H + 28, quantity);
 
-    int btn_y = qty_center_y - 35;
-    draw_button(SCR_W / 2 - 140, btn_y, 90, 70, "-", C_YELLOW, C_BG, 6, OnscreenAction::QTY_MINUS);
-    draw_button(SCR_W / 2 + 50,  btn_y, 90, 70, "+", C_GREEN,  C_BG, 6, OnscreenAction::QTY_PLUS);
-
-    int bot_y = SCR_H - 60;
+    // Bottom buttons
+    int bot_y = SCR_H - 52;
     draw_button(4,            bot_y, 120, 44, "Zurueck",     C_RED,   C_TEXT, 2, OnscreenAction::CANCEL);
     draw_button(SCR_W - 174, bot_y, 170, 44, "Einlagern ->", C_GREEN, C_BG,   2, OnscreenAction::QTY_CONFIRM);
     commit();
@@ -863,42 +887,31 @@ void Display::showTemplateMHD(const String &productName,
     _spr.setTextDatum(MR_DATUM);
     _spr.drawString("Einlagern bestätigen", SCR_W - 8, HDR_H / 2);
 
-    // MHD row
-    int mhd_y = HDR_H + 12;
+    // MHD display (no day-adjust buttons)
+    int mhd_y = HDR_H + 6;
     _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("MHD:", 8, mhd_y + 6);
-
+    _spr.drawString("MHD:", 8, mhd_y + 8);
     _spr.setTextColor(C_ACCENT, C_BG);
     _spr.setTextFont(4);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(mhd.c_str(), SCR_W / 2, mhd_y + 22);
-
-    draw_button( 12, mhd_y + 6, 80, 34, "-1 Tag", C_YELLOW, C_BG, 2, OnscreenAction::MHD_DAY_MINUS);
-    draw_button(SCR_W - 92, mhd_y + 6, 80, 34, "+1 Tag", C_GREEN, C_BG, 2, OnscreenAction::MHD_DAY_PLUS);
+    _spr.drawString(mhd.c_str(), SCR_W / 2, mhd_y + 16);
 
     // Separator
-    int sep_y = mhd_y + 54;
-    _spr.drawFastHLine(0, sep_y, SCR_W, C_BORDER);
+    _spr.drawFastHLine(0, mhd_y + 38, SCR_W, C_BORDER);
 
-    // Qty row
-    int qty_y = sep_y + 12;
-    _spr.setTextColor(C_SUBTEXT, C_BG);
+    // Subheader for qty
+    _spr.setTextColor(C_ACCENT, C_BG);
     _spr.setTextFont(2);
-    _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("Menge:", 8, qty_y + 6);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("Menge auswählen", SCR_W / 2, mhd_y + 44);
 
-    _spr.setTextColor(C_TEXT, C_BG);
-    _spr.setTextFont(6);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(String(qty).c_str(), SCR_W / 2, qty_y + 30);
-
-    draw_button(SCR_W / 2 - 120, qty_y + 4, 70, 50, "-", C_YELLOW, C_BG, 6, OnscreenAction::QTY_MINUS);
-    draw_button(SCR_W / 2 +  50, qty_y + 4, 70, 50, "+", C_GREEN,  C_BG, 6, OnscreenAction::QTY_PLUS);
+    // 4×3 quantity grid
+    draw_qty_grid(mhd_y + 62, qty);
 
     // Bottom buttons
-    int bot_y = SCR_H - 56;
+    int bot_y = SCR_H - 52;
     draw_button(4,            bot_y, 130, 44, "Abbrechen",   C_RED,   C_TEXT, 2, OnscreenAction::CANCEL);
     draw_button(SCR_W - 180, bot_y, 170, 44, "Einlagern ->", C_GREEN, C_BG,   2, OnscreenAction::MHD_CONFIRM);
 

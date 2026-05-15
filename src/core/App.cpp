@@ -54,7 +54,7 @@ void App::begin() {
     state.setState(wifi_manager.isConnected() ? AppState::MAIN : AppState::AP_MODE);
 
     initFilesystem();
-    time_manager.begin();
+    time_manager.begin(i2c_bus);
     labelCounter.begin();
     inventory.begin();
     printer.begin();
@@ -114,6 +114,7 @@ void App::loop() {
         handleSerialCommand(command);
     }
 
+    time_manager.loop();
     barcode_manager.loop();
     handleTouch();
     processWorkflow();
@@ -395,36 +396,29 @@ void App::processOnscreenAction(OnscreenAction action) {
                 audio_obj.playTone(250, 160);
             }
             break;
-        case OnscreenAction::QTY_MINUS:
-            if (_pendingQuantity > 1) {
-                audio_obj.playClickTone();
-                _pendingQuantity--;
-                if (workflow == WorkflowMode::ENTER_QTY)
-                    display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
-                else if (workflow == WorkflowMode::TMPL_MHD) {
-                    auto products = templatesForCategory(_selectedCategory);
-                    if (_selectedTemplateIdx < (int)products.size()) {
-                        String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                        display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
-                    }
+        // ── Quantity direct selection (buttons 1–12) ───────────────────────
+        case OnscreenAction::QTY_1:  case OnscreenAction::QTY_2:
+        case OnscreenAction::QTY_3:  case OnscreenAction::QTY_4:
+        case OnscreenAction::QTY_5:  case OnscreenAction::QTY_6:
+        case OnscreenAction::QTY_7:  case OnscreenAction::QTY_8:
+        case OnscreenAction::QTY_9:  case OnscreenAction::QTY_10:
+        case OnscreenAction::QTY_11: case OnscreenAction::QTY_12: {
+            int qty = static_cast<int>(action) - static_cast<int>(OnscreenAction::QTY_1) + 1;
+            audio_obj.playClickTone();
+            _pendingQuantity = qty;
+            if (workflow == WorkflowMode::ENTER_QTY)
+                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+            else if (workflow == WorkflowMode::TMPL_MHD) {
+                auto products = templatesForCategory(_selectedCategory);
+                if (_selectedTemplateIdx < (int)products.size()) {
+                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
+                    display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
                 }
             }
             break;
-        case OnscreenAction::QTY_PLUS:
-            if (_pendingQuantity < 99) {
-                audio_obj.playClickTone();
-                _pendingQuantity++;
-                if (workflow == WorkflowMode::ENTER_QTY)
-                    display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
-                else if (workflow == WorkflowMode::TMPL_MHD) {
-                    auto products = templatesForCategory(_selectedCategory);
-                    if (_selectedTemplateIdx < (int)products.size()) {
-                        String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                        display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
-                    }
-                }
-            }
-            break;
+        }
+        case OnscreenAction::QTY_MINUS: break;  // no longer drawn; kept for safety
+        case OnscreenAction::QTY_PLUS:  break;
         case OnscreenAction::QTY_CONFIRM:
             if (workflow == WorkflowMode::ENTER_QTY) {
                 workflow = WorkflowMode::SAVING;

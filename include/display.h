@@ -38,10 +38,13 @@ enum class OnscreenAction {
     DATE_DIGIT_9,
     DATE_BACKSPACE,
     DATE_CONFIRM,
-    // Quantity entry
+    // Quantity entry — direct selection buttons 1..12
+    QTY_1, QTY_2, QTY_3, QTY_4, QTY_5, QTY_6,
+    QTY_7, QTY_8, QTY_9, QTY_10, QTY_11, QTY_12,
+    QTY_CONFIRM,
+    // Legacy (kept so old references compile; no longer drawn)
     QTY_MINUS,
     QTY_PLUS,
-    QTY_CONFIRM,
     // Printer
     PRINTER_FEED_1,
     PRINTER_FEED_5,
