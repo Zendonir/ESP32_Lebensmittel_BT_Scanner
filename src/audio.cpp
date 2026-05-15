@@ -26,54 +26,48 @@ static uint8_t es_read(uint8_t reg) {
 }
 
 // ── ES8311 codec init ─────────────────────────────────────────────────────────
-// Target: 48 000 Hz · 16-bit · I²S standard · MCLK = 256 × fs = 12.288 MHz
+// 48 000 Hz · 16-bit · I²S standard · MCLK = 256 × fs = 12.288 MHz
 //
-// REG00 Bit7 = CSM_ON: MUST be 1 after reset or the codec state machine stays
-// off and the chip produces no output regardless of other settings.
-//
-// REG09/0A Bits[3:2] = WL (word length): 00=24-bit, 11=16-bit.
-// ESP32 sends 16-bit, so WL must be 11 → 0x0C. Leaving 0x00 (24-bit) creates
-// a framing mismatch and the DAC never sees valid samples.
+// REG00 bit7 = CSM_ON: must be 1 or the internal state machine stays off.
+// REG09/0A bits[3:2] = WL: 00=24-bit, 11=16-bit → 0x0C for ESP32 16-bit I2S.
+// REG05 = 0x10 (DAC OSR), REG07 = 0xFF: match known-working Waveshare references.
 
 static void es8311_init(uint8_t vol_pct) {
     // ── Reset ─────────────────────────────────────────────────────────────────
-    es_write(0x00, 0x1F);   // assert all resets
+    es_write(0x00, 0x1F);
     delay(30);
-    es_write(0x00, 0x80);   // CSM_ON=1: activate internal state machine
+    es_write(0x00, 0x80);   // CSM_ON=1
     delay(10);
 
     // ── Clock manager ─────────────────────────────────────────────────────────
-    es_write(0x01, 0x30);   // external MCLK; enable all clock paths
-    es_write(0x02, 0x00);   // MULT=1
-    es_write(0x03, 0x10);   // BCLK divider
-    es_write(0x04, 0x10);   // ADC OSR = 32
-    es_write(0x05, 0x00);
-    es_write(0x06, 0x00);   // LRCK div high (irrelevant in slave mode)
-    es_write(0x07, 0x00);   // LRCK div low  (irrelevant in slave mode)
-    es_write(0x08, 0xFF);   // clock control — 0x00 silences output
+    es_write(0x01, 0x30);   // external MCLK
+    es_write(0x02, 0x00);
+    es_write(0x03, 0x10);
+    es_write(0x04, 0x10);   // ADC OSR
+    es_write(0x05, 0x10);   // DAC OSR (was 0x00 — fixed)
+    es_write(0x06, 0x00);
+    es_write(0x07, 0xFF);   // (was 0x00 — fixed to match Waveshare reference)
+    es_write(0x08, 0xFF);
 
     // ── Serial format: I²S, 16-bit ────────────────────────────────────────────
-    // Bits [3:2] = WL: 00=24-bit, 01=20-bit, 10=18-bit, 11=16-bit
-    // 0x0C = 0b00001100 → FMT=I²S standard, WL=16-bit
-    es_write(0x09, 0x0C);   // ADC (recording) — must match even if ADC unused
-    es_write(0x0A, 0x0C);   // DAC (playback)
+    es_write(0x09, 0x0C);   // ADC: FMT=I²S, WL=16-bit
+    es_write(0x0A, 0x0C);   // DAC: FMT=I²S, WL=16-bit
 
     // ── System / analog power ─────────────────────────────────────────────────
     es_write(0x0D, 0x01);
     es_write(0x0E, 0x02);
     es_write(0x0F, 0x44);
-    es_write(0x10, 0x1C);   // HP output gain
+    es_write(0x10, 0x1C);
     es_write(0x11, 0x00);
-    es_write(0x12, 0x00);   // DAC input = I²S path
-    es_write(0x13, 0x10);   // analog bias
+    es_write(0x12, 0x00);
+    es_write(0x13, 0x10);
     es_write(0x14, 0x1A);
     es_write(0x15, 0x00);
-    es_write(0x16, 0x24);   // analog power enable (per ESP-ADF reference)
+    es_write(0x16, 0x24);
     es_write(0x17, 0xBF);
 
     // ── DAC digital path ──────────────────────────────────────────────────────
-    // REG1A must be 0xA0; 0x00 disables the DAC digital path entirely.
-    es_write(0x1A, 0xA0);
+    es_write(0x1A, 0xA0);   // must not be 0x00
     es_write(0x1B, 0x00);
     es_write(0x1C, 0xF8);
     es_write(0x1D, 0x3C);
@@ -86,16 +80,13 @@ static void es8311_init(uint8_t vol_pct) {
 
     // ── DAC control ───────────────────────────────────────────────────────────
     es_write(0x31, 0x00);   // unmute
-    uint8_t dac_vol = (uint8_t)((uint32_t)vol_pct * 0xBF / 100);
-    es_write(0x32, dac_vol);
+    es_write(0x32, 0xBF);   // full volume for testing; setVolume() adjusts live
     es_write(0x37, 0x08);
-
-    // ── Analog output power ───────────────────────────────────────────────────
-    es_write(0x45, 0x00);   // GP register — must be 0x00
+    es_write(0x45, 0x00);
 
     delay(150);
 
-    // ── Verify key registers ──────────────────────────────────────────────────
+    // ── Register readback ─────────────────────────────────────────────────────
     uint8_t r00 = es_read(0x00);
     uint8_t r01 = es_read(0x01);
     uint8_t r08 = es_read(0x08);
@@ -108,30 +99,31 @@ static void es8311_init(uint8_t vol_pct) {
         + " R08=0x" + String(r08, HEX) + "(exp FF)"
         + " R09=0x" + String(r09, HEX) + "(exp 0C)"
         + " R1A=0x" + String(r1A, HEX) + "(exp A0)"
-        + " R32=0x" + String(r32, HEX) + "(exp " + String(dac_vol, HEX) + ")");
+        + " R32=0x" + String(r32, HEX) + "(exp BF)");
+
+    // Apply configured volume after codec is up
+    uint8_t dac_vol = (uint8_t)((uint32_t)vol_pct * 0xBF / 100);
+    es_write(0x32, dac_vol);
 }
 
-// ── I2S: 48 kHz, 16-bit stereo ───────────────────────────────────────────────
-// use_apll=true + fixed_mclk=12288000: forces APLL to generate a stable
-// 12.288 MHz MCLK on GPIO12. Without this, the clock divider rounding on
-// the base 80 MHz APB can drift several hundred ppm and cause ES8311 jitter.
+// ── I2S: 48 kHz, 16-bit stereo, MCLK = 12.288 MHz ───────────────────────────
 
 static constexpr i2s_port_t I2S_PORT = I2S_NUM_1;
 
 static bool i2s_audio_init() {
-    i2s_config_t cfg          = {};
-    cfg.mode                  = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
-    cfg.sample_rate           = 48000;
-    cfg.bits_per_sample       = I2S_BITS_PER_SAMPLE_16BIT;
-    cfg.channel_format        = I2S_CHANNEL_FMT_RIGHT_LEFT;
-    cfg.communication_format  = I2S_COMM_FORMAT_STAND_I2S;
-    cfg.intr_alloc_flags      = ESP_INTR_FLAG_LEVEL1;
-    cfg.dma_desc_num          = 8;
-    cfg.dma_frame_num         = 256;
-    cfg.use_apll              = false;
-    cfg.fixed_mclk            = 12288000;   // 256 × 48000 Hz — MCLK on GPIO12
-    cfg.tx_desc_auto_clear    = true;
-    cfg.mclk_multiple         = I2S_MCLK_MULTIPLE_256;
+    i2s_config_t cfg         = {};
+    cfg.mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
+    cfg.sample_rate          = 48000;
+    cfg.bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT;
+    cfg.channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT;
+    cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+    cfg.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1;
+    cfg.dma_desc_num         = 8;
+    cfg.dma_frame_num        = 256;
+    cfg.use_apll             = true;
+    cfg.fixed_mclk           = 12288000;  // 256 × 48000 Hz on GPIO12
+    cfg.tx_desc_auto_clear   = true;
+    cfg.mclk_multiple        = I2S_MCLK_MULTIPLE_256;
 
     esp_err_t r1 = i2s_driver_install(I2S_PORT, &cfg, 0, NULL);
     if (r1 != ESP_OK) {
@@ -152,13 +144,20 @@ static bool i2s_audio_init() {
         return false;
     }
 
+    // Explicitly commit sample rate / bit depth to the clock generator
+    esp_err_t r3 = i2s_set_clk(I2S_PORT, 48000, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+    if (r3 != ESP_OK) {
+        Logger::info("Audio", String("i2s_set_clk err=") + esp_err_to_name(r3));
+        return false;
+    }
+
     i2s_zero_dma_buffer(I2S_PORT);
-    Logger::info("Audio", String("I2S OK port=") + (int)I2S_PORT
-        + " 48kHz/16bit/stereo  MCLK=GPIO" + I2S_MCLK
-        + " BCLK=GPIO" + I2S_BCLK
-        + " LRCK=GPIO" + I2S_LRCK
-        + " DOUT=GPIO" + I2S_DOUT
-        + "  APLL+fixed_mclk=12288000");
+    Logger::info("Audio", String("I2S OK  port=I2S_NUM_1  48kHz/16bit/stereo")
+        + "  MCLK=GPIO" + I2S_MCLK
+        + "  BCLK=GPIO" + I2S_BCLK
+        + "  LRCK=GPIO" + I2S_LRCK
+        + "  DOUT=GPIO" + I2S_DOUT
+        + "  use_apll=true  fixed_mclk=12288000");
     return true;
 }
 
@@ -168,7 +167,7 @@ struct ToneCmd { uint16_t freq; uint16_t ms; };
 
 static constexpr uint32_t SR    = 48000;
 static constexpr size_t   CHUNK = 256;
-static constexpr int      RAMP  = 240;  // ~5 ms soft attack/decay
+static constexpr int      RAMP  = 240;  // ~5 ms soft attack
 
 static void flush_silence() {
     static const int16_t silence[CHUNK * 2] = {};
@@ -187,7 +186,6 @@ void Audio::toneTask(void *param) {
         if (xQueueReceive(self->_queue, &cmd, portMAX_DELAY) != pdTRUE) continue;
 
         if (cmd.freq == 0) {
-            // Timed silence (used for gaps in playWarningTone etc.)
             uint32_t frames = (uint32_t)SR * cmd.ms / 1000;
             static const int16_t zeros[CHUNK * 2] = {};
             while (frames > 0) {
@@ -231,7 +229,7 @@ void Audio::toneTask(void *param) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 Audio audio_obj;
-Audio::Audio() : volume_level(70), is_initialized(false), _queue(nullptr) {}
+Audio::Audio() : volume_level(100), is_initialized(false), _queue(nullptr) {}
 
 void Audio::init(TwoWire &wire) {
     s_wire = &wire;
