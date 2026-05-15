@@ -1,13 +1,10 @@
 #include "audio.h"
 #include "core/Logger.h"
 #include <Wire.h>
-#include <ESP_I2S.h>
+#include <driver/i2s.h>
 #include <math.h>
 
 #define ES8311_ADDR 0x18
-
-// File-scoped I2S instance (new stack: ESP_I2S.h / IDF 5.x)
-static ESP_I2S _i2s;
 
 // ── ES8311 I2C helpers ────────────────────────────────────────────────────────
 
@@ -29,7 +26,7 @@ static uint8_t es_read(uint8_t reg) {
 
 // ── ES8311 codec init ─────────────────────────────────────────────────────────
 // Target: 48 000 Hz · 16-bit · I²S standard · MCLK = 256 × fs = 12.288 MHz
-// Register values cross-checked against the Waveshare / schreibfaul1 reference.
+// Verified against the Waveshare / schreibfaul1 ESP32-audioI2S reference.
 
 static void es8311_init(uint8_t vol_pct) {
     // Hard reset
@@ -38,21 +35,21 @@ static void es8311_init(uint8_t vol_pct) {
     es_write(0x00, 0x00);
     delay(10);
 
-    // ── Clock ──────────────────────────────────────────────────────────────────
-    es_write(0x01, 0x30);   // external MCLK pin; clock-path enables active
+    // Clock
+    es_write(0x01, 0x30);   // external MCLK; clock-path enables active
     es_write(0x02, 0x00);
-    es_write(0x03, 0x10);   // BCLK divider (informational in slave mode)
+    es_write(0x03, 0x10);   // BCLK div (informational in slave mode)
     es_write(0x04, 0x10);   // ADC OSR
     es_write(0x05, 0x10);   // DAC OSR
-    es_write(0x06, 0x00);   // LRCK div high byte
+    es_write(0x06, 0x00);   // LRCK div high
     es_write(0x07, 0xFF);   // LRCK div low  → ÷256 → 48 000 Hz
-    es_write(0x08, 0xFF);   // required; 0x00 was confirmed to cause silence
+    es_write(0x08, 0xFF);   // required; 0x00 silences output
 
-    // ── Serial format: I²S standard, 16-bit ───────────────────────────────────
-    es_write(0x09, 0x00);   // ADC: I²S, 16-bit
-    es_write(0x0A, 0x00);   // DAC: I²S, 16-bit
+    // Serial format: I²S standard, 16-bit
+    es_write(0x09, 0x00);   // ADC
+    es_write(0x0A, 0x00);   // DAC
 
-    // ── ADC (microphone disabled) ──────────────────────────────────────────────
+    // ADC (microphone disabled)
     es_write(0x0D, 0x01);
     es_write(0x0E, 0x02);
     es_write(0x0F, 0x44);
@@ -65,8 +62,7 @@ static void es8311_init(uint8_t vol_pct) {
     es_write(0x16, 0x00);
     es_write(0x17, 0xBF);
 
-    // ── DAC ───────────────────────────────────────────────────────────────────
-    // REG1A = 0xA0 is mandatory; 0x00 silences the DAC digital path entirely.
+    // DAC — REG1A=0xA0 is mandatory; 0x00 silences the digital path entirely
     es_write(0x1A, 0xA0);
     es_write(0x1B, 0x00);
     es_write(0x1C, 0xF8);
@@ -83,14 +79,13 @@ static void es8311_init(uint8_t vol_pct) {
     uint8_t dac_vol = (uint8_t)((uint32_t)vol_pct * 0xBF / 100);
     es_write(0x32, dac_vol);
 
-    // ── Analog output power ────────────────────────────────────────────────────
-    es_write(0x37, 0x08);   // headphone driver on
-    es_write(0x44, 0x08);   // speaker amplifier on
+    // Analog output power
+    es_write(0x37, 0x08);   // headphone driver
+    es_write(0x44, 0x08);   // speaker amplifier
     es_write(0x45, 0x00);
 
     delay(150);
 
-    // Readback for diagnostics
     uint8_t r01 = es_read(0x01);
     uint8_t r08 = es_read(0x08);
     uint8_t r1A = es_read(0x1A);
@@ -103,22 +98,44 @@ static void es8311_init(uint8_t vol_pct) {
         + " (expected 30 FF A0 " + String(dac_vol, HEX) + ")");
 }
 
-// ── I2S init (ESP_I2S.h new stack) ───────────────────────────────────────────
+// ── I2S: 48 kHz, 16-bit stereo, MCLK = 256 × fs = 12.288 MHz ────────────────
+
+static constexpr i2s_port_t I2S_PORT = I2S_NUM_1;
 
 static bool i2s_audio_init() {
-    // Pin assignment: BCLK, LRCK (WS), DOUT (data to codec), no mic, MCLK
-    _i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_DOUT, /*din=*/-1, I2S_MCLK);
+    i2s_config_t cfg     = {};
+    cfg.mode             = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
+    cfg.sample_rate      = 48000;
+    cfg.bits_per_sample  = I2S_BITS_PER_SAMPLE_16BIT;
+    cfg.channel_format   = I2S_CHANNEL_FMT_RIGHT_LEFT;
+    cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+    cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
+    cfg.dma_desc_num     = 8;
+    cfg.dma_frame_num    = 256;
+    cfg.use_apll         = false;
+    cfg.tx_desc_auto_clear = true;
+    cfg.mclk_multiple    = I2S_MCLK_MULTIPLE_256;  // 256 × 48000 = 12.288 MHz
 
-    // MCLK = 256 × 48000 = 12.288 MHz (ES8311 requires a stable MCLK)
-    _i2s.setMCLKMultiplier(256);
-
-    bool ok = _i2s.begin(I2S_MODE_STD, 48000,
-                         I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
-    if (!ok) {
-        Logger::info("Audio", "I2S begin() failed");
+    esp_err_t r1 = i2s_driver_install(I2S_PORT, &cfg, 0, NULL);
+    if (r1 != ESP_OK) {
+        Logger::info("Audio", String("i2s_driver_install err=") + r1);
         return false;
     }
 
+    i2s_pin_config_t pins = {};
+    pins.mck_io_num   = I2S_MCLK;
+    pins.bck_io_num   = I2S_BCLK;
+    pins.ws_io_num    = I2S_LRCK;
+    pins.data_out_num = I2S_DOUT;
+    pins.data_in_num  = I2S_PIN_NO_CHANGE;
+
+    esp_err_t r2 = i2s_set_pin(I2S_PORT, &pins);
+    if (r2 != ESP_OK) {
+        Logger::info("Audio", String("i2s_set_pin err=") + r2);
+        return false;
+    }
+
+    i2s_zero_dma_buffer(I2S_PORT);
     Logger::info("Audio", String("I2S OK: 48kHz 16bit stereo")
         + "  MCLK=GPIO" + I2S_MCLK
         + "  BCLK=GPIO" + I2S_BCLK
@@ -132,13 +149,13 @@ static bool i2s_audio_init() {
 struct ToneCmd { uint16_t freq; uint16_t ms; };
 
 static constexpr uint32_t SR    = 48000;
-static constexpr size_t   CHUNK = 256;  // frames per DMA write
-static constexpr int      RAMP  = 240;  // ~5 ms attack ramp at 48 kHz
+static constexpr size_t   CHUNK = 256;  // matches dma_frame_num
+static constexpr int      RAMP  = 240;  // ~5 ms soft attack
 
-// Write a silence block to flush residual signal (prevents click at tone end)
 static void flush_silence() {
     static int16_t silence[CHUNK * 2] = {};
-    _i2s.write((uint8_t *)silence, sizeof(silence), /*blocking=*/true);
+    size_t w = 0;
+    i2s_write(I2S_PORT, silence, sizeof(silence), &w, pdMS_TO_TICKS(100));
 }
 
 void Audio::toneTask(void *param) {
@@ -152,12 +169,13 @@ void Audio::toneTask(void *param) {
         if (xQueueReceive(self->_queue, &cmd, portMAX_DELAY) != pdTRUE) continue;
 
         if (cmd.freq == 0) {
-            // Treat freq=0 as a timed silence (used for pauses between beeps)
+            // Silence pause (used for gaps between beeps in playWarningTone etc.)
             uint32_t frames = (uint32_t)SR * cmd.ms / 1000;
-            static int16_t zeros[CHUNK * 2] = {};
+            static const int16_t zeros[CHUNK * 2] = {};
             while (frames > 0) {
                 size_t n = (frames < CHUNK) ? (size_t)frames : CHUNK;
-                _i2s.write((uint8_t *)zeros, n * 4, /*blocking=*/true);
+                size_t w = 0;
+                i2s_write(I2S_PORT, zeros, n * 4, &w, pdMS_TO_TICKS(200));
                 frames -= (uint32_t)n;
             }
             continue;
@@ -174,7 +192,6 @@ void Audio::toneTask(void *param) {
         while (total > 0) {
             size_t n = (total < CHUNK) ? (size_t)total : CHUNK;
             for (size_t i = 0; i < n; i++) {
-                // Soft attack ramp to avoid click at tone start
                 float   env = (ramp_n < RAMP) ? (float)ramp_n / (float)RAMP : 1.0f;
                 if (ramp_n < RAMP) ramp_n++;
                 int16_t s      = (int16_t)(sinf(phase) * amp * env);
@@ -183,14 +200,13 @@ void Audio::toneTask(void *param) {
                 phase += step;
                 if (phase >= 2.0f * M_PI) phase -= 2.0f * M_PI;
             }
-            // Zero-pad tail of last partial chunk
             for (size_t i = n; i < CHUNK; i++) buf[i * 2] = buf[i * 2 + 1] = 0;
 
-            _i2s.write((uint8_t *)buf, CHUNK * 4, /*blocking=*/true);
+            size_t written = 0;
+            i2s_write(I2S_PORT, buf, CHUNK * 4, &written, pdMS_TO_TICKS(500));
             total -= (uint32_t)n;
         }
-
-        flush_silence(); // prevent click at tone end
+        flush_silence();
     }
 }
 
@@ -202,7 +218,6 @@ Audio::Audio() : volume_level(70), is_initialized(false), _queue(nullptr) {}
 void Audio::init() {
     _queue = xQueueCreate(16, sizeof(ToneCmd));
 
-    // I2C must be up (also initialised by App::initI2C; re-calling is safe)
     Wire.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
 
     Wire.beginTransmission(ES8311_ADDR);
@@ -214,7 +229,7 @@ void Audio::init() {
         return;
     }
 
-    // Start I2S first so MCLK/BCLK/LRCK are stable when ES8311 latches its regs
+    // I2S first so MCLK/BCLK/LRCK are stable when ES8311 latches its registers
     if (!i2s_audio_init()) {
         Logger::info("Audio", "I2S fehlgeschlagen – Audio deaktiviert");
         return;
@@ -260,7 +275,7 @@ void Audio::playErrorTone() {
 
 void Audio::playWarningTone() {
     playTone(880, 80);
-    playTone(0,   60);  // 60 ms silence pause
+    playTone(0,   60);  // 60 ms silence gap
     playTone(880, 80);
 }
 
