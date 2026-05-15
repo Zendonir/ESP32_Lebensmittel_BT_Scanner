@@ -64,7 +64,8 @@ static uint8_t es_read(uint8_t reg) {
 //
 // REG00 bit7 = CSM_ON: must be 1 or the internal state machine stays off.
 // REG09/0A bits[3:2] = WL: 00=24-bit, 11=16-bit → 0x0C for ESP32 16-bit I2S.
-// REG05 = 0x10 (DAC OSR), REG07 = 0xFF: match known-working Waveshare references.
+// REG07=0x00, REG08=0xFF: LRCK divider = 256 = MCLK(12.288MHz)/256 = 48000 Hz.
+// REG06=0x03: BCLK divider-1 (per ESP-BSP coeff table for 12288000/48000).
 
 static void es8311_init(uint8_t vol_pct) {
     // ── Reset ─────────────────────────────────────────────────────────────────
@@ -73,14 +74,22 @@ static void es8311_init(uint8_t vol_pct) {
     es_write(0x00, 0x80);   // CSM_ON=1
     delay(10);
 
-    // ── Clock manager ─────────────────────────────────────────────────────────
-    es_write(0x01, 0x30);   // external MCLK
+    // ── Clock manager: MCLK=12.288MHz, fs=48kHz (ESP-BSP coeff table entry) ──────
+    // REG01: all clocks enabled, MCLK from pin, charge-pump div=15
+    // REG02: pre_div=1 (no pre-division)
+    // REG03: fs_mode=0, adc_osr=16
+    // REG04: dac_osr=16
+    // REG05: (adc_div-1)<<4 | (dac_div-1) = 0x00
+    // REG06: bclk_div-1 = 3
+    // REG07: lrck_h=0x00  ← MUST be 0x00! (LRCK divider high byte)
+    // REG08: lrck_l=0xFF  → LRCK period = 256 cycles = MCLK/256 = 48000 Hz
+    es_write(0x01, 0x3F);
     es_write(0x02, 0x00);
     es_write(0x03, 0x10);
-    es_write(0x04, 0x10);   // ADC OSR
-    es_write(0x05, 0x10);   // DAC OSR (was 0x00 — fixed)
-    es_write(0x06, 0x00);
-    es_write(0x07, 0xFF);   // (was 0x00 — fixed to match Waveshare reference)
+    es_write(0x04, 0x10);
+    es_write(0x05, 0x00);
+    es_write(0x06, 0x03);
+    es_write(0x07, 0x00);
     es_write(0x08, 0xFF);
 
     // ── Serial format: I²S, 16-bit ────────────────────────────────────────────
