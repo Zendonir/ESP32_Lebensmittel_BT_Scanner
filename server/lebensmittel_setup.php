@@ -40,9 +40,9 @@ if (empty($rootUser) || empty($syncPass)) {
     exit;
 }
 
-// ---- Connect as root ----
+// ---- Step 1: Connect as root (no database selected) ----
 try {
-    $pdo = new PDO(
+    $pdoRoot = new PDO(
         "mysql:host=localhost;charset=utf8mb4",
         $rootUser, $rootPass,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
@@ -52,8 +52,8 @@ try {
     exit;
 }
 
-// ---- Check if DB already exists ----
-$stmt = $pdo->prepare("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?");
+// ---- Step 2: Check if DB already exists ----
+$stmt = $pdoRoot->prepare("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?");
 $stmt->execute([$dbName]);
 if ($stmt->fetch()) {
     echo json_encode([
@@ -63,60 +63,92 @@ if ($stmt->fetch()) {
     exit;
 }
 
-// ---- Create database ----
-$pdo->exec("CREATE DATABASE `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+// ---- Step 3: Create database ----
+try {
+    $pdoRoot->exec("CREATE DATABASE `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+} catch (PDOException $e) {
+    echo json_encode(['ok' => false, 'error' => 'Datenbank konnte nicht erstellt werden: ' . $e->getMessage()]);
+    exit;
+}
 
-// ---- Create tables ----
-$pdo->exec("USE `{$dbName}`");
-$pdo->exec("
-CREATE TABLE inventory_events (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
-    event_type   ENUM('ADD','REMOVE_LABEL','REMOVE_BARCODE','PING') NOT NULL,
-    device_name  VARCHAR(100)  DEFAULT '',
-    household    VARCHAR(100)  DEFAULT 'Standard',
-    barcode      VARCHAR(100)  DEFAULT '',
-    label_barcode VARCHAR(100) DEFAULT '',
-    name         VARCHAR(255)  DEFAULT '',
-    brand        VARCHAR(255)  DEFAULT '',
-    category     VARCHAR(100)  DEFAULT '',
-    expiry_date  VARCHAR(20)   DEFAULT '',
-    added_date   VARCHAR(20)   DEFAULT '',
-    quantity     INT           DEFAULT 1,
-    device_ts    BIGINT        DEFAULT 0,
-    server_ts    DATETIME      DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_barcode   (barcode),
-    INDEX idx_label     (label_barcode),
-    INDEX idx_household (household),
-    INDEX idx_device    (device_name),
-    INDEX idx_server_ts (server_ts)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+// ---- Step 4: Reconnect with the new database in the DSN ----
+// DO NOT use "USE database" — reconnecting with dbname in DSN is reliable across all MySQL versions.
+try {
+    $pdo = new PDO(
+        "mysql:host=localhost;dbname={$dbName};charset=utf8mb4",
+        $rootUser, $rootPass,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
+} catch (PDOException $e) {
+    echo json_encode(['ok' => false, 'error' => 'Verbindung zur neuen Datenbank fehlgeschlagen: ' . $e->getMessage()]);
+    exit;
+}
 
-// Current inventory view
-$pdo->exec("
-CREATE VIEW current_inventory AS
-SELECT
-    e.label_barcode, e.barcode, e.name, e.brand, e.category,
-    e.expiry_date, e.added_date, e.quantity, e.household, e.device_name,
-    e.server_ts AS stored_at
-FROM inventory_events e
-WHERE e.event_type = 'ADD'
-  AND e.label_barcode NOT IN (
-      SELECT r.label_barcode FROM inventory_events r
-      WHERE r.event_type = 'REMOVE_LABEL'
-        AND r.label_barcode = e.label_barcode
-        AND r.server_ts >= e.server_ts
-  )
-");
+// ---- Step 5: Create table ----
+try {
+    $pdo->exec("
+        CREATE TABLE inventory_events (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            event_type    ENUM('ADD','REMOVE_LABEL','REMOVE_BARCODE','PING') NOT NULL,
+            device_name   VARCHAR(100)  NOT NULL DEFAULT '',
+            household     VARCHAR(100)  NOT NULL DEFAULT 'Standard',
+            barcode       VARCHAR(100)  NOT NULL DEFAULT '',
+            label_barcode VARCHAR(100)  NOT NULL DEFAULT '',
+            name          VARCHAR(255)  NOT NULL DEFAULT '',
+            brand         VARCHAR(255)  NOT NULL DEFAULT '',
+            category      VARCHAR(100)  NOT NULL DEFAULT '',
+            expiry_date   VARCHAR(20)   NOT NULL DEFAULT '',
+            added_date    VARCHAR(20)   NOT NULL DEFAULT '',
+            quantity      INT           NOT NULL DEFAULT 1,
+            device_ts     BIGINT        NOT NULL DEFAULT 0,
+            server_ts     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_barcode   (barcode),
+            INDEX idx_label     (label_barcode),
+            INDEX idx_household (household),
+            INDEX idx_device    (device_name),
+            INDEX idx_server_ts (server_ts)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+} catch (PDOException $e) {
+    echo json_encode(['ok' => false, 'error' => 'Tabelle konnte nicht erstellt werden: ' . $e->getMessage()]);
+    exit;
+}
 
-// ---- Create sync user ----
-// Drop user if it exists (idempotent for re-runs after partial failure)
-try { $pdo->exec("DROP USER IF EXISTS `{$syncUser}`@'%'"); } catch (Exception $e) {}
+// ---- Step 6: Create view ----
+try {
+    $pdo->exec("
+        CREATE VIEW current_inventory AS
+        SELECT
+            e.label_barcode, e.barcode, e.name, e.brand, e.category,
+            e.expiry_date, e.added_date, e.quantity, e.household, e.device_name,
+            e.server_ts AS stored_at
+        FROM inventory_events e
+        WHERE e.event_type = 'ADD'
+          AND e.label_barcode NOT IN (
+              SELECT r.label_barcode FROM inventory_events r
+              WHERE r.event_type  = 'REMOVE_LABEL'
+                AND r.label_barcode = e.label_barcode
+                AND r.server_ts    >= e.server_ts
+          )
+    ");
+} catch (PDOException $e) {
+    // View creation failing is non-fatal – table is the important part
+    error_log("Lebensmittel_Scanner: view creation failed: " . $e->getMessage());
+}
 
-$escapedPass = str_replace("'", "\\'", $syncPass);
-$pdo->exec("CREATE USER `{$syncUser}`@'%' IDENTIFIED BY '{$escapedPass}'");
-$pdo->exec("GRANT SELECT, INSERT, UPDATE ON `{$dbName}`.* TO `{$syncUser}`@'%'");
-$pdo->exec("FLUSH PRIVILEGES");
+// ---- Step 7: Create sync user ----
+try {
+    // Use root connection for user management (not restricted to one DB)
+    try { $pdoRoot->exec("DROP USER IF EXISTS `{$syncUser}`@'%'"); } catch (Exception $ignore) {}
+
+    // Use a prepared-statement-safe approach for the password
+    $pdoRoot->exec("CREATE USER `{$syncUser}`@'%' IDENTIFIED BY " . $pdoRoot->quote($syncPass));
+    $pdoRoot->exec("GRANT SELECT, INSERT, UPDATE ON `{$dbName}`.* TO `{$syncUser}`@'%'");
+    $pdoRoot->exec("FLUSH PRIVILEGES");
+} catch (PDOException $e) {
+    echo json_encode(['ok' => false, 'error' => 'Benutzer konnte nicht angelegt werden: ' . $e->getMessage()]);
+    exit;
+}
 
 echo json_encode([
     'ok'       => true,
