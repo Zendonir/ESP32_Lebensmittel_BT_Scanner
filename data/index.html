@@ -28,6 +28,7 @@
     <li><a href="#system"        class="nav-link" data-page="system"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 105 19.07M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>System</a></li>
     <li><a href="#network"       class="nav-link" data-page="network"><svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>Netzwerk</a></li>
     <li><a href="#printer"       class="nav-link" data-page="printer"><svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Drucker</a></li>
+    <li><a href="#manuallabel"   class="nav-link" data-page="manuallabel"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Etikett</a></li>
     <li><a href="#scanner"       class="nav-link" data-page="scanner"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><path d="M3 6h2v12H3M7 6h2v12H7M11 6h4v12h-4M17 6h2v12h-2M21 6h0v12"/></svg>Scanner</a></li>
     <li><a href="#mqtt"          class="nav-link" data-page="mqtt"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81 19.79 19.79 0 01.5 4.63 2 2 0 012.68 2.5h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 10.14a16 16 0 006.95 6.95l1-1a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>MQTT</a></li>
     <li><a href="#telegram"      class="nav-link" data-page="telegram"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Telegram</a></li>
@@ -338,28 +339,42 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <div class="card-title">Manueller Druck</div>
-      <div class="form-stack">
-        <div class="form-field">
-          <label>Text (eine Zeile pro Zeile)</label>
-          <textarea id="prManualText" class="input" rows="5" placeholder="Zeile 1&#10;Zeile 2&#10;Zeile 3"></textarea>
-        </div>
-        <div class="form-field">
-          <label>Ausrichtung</label>
-          <div style="display:flex;gap:16px;padding:4px 0">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="prManualAlign" value="left" checked> Linksbündig</label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="prManualAlign" value="center"> Zentriert</label>
+  </section>
+
+  <!-- MANUELLES ETIKETT -->
+  <section id="page-manuallabel" class="page">
+    <div class="page-header"><h1>Manuelles Etikett</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Text</div>
+        <div class="form-stack">
+          <div class="form-field">
+            <label>Inhalt (eine Zeile pro Druckzeile)</label>
+            <textarea id="mlText" class="input" rows="6" placeholder="Zeile 1&#10;Zeile 2&#10;Zeile 3"></textarea>
           </div>
+          <div class="form-field">
+            <label>Ausrichtung</label>
+            <div style="display:flex;gap:16px;padding:4px 0">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mlAlign" value="left" checked> Linksbündig</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mlAlign" value="center"> Zentriert</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="btn btn-ok" onclick="Pages.manuallabel.print()">Etikett drucken</button>
+            <button type="button" class="btn" onclick="document.getElementById('mlText').value=''">Löschen</button>
+          </div>
+          <div id="mlResult" class="value-display mono"></div>
         </div>
-        <div style="display:flex;gap:8px">
-          <button type="button" class="btn btn-ok" onclick="Pages.printer.printManual()">Drucken</button>
-          <button type="button" class="btn" onclick="document.getElementById('prManualText').value=''">Löschen</button>
-        </div>
-        <div id="prManualResult" class="value-display mono"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Hinweis</div>
+        <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.5">
+          Schriftgröße und Zeilenabstand werden automatisch berechnet, sodass das Etikett dieselbe Papierlänge hat wie ein reguläres Inventar-Etikett.<br><br>
+          Wenige Zeilen → große Schrift (doppelte Höhe ab 2 Zeilen).<br>
+          Viele Zeilen → kleinere Schrift mit engem Abstand.
+        </p>
       </div>
     </div>
-
   </section>
 
   <!-- SCANNER -->

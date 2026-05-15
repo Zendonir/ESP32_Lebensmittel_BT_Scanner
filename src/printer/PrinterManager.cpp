@@ -61,6 +61,57 @@ void PrinterManager::printManual(const String &text, bool center) {
     printer.flush();
 }
 
+void PrinterManager::printManualLabel(const String &text, bool center) {
+    if (!printer.isReady()) return;
+
+    // Double reset for clean state
+    printer.reset();
+    printer.flush();
+    delay(40);
+    printer.reset();
+    printer.setCodePage(16);
+    printer.flush();
+    delay(80);
+
+    // Count non-empty lines to drive auto-spacing
+    int lineCount = 0;
+    int start = 0;
+    int len = (int)text.length();
+    for (int i = 0; i <= len; i++) {
+        if (i == len || text[i] == '\n') {
+            if (i > start) lineCount++;  // skip blank lines for spacing calc
+            start = i + 1;
+        }
+    }
+    if (lineCount == 0) lineCount = 1;
+
+    // Inventory label content height (double-height name + 4 rows × 24 + barcode ≈ 210 dots).
+    // Distribute evenly across N lines so manual label uses the same paper length.
+    const int CONTENT_DOTS = 210;
+    int spacing = CONTENT_DOTS / lineCount;
+    if (spacing < 24) spacing = 24;
+    if (spacing > 80) spacing = 80;
+    bool doubleH = (spacing >= 48);
+
+    printer.setLineSpacing((uint8_t)spacing);
+    printer.setAlign(center ? 1 : 0);
+    printer.setDoubleHeight(doubleH);
+
+    // Print lines
+    start = 0;
+    for (int i = 0; i <= len; i++) {
+        if (i == len || text[i] == '\n') {
+            printer.println(text.substring(start, i));
+            start = i + 1;
+        }
+    }
+
+    printer.setDoubleHeight(false);
+    printer.setAlign(0);
+    printer.feedDots(postFeedDots);
+    printer.flush();
+}
+
 bool PrinterManager::printLabel(const InventoryItem &item) {
     renderer.setPostFeed(postFeedDots);
     return renderer.printInventoryLabel(item);

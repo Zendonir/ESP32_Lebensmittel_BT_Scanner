@@ -897,7 +897,7 @@ void WebInterface::registerApiRoutes() {
                 return;
             }
             // Print via EscPosPrinter-compatible API through printer manager
-            _printer->printManual(text, align == "center");
+            _printer->printManualLabel(text, align == "center");
             req->send(200, "application/json", "{\"ok\":true,\"message\":\"Gedruckt\"}");
         }, nullptr, bodyCollect);
 

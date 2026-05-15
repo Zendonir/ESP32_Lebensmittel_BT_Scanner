@@ -1373,6 +1373,27 @@ Pages.printer = {
 
 };
 
+/* ---- MANUELLES ETIKETT ---- */
+Pages.manuallabel = {
+  async load() {},
+
+  async print() {
+    const text  = document.getElementById('mlText').value.trim();
+    const align = document.querySelector('input[name="mlAlign"]:checked')?.value || 'left';
+    const el    = document.getElementById('mlResult');
+    if (!text) { Toast.error('Kein Text eingegeben'); return; }
+    if (el) el.textContent = '⏳ Drucken …';
+    try {
+      const res = await API.post('/api/print-manual', { text, align });
+      if (el) el.textContent = res.ok ? `✓ Gedruckt (${align})` : `✗ ${res.message || 'Fehler'}`;
+      res.ok ? Toast.success('Etikett gedruckt') : Toast.error(res.message || 'Fehler');
+    } catch(e) {
+      if (el) el.textContent = '✗ Fehler';
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+};
+
 /* ---- SCANNER ---- */
 Pages.scanner = {
   _pollTimer: null,
