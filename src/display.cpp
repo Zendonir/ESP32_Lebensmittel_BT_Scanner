@@ -314,16 +314,6 @@ static void draw_panel_system(const HomeState &s) {
     _spr.drawString("FoodScanner ESP32-S3", 250, py + 34);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.drawString("ST7796 | FT6336 | 480x320", 250, py + 54);
-    int fy = py + 136;
-    draw_card(4, fy, 472, 84, C_SURFACE, C_BORDER);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("DRUCKER POSITION", 12, fy + 6);
-    draw_button( 12, fy + 22, 112, 26, "+1 Zeile",  C_SURFACE2, C_TEXT, 2, OnscreenAction::PRINTER_FEED_1);
-    draw_button(132, fy + 22, 112, 26, "+5 Zeilen", C_SURFACE2, C_TEXT, 2, OnscreenAction::PRINTER_FEED_5);
-    draw_button(4, SCR_H - TAB_H - 44, 150, 36,
-                "Refresh", C_ACCENT, C_TEXT, 2, OnscreenAction::REFRESH);
 }
 
 static void draw_panel_manual_product(const HomeState &) {
@@ -922,7 +912,8 @@ void Display::showTemplateMHD(const String &productName,
 //   On-screen keyboard
 // ─────────────────────────────────────────────────────────
 // Layout: 480×232 (below 44px header + 44px input display)
-// 4 rows × 58px, 10 keys per row × 48px wide
+// Rows 0-2: 10 keys × 48px wide × 58px tall
+// Row 3: CAPS(96) + SPACE(192) + OK(192) = 480px
 
 static const char KB_KEYS[3][10] = {
     {'Q','W','E','R','T','Z','U','I','O','P'},
@@ -930,8 +921,30 @@ static const char KB_KEYS[3][10] = {
     {'Y','X','C','V','B','N','M',',','-', 0 },  // 0 = backspace slot
 };
 
+void Display::kbReset() {
+    _kbShift = true;
+    _kbCaps  = false;
+}
+
+void Display::kbAutoShift(char c) {
+    if (c == ' ') {
+        _kbShift = true;   // auto-uppercase after space
+    } else {
+        _kbShift = _kbCaps;  // revert to caps-lock state
+    }
+}
+
+void Display::kbToggleCaps() {
+    _kbCaps  = !_kbCaps;
+    _kbShift = _kbCaps;
+}
+
 void Display::showKeyboardEntry(const String &title, const String &current) {
     if (!_initialized) return;
+
+    // Auto-uppercase when text is empty (start of input)
+    if (current.isEmpty()) _kbShift = _kbCaps ? true : true;
+
     _spr.fillSprite(C_BG);
     clear_regions();
 
@@ -954,27 +967,27 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     _spr.drawString(disp.c_str(), 8, inp_y + 22);
 
     // Keyboard rows 0-2 (3 × 10 keys, 48×58 each, y=88)
-    int kb_y = inp_y + 44;       // 88
+    int kb_y = inp_y + 44;
     int key_w = 48, key_h = 58;
 
     for (int row = 0; row < 3; row++) {
         for (int col = 0; col < 10; col++) {
             int bx = col * key_w;
             int by = kb_y + row * key_h;
-            char c = KB_KEYS[row][col];
+            char upper_c = KB_KEYS[row][col];
 
             OnscreenAction act;
-            const char    *label;
             uint16_t bg, fg;
             char lbuf[3] = {0};
+            const char *label;
 
             if (row == 2 && col == 9) {
-                // Backspace key
                 act   = OnscreenAction::KB_BACKSPACE;
                 label = "<";
                 bg    = C_YELLOW; fg = C_BG;
             } else {
-                lbuf[0] = c;
+                char disp_c = _kbShift ? upper_c : (char)tolower(upper_c);
+                lbuf[0] = disp_c;
                 label   = lbuf;
                 act     = OnscreenAction::KB_CHAR;
                 bg      = C_SURFACE2; fg = C_TEXT;
@@ -988,35 +1001,50 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
             _spr.setTextDatum(MC_DATUM);
             _spr.drawString(label, bx + key_w / 2, by + key_h / 2);
 
-            // For KB_CHAR, pass the character in the extra_char field so the
-            // hit-test can set _pending_kb_char directly.
-            char reg_char = (act == OnscreenAction::KB_CHAR) ? c : 0;
+            char reg_char = (act == OnscreenAction::KB_CHAR)
+                ? (_kbShift ? upper_c : (char)tolower(upper_c))
+                : 0;
             add_region(bx, by, key_w, key_h, act, reg_char);
         }
     }
 
-    // Row 3 (y = 88 + 3×58 = 262): Space (288px) + OK (192px)
-    int row4_y = kb_y + 3 * key_h;  // 262
-    _spr.fillRect(0,   row4_y, 288, key_h, C_SURFACE2);
-    _spr.fillRect(288, row4_y, 192, key_h, C_GREEN);
-    _spr.drawFastHLine(0, row4_y, SCR_W, C_BORDER);
-    _spr.drawFastVLine(0,   row4_y, key_h, C_BORDER);
-    _spr.drawFastVLine(288, row4_y, key_h, C_BORDER);
+    // Row 3: CAPS (96px) | SPACE (192px) | OK (192px)
+    int row4_y = kb_y + 3 * key_h;
 
+    // CAPS key: highlighted when shift active
+    uint16_t caps_bg = _kbCaps  ? C_ACCENT
+                     : _kbShift ? C_SURFACE  // temporary shift after space/start
+                     : C_SURFACE2;
+    uint16_t caps_fg = _kbCaps ? C_BG : C_TEXT;
+    _spr.fillRect(0, row4_y, 96, key_h, caps_bg);
+    _spr.drawFastVLine(0,  row4_y, key_h, C_BORDER);
+    _spr.drawFastHLine(0,  row4_y, 96,   C_BORDER);
+    _spr.setTextColor(caps_fg, caps_bg);
+    _spr.setTextFont(2);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString(_kbCaps ? "CAPS" : "abc", 48, row4_y + key_h / 2);
+    add_region(0, row4_y, 96, key_h, OnscreenAction::KB_CAPS);
+
+    // SPACE key
+    _spr.fillRect(96, row4_y, 192, key_h, C_SURFACE2);
+    _spr.drawFastVLine(96,  row4_y, key_h, C_BORDER);
+    _spr.drawFastHLine(96,  row4_y, 192,  C_BORDER);
     _spr.setTextColor(C_TEXT, C_SURFACE2);
     _spr.setTextFont(4);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString("SPACE", 144, row4_y + key_h / 2);
+    _spr.drawString("SPACE", 96 + 96, row4_y + key_h / 2);
+    add_region(96, row4_y, 192, key_h, OnscreenAction::KB_CHAR, ' ');
 
+    // OK key
+    _spr.fillRect(288, row4_y, 192, key_h, C_GREEN);
+    _spr.drawFastVLine(288, row4_y, key_h, C_BORDER);
+    _spr.drawFastHLine(288, row4_y, 192,  C_BORDER);
     _spr.setTextColor(C_BG, C_GREEN);
+    _spr.setTextFont(4);
     _spr.setTextDatum(MC_DATUM);
     _spr.drawString("OK", 288 + 96, row4_y + key_h / 2);
-
-    add_region(0,   row4_y, 288, key_h, OnscreenAction::KB_CHAR, ' ');
     add_region(288, row4_y, 192, key_h, OnscreenAction::KB_CONFIRM);
 
-    // Bottom border
     _spr.drawFastHLine(0, row4_y + key_h, SCR_W, C_BORDER);
-
     commit();
 }

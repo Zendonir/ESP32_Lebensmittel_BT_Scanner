@@ -63,6 +63,7 @@ enum class OnscreenAction {
     // On-screen keyboard
     KB_CHAR,       // char in _pending_kb_char
     KB_BACKSPACE,
+    KB_CAPS,       // toggle caps-lock
     KB_CONFIRM,
 };
 
@@ -111,6 +112,9 @@ public:
     // Keyboard entry
     void showKeyboardEntry(const String &title, const String &current);
     char drainKbChar();  // returns pending keyboard char, 0 if none
+    void kbAutoShift(char lastChar);   // call after each typed char
+    void kbReset();                    // call when opening fresh keyboard
+    void kbToggleCaps();               // handle KB_CAPS action
 
     // Action queue
     OnscreenAction hitTest(uint16_t x, uint16_t y) const;
@@ -122,6 +126,8 @@ public:
 
 private:
     bool _initialized = false;
+    bool _kbShift     = true;   // next key is uppercase (auto-shift or caps)
+    bool _kbCaps      = false;  // caps-lock is latched on
 };
 
 extern Display display_obj;

@@ -286,8 +286,16 @@ void App::processOnscreenAction(OnscreenAction action) {
         if (c != 0) {
             audio_obj.playClickTone();
             _kbText += c;
+            display_obj.kbAutoShift(c);
             display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
         }
+        return;
+    }
+
+    if (action == OnscreenAction::KB_CAPS && workflow == WorkflowMode::KB_ENTRY) {
+        audio_obj.playClickTone();
+        display_obj.kbToggleCaps();
+        display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
         return;
     }
 
@@ -355,6 +363,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::KB_ENTRY;
             _activeTab = UiTab::MANUAL_ENTRY;
             _kbText = "";
+            display_obj.kbReset();
             display_obj.showKeyboardEntry("Produktname eingeben", "");
             break;
         case OnscreenAction::REFRESH:
@@ -503,6 +512,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             if (workflow == WorkflowMode::KB_ENTRY && !_kbText.isEmpty()) {
                 audio_obj.playClickTone();
                 _kbText.remove(_kbText.length() - 1);
+                if (_kbText.isEmpty()) display_obj.kbAutoShift(' '); // treat empty as after-space
                 display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
             }
             break;
