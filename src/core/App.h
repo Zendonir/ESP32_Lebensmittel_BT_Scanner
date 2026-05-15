@@ -2,9 +2,11 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <vector>
 #include <DNSServer.h>
 #include "display.h"
 #include "AppStateManager.h"
+#include "../models/ProductTemplate.h"
 #include "EventBus.h"
 #include "TimeManager.h"
 #include "../storage/LittleFSManager.h"
@@ -31,7 +33,13 @@ private:
         ENTER_DATE,
         ENTER_QTY,
         SAVING,
-        RESULT
+        RESULT,
+        // Template-based product selection
+        TMPL_CATEGORY,       // showing category list
+        TMPL_PRODUCT,        // showing product list for selected category
+        TMPL_MHD,            // MHD + qty confirm before saving
+        // Fully manual keyboard entry
+        KB_ENTRY,            // keyboard input for product name
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -52,6 +60,15 @@ private:
     bool formatDateDraft(String &formatted) const;
     char digitForAction(OnscreenAction action) const;
     static void fetchTaskFn(void *param);
+
+    // Template workflow helpers
+    void loadTemplates();
+    std::vector<String> templateCategories() const;
+    std::vector<ProductTemplate> templatesForCategory(const String &cat) const;
+    void showTmplCategories();
+    void showTmplProducts();
+    void startTmplMHD();
+    String calcMHD(int shelfDays, int offset) const;
 
     TwoWire         i2c_bus;
     AppStateManager state;
@@ -81,11 +98,20 @@ private:
     String          _resultMessage;
     bool            _resultSuccess = false;
 
-    // Async product fetch (runs on core 0 to avoid blocking UI)
+    // Async product fetch
     volatile bool   _fetchStarted = false;
     volatile bool   _fetchDone    = false;
     bool            _fetchOk      = false;
     ProductInfo     _fetchedProduct;
+
+    // Template workflow state
+    std::vector<ProductTemplate> _templates;
+    String   _selectedCategory;
+    int      _selectedTemplateIdx = -1;
+    int      _mhdOffset           = 0;   // ±days applied to template's shelfDays
+
+    // Keyboard entry state
+    String   _kbText;                    // current keyboard input text
 };
 
 extern App app;

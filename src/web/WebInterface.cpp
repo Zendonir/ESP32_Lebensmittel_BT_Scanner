@@ -1001,6 +1001,57 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true}");
         });
 
+    // ---- PRODUCT TEMPLATES ----
+    // GET /api/templates  → return all templates
+    _server.on("/api/templates", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/templates.json", "[]");
+    });
+
+    // POST /api/templates/add  → add one template {name, category, shelfDays}
+    _server.on("/api/templates/add", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, inp;
+            loadJson("/templates.json", arr, "[]");
+            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+                return;
+            }
+            String name = inp["name"] | "";
+            if (name.isEmpty()) {
+                req->send(400, "application/json", "{\"error\":\"name required\"}");
+                return;
+            }
+            JsonObject item = arr.as<JsonArray>().add<JsonObject>();
+            item["id"]        = String(millis());
+            item["name"]      = name;
+            item["category"]  = inp["category"] | "Allgemein";
+            item["shelfDays"] = inp["shelfDays"] | 14;
+            saveJson("/templates.json", arr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+
+    // POST /api/templates/delete  → delete template by id {id}
+    _server.on("/api/templates/delete", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, inp;
+            loadJson("/templates.json", arr, "[]");
+            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+                return;
+            }
+            String del_id = inp["id"] | "";
+            JsonDocument out;
+            JsonArray out_arr = out.to<JsonArray>();
+            for (JsonObject obj : arr.as<JsonArray>()) {
+                String oid = obj["id"] | "";
+                if (oid != del_id) out_arr.add(obj);
+            }
+            saveJson("/templates.json", out);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+
     // ---- OTA FILE UPLOAD ----
     _server.on("/api/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {

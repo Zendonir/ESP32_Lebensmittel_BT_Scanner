@@ -8,6 +8,8 @@
 
 #include <WiFi.h>
 #include <esp_log.h>
+#include <LittleFS.h>
+#include <ArduinoJson.h>
 
 App app;
 
@@ -43,8 +45,7 @@ void App::begin() {
     display_obj.startTouchTask(); // touch polling now runs on Core 0 independently
 
     Logger::info("Audio", "Initializing audio feedback");
-    audio_obj.init();
-    audio_obj.playTone(1000, 120);
+    audio_obj.init();  // plays startup tone internally
 
     state.setState(AppState::WIFI_CONNECTING);
     Logger::info("WiFi", "Initializing network manager");
@@ -259,7 +260,47 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
+    // Keyboard entry: char input
+    if (action == OnscreenAction::KB_CHAR && workflow == WorkflowMode::KB_ENTRY) {
+        char c = display_obj.drainKbChar();
+        if (c != 0) {
+            _kbText += c;
+            display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+        }
+        return;
+    }
+
+    // Template list selection
+    if (action >= OnscreenAction::LIST_ITEM_0 && action <= OnscreenAction::LIST_ITEM_6) {
+        int idx = static_cast<int>(action) - static_cast<int>(OnscreenAction::LIST_ITEM_0);
+        if (workflow == WorkflowMode::TMPL_CATEGORY) {
+            auto cats = templateCategories();
+            if (idx < (int)cats.size()) {
+                _selectedCategory   = cats[idx];
+                workflow            = WorkflowMode::TMPL_PRODUCT;
+                showTmplProducts();
+            }
+        } else if (workflow == WorkflowMode::TMPL_PRODUCT) {
+            _selectedTemplateIdx = idx;
+            startTmplMHD();
+        }
+        return;
+    }
+
     switch (action) {
+        // ── Tab navigation ──────────────────────────────────────────────────
+        case OnscreenAction::SWIPE_LEFT:
+            action = static_cast<OnscreenAction>(
+                static_cast<int>(OnscreenAction::TAB_STORE) +
+                (static_cast<int>(_activeTab) + 1) % 6);
+            processOnscreenAction(action);
+            return;
+        case OnscreenAction::SWIPE_RIGHT:
+            action = static_cast<OnscreenAction>(
+                static_cast<int>(OnscreenAction::TAB_STORE) +
+                (static_cast<int>(_activeTab) + 5) % 6);
+            processOnscreenAction(action);
+            return;
         case OnscreenAction::TAB_STORE:
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::STORE;
@@ -268,7 +309,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::TAB_INVENTORY:
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::INVENTORY;
-            if (_activeTab == UiTab::INVENTORY) display_obj.showInventoryList(inventory.items());
+            display_obj.showInventoryList(inventory.items());
             _lastUiRefreshMs = millis();
             break;
         case OnscreenAction::TAB_SCANNER:
@@ -280,6 +321,18 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::SYSTEM;
             renderActiveTab("Systemstatus und Setup AP");
+            break;
+        case OnscreenAction::TAB_MANUAL_PRODUCT:
+            workflow = WorkflowMode::TMPL_CATEGORY;
+            _activeTab = UiTab::MANUAL_PRODUCT;
+            loadTemplates();  // reload in case Web UI added templates
+            showTmplCategories();
+            break;
+        case OnscreenAction::TAB_MANUAL_ENTRY:
+            workflow = WorkflowMode::KB_ENTRY;
+            _activeTab = UiTab::MANUAL_ENTRY;
+            _kbText = "";
+            display_obj.showKeyboardEntry("Produktname eingeben", "");
             break;
         case OnscreenAction::REFRESH:
             workflow = WorkflowMode::HOME;
@@ -321,15 +374,31 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             break;
         case OnscreenAction::QTY_MINUS:
-            if (workflow == WorkflowMode::ENTER_QTY && _pendingQuantity > 1) {
+            if (_pendingQuantity > 1) {
                 _pendingQuantity--;
-                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+                if (workflow == WorkflowMode::ENTER_QTY)
+                    display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+                else if (workflow == WorkflowMode::TMPL_MHD) {
+                    auto products = templatesForCategory(_selectedCategory);
+                    if (_selectedTemplateIdx < (int)products.size()) {
+                        String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
+                        display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
+                    }
+                }
             }
             break;
         case OnscreenAction::QTY_PLUS:
-            if (workflow == WorkflowMode::ENTER_QTY && _pendingQuantity < 99) {
+            if (_pendingQuantity < 99) {
                 _pendingQuantity++;
-                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+                if (workflow == WorkflowMode::ENTER_QTY)
+                    display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+                else if (workflow == WorkflowMode::TMPL_MHD) {
+                    auto products = templatesForCategory(_selectedCategory);
+                    if (_selectedTemplateIdx < (int)products.size()) {
+                        String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
+                        display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
+                    }
+                }
             }
             break;
         case OnscreenAction::QTY_CONFIRM:
@@ -340,9 +409,19 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             break;
         case OnscreenAction::CANCEL:
-            workflow = WorkflowMode::HOME;
-            state.setState(AppState::MAIN);
-            renderDashboard("Vorgang abgebrochen");
+            if (workflow == WorkflowMode::TMPL_PRODUCT) {
+                // Go back to category selection
+                workflow = WorkflowMode::TMPL_CATEGORY;
+                showTmplCategories();
+            } else if (workflow == WorkflowMode::TMPL_MHD) {
+                // Go back to product selection
+                workflow = WorkflowMode::TMPL_PRODUCT;
+                showTmplProducts();
+            } else {
+                workflow = WorkflowMode::HOME;
+                state.setState(AppState::MAIN);
+                renderDashboard("Vorgang abgebrochen");
+            }
             break;
         case OnscreenAction::PRINTER_FEED_1:
             printer.feed(1);
@@ -350,6 +429,65 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::PRINTER_FEED_5:
             printer.feed(5);
             break;
+
+        // ── Template MHD confirm ───────────────────────────────────────────
+        case OnscreenAction::MHD_DAY_MINUS:
+            if (workflow == WorkflowMode::TMPL_MHD) {
+                _mhdOffset--;
+                auto products = templatesForCategory(_selectedCategory);
+                if (_selectedTemplateIdx < (int)products.size()) {
+                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
+                    display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
+                }
+            }
+            break;
+        case OnscreenAction::MHD_DAY_PLUS:
+            if (workflow == WorkflowMode::TMPL_MHD) {
+                _mhdOffset++;
+                auto products = templatesForCategory(_selectedCategory);
+                if (_selectedTemplateIdx < (int)products.size()) {
+                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
+                    display_obj.showTemplateMHD(_pendingProduct.name, mhd, _pendingQuantity);
+                }
+            }
+            break;
+        case OnscreenAction::MHD_CONFIRM:
+            if (workflow == WorkflowMode::TMPL_MHD) {
+                auto products = templatesForCategory(_selectedCategory);
+                if (_selectedTemplateIdx < (int)products.size()) {
+                    _pendingExpiryDate = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
+                    workflow = WorkflowMode::SAVING;
+                    state.setState(AppState::SAVING);
+                    finishStorageWorkflow();
+                }
+            }
+            break;
+
+        // ── Keyboard entry confirm / backspace ─────────────────────────────
+        case OnscreenAction::KB_CONFIRM:
+            if (workflow == WorkflowMode::KB_ENTRY) {
+                if (_kbText.isEmpty()) {
+                    audio_obj.playWarningTone();
+                    break;
+                }
+                _pendingProduct.name    = _kbText;
+                _pendingProduct.brand   = "";
+                _pendingProduct.barcode = "";
+                _pendingDateDraft       = "";
+                _pendingExpiryDate      = "";
+                _pendingQuantity        = 1;
+                workflow = WorkflowMode::ENTER_DATE;
+                state.setState(AppState::ENTER_DATE);
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            }
+            break;
+        case OnscreenAction::KB_BACKSPACE:
+            if (workflow == WorkflowMode::KB_ENTRY && !_kbText.isEmpty()) {
+                _kbText.remove(_kbText.length() - 1);
+                display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+            }
+            break;
+
         default:
             break;
     }
@@ -364,7 +502,7 @@ void App::handleScan(const ScanResult &scan) {
         return;
     }
 
-    audio_obj.playTone(1800, 80);
+    audio_obj.playSuccessTone();
 
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
@@ -464,7 +602,7 @@ bool App::finishStorageWorkflow() {
         ? String(item.labelBarcode) + (printed ? " gedruckt" : " gespeichert, Drucker?")
         : "Inventar konnte nicht gespeichert werden";
     display_obj.showResult(_resultTitle, _resultMessage, stored);
-    audio_obj.playTone(stored ? 1800 : 240, stored ? 100 : 260);
+    if (stored) audio_obj.playSuccessTone(); else audio_obj.playErrorTone();
     return stored;
 }
 
@@ -476,7 +614,84 @@ void App::initFilesystem() {
         Logger::info("LittleFS", "Mounted OK");
         fs.ensureJsonFile("/inventory.json", "[]");
         fs.ensureJsonFile("/off_cache.json", "[]");
+        fs.ensureJsonFile("/templates.json", "[]");
     }
+    loadTemplates();
+}
+
+// ── Template helpers ──────────────────────────────────────────────────────────
+
+void App::loadTemplates() {
+    _templates.clear();
+    File f = LittleFS.open("/templates.json", "r");
+    if (!f) return;
+    JsonDocument doc;
+    if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
+    f.close();
+    for (JsonObject obj : doc.as<JsonArray>()) {
+        ProductTemplate t;
+        t.id        = obj["id"]   | "";
+        t.name      = obj["name"] | "";
+        t.category  = obj["category"] | "Allgemein";
+        t.shelfDays = obj["shelfDays"] | 14;
+        if (!t.name.isEmpty()) _templates.push_back(t);
+    }
+    Logger::info("Templates", String(_templates.size()) + " Vorlagen geladen");
+}
+
+std::vector<String> App::templateCategories() const {
+    std::vector<String> cats;
+    for (const auto &t : _templates) {
+        bool found = false;
+        for (const auto &c : cats) { if (c == t.category) { found = true; break; } }
+        if (!found) cats.push_back(t.category);
+    }
+    return cats;
+}
+
+std::vector<ProductTemplate> App::templatesForCategory(const String &cat) const {
+    std::vector<ProductTemplate> out;
+    for (const auto &t : _templates) {
+        if (t.category == cat) out.push_back(t);
+    }
+    return out;
+}
+
+String App::calcMHD(int shelfDays, int offset) const {
+    return time_manager.addDays(shelfDays + offset);
+}
+
+void App::showTmplCategories() {
+    auto cats = templateCategories();
+    std::vector<String> items;
+    for (const auto &c : cats) items.push_back(c);
+    display_obj.showListScreen("Kategorie waehlen", items, false);
+}
+
+void App::showTmplProducts() {
+    auto products = templatesForCategory(_selectedCategory);
+    std::vector<String> items;
+    for (const auto &p : products)
+        items.push_back(p.name + " (" + p.shelfDays + " Tage)");
+    display_obj.showListScreen(_selectedCategory.c_str(), items, true);
+}
+
+void App::startTmplMHD() {
+    auto products = templatesForCategory(_selectedCategory);
+    if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) {
+        workflow = WorkflowMode::HOME;
+        renderActiveTab("Ungueltige Auswahl");
+        return;
+    }
+    const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+    _pendingProduct.name    = tmpl.name;
+    _pendingProduct.brand   = "";
+    _pendingProduct.barcode = "";
+    _pendingQuantity        = 1;
+    _mhdOffset              = 0;
+    workflow                = WorkflowMode::TMPL_MHD;
+    String mhd = calcMHD(tmpl.shelfDays, 0);
+    display_obj.showTemplateMHD(tmpl.name, mhd, _pendingQuantity);
 }
 
 void App::initWebServer() {

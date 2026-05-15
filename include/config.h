@@ -35,8 +35,7 @@
 #define I2S_BCLK    13
 #define I2S_LRCK    15
 #define I2S_DOUT    16   // ESP32→ES8311 SDIN (DAC / Lautsprecher), per Hersteller-Schaltplan
-#define I2S_DIN     14   // ES8311 SDOUT→ESP32 (ADC / Mikrofon)
-#define I2S_NUM     I2S_NUM_1
+#define I2S_DIN     14   // ES8311 SDOUT→ESP32 (ADC / Mikrofon, nicht genutzt)
 
 // ============ SD CARD (SPI) ============
 #define SD_MISO     9

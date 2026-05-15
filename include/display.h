@@ -10,14 +10,22 @@ struct ProductInfo;
 
 enum class OnscreenAction {
     NONE,
+    // Tab navigation
     TAB_STORE,
     TAB_INVENTORY,
     TAB_SCANNER,
     TAB_SYSTEM,
+    TAB_MANUAL_PRODUCT,
+    TAB_MANUAL_ENTRY,
+    // Swipe gestures
+    SWIPE_LEFT,   // next tab
+    SWIPE_RIGHT,  // prev tab
+    // General
     REFRESH,
     START_AP,
     SCANNER_RECONNECT,
     CANCEL,
+    // Date numpad
     DATE_DIGIT_0,
     DATE_DIGIT_1,
     DATE_DIGIT_2,
@@ -30,18 +38,38 @@ enum class OnscreenAction {
     DATE_DIGIT_9,
     DATE_BACKSPACE,
     DATE_CONFIRM,
+    // Quantity entry
     QTY_MINUS,
     QTY_PLUS,
     QTY_CONFIRM,
-    PRINTER_FEED_1, // feed 1 line forward
-    PRINTER_FEED_5  // feed 5 lines forward
+    // Printer
+    PRINTER_FEED_1,
+    PRINTER_FEED_5,
+    // Template list selection (up to 7 visible items)
+    LIST_ITEM_0,
+    LIST_ITEM_1,
+    LIST_ITEM_2,
+    LIST_ITEM_3,
+    LIST_ITEM_4,
+    LIST_ITEM_5,
+    LIST_ITEM_6,
+    // Template MHD adjust
+    MHD_DAY_MINUS,
+    MHD_DAY_PLUS,
+    MHD_CONFIRM,
+    // On-screen keyboard
+    KB_CHAR,       // char in _pending_kb_char
+    KB_BACKSPACE,
+    KB_CONFIRM,
 };
 
 enum class UiTab {
     STORE,
     INVENTORY,
     SCANNER,
-    SYSTEM
+    SYSTEM,
+    MANUAL_PRODUCT,
+    MANUAL_ENTRY,
 };
 
 class Display {
@@ -50,45 +78,41 @@ public:
     ~Display();
 
     void init();
-
-    /* Polled by the dedicated touch task – also safe to call manually */
     void tick();
-
-    /* Start the background touch-polling task (call once after touch_obj.init()) */
     void startTouchTask();
 
-    /* Screen transitions (same API as before, now backed by LVGL) */
+    // Home screens
     void showSplash();
     void showWiFiStatus(const String &ssid, const String &ip, bool connected);
-    void showDashboard(const String &ssid,
-                       const String &ip,
-                       bool wifiConnected,
-                       const String &scannerStatus,
-                       const String &scannerName,
-                       const String &lastScan,
-                       const String &lastType,
+    void showDashboard(const String &ssid, const String &ip, bool wifiConnected,
+                       const String &scannerStatus, const String &scannerName,
+                       const String &lastScan, const String &lastType,
                        const String &message = "");
     void showHome(UiTab activeTab,
-                  const String &ssid,
-                  const String &ip,
-                  bool wifiConnected,
-                  const String &scannerStatus,
-                  const String &scannerName,
-                  const String &lastScan,
-                  const String &lastType,
-                  size_t inventoryCount,
-                  const String &message = "");
+                  const String &ssid, const String &ip, bool wifiConnected,
+                  const String &scannerStatus, const String &scannerName,
+                  const String &lastScan, const String &lastType,
+                  size_t inventoryCount, const String &message = "");
+
+    // Barcode workflow
     void showFetchingProduct(const String &barcode);
     void showDateEntry(const ProductInfo &product, const String &dateDraft);
     void showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity);
     void showResult(const String &title, const String &message, bool success);
     void showInventoryList(const std::vector<InventoryItem> &items);
 
-    /* hitTest() – returns (and clears) the most recent action queued by
-       LVGL button callbacks.  x/y are unused; LVGL resolves them internally. */
+    // Template workflow
+    void showListScreen(const char *title, const std::vector<String> &items, bool showBack);
+    void showTemplateMHD(const String &productName, const String &mhd, int qty);
+
+    // Keyboard entry
+    void showKeyboardEntry(const String &title, const String &current);
+    char drainKbChar();  // returns pending keyboard char, 0 if none
+
+    // Action queue
     OnscreenAction hitTest(uint16_t x, uint16_t y) const;
 
-    /* Legacy helpers kept for compatibility */
+    // Legacy helpers
     void drawText(int x, int y, const char *text, uint16_t color = 0xFFFF);
     void fillScreen(uint16_t color);
     void clear();
