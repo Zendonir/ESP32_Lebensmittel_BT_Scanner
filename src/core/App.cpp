@@ -775,7 +775,7 @@ void App::showTmplCategories() {
     auto cats = templateCategories();
     std::vector<String> items;
     for (const auto &c : cats) items.push_back(c);
-    display_obj.showListScreen("Kategorie waehlen", items, false);
+    display_obj.showCategoryTiles(items);
 }
 
 void App::showTmplProducts() {

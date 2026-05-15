@@ -106,6 +106,7 @@ public:
     void showInventoryList(const std::vector<InventoryItem> &items);
 
     // Template workflow
+    void showCategoryTiles(const std::vector<String> &categories);
     void showListScreen(const char *title, const std::vector<String> &items, bool showBack);
     void showTemplateMHD(const String &productName, const String &mhd, int qty);
 

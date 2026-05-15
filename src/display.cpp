@@ -794,7 +794,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
 }
 
 // ─────────────────────────────────────────────────────────
-//   Generic list screen (category / product selection)
+//   Category tile grid  (2 cols × 4 rows, max 7 tiles)
 // ─────────────────────────────────────────────────────────
 
 static const OnscreenAction LIST_ACTIONS[7] = {
@@ -803,6 +803,79 @@ static const OnscreenAction LIST_ACTIONS[7] = {
     OnscreenAction::LIST_ITEM_4, OnscreenAction::LIST_ITEM_5,
     OnscreenAction::LIST_ITEM_6,
 };
+
+static const uint16_t TILE_ACCENTS[7] = {
+    RGB(0x4C,0x9E,0xFF), // blue
+    RGB(0x2E,0xB0,0x48), // green
+    RGB(0xCC,0x92,0x18), // yellow
+    RGB(0xE0,0x78,0x18), // orange
+    RGB(0xA0,0x60,0xE0), // purple
+    RGB(0x10,0xB4,0xA0), // teal
+    RGB(0xF0,0x46,0x40), // red
+};
+
+void Display::showCategoryTiles(const std::vector<String> &categories) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    // Header
+    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
+    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString("Kategorie waehlen", 12, HDR_H / 2);
+
+    // 2 columns × 4 rows, content area 480×276
+    static constexpr int COLS     = 2;
+    static constexpr int TILE_W   = 228;  // (480 - 3*8) / 2
+    static constexpr int TILE_H   = 63;   // (276 - 6 - 3*6) / 4
+    static constexpr int GAP_X    = 8;
+    static constexpr int GAP_Y    = 6;
+    static constexpr int MARGIN_X = 8;
+    static constexpr int MARGIN_Y = 6;
+    static constexpr int MAX_SHOW = 7;
+
+    int shown = (int)categories.size() < MAX_SHOW ? (int)categories.size() : MAX_SHOW;
+
+    for (int i = 0; i < shown; i++) {
+        int col   = i % COLS;
+        int row   = i / COLS;
+        int tx    = MARGIN_X + col * (TILE_W + GAP_X);
+        int ty    = HDR_H + MARGIN_Y + row * (TILE_H + GAP_Y);
+        uint16_t accent = TILE_ACCENTS[i % 7];
+
+        // Tile background with colored border
+        _spr.fillRoundRect(tx, ty, TILE_W, TILE_H, 10, C_SURFACE);
+        _spr.drawRoundRect(tx, ty, TILE_W, TILE_H, 10, accent);
+        _spr.drawRoundRect(tx + 1, ty + 1, TILE_W - 2, TILE_H - 2, 9, accent); // 2px border
+
+        // Left accent bar
+        _spr.fillRoundRect(tx + 1, ty + 1, 5, TILE_H - 2, 9, accent);
+
+        // Category name — centered in tile (offset right of bar)
+        _spr.setTextFont(4);
+        _spr.setTextColor(C_TEXT, C_SURFACE);
+        _spr.setTextDatum(ML_DATUM);
+        _spr.drawString(trunc(categories[i], 20).c_str(), tx + 14, ty + TILE_H / 2);
+
+        add_region(tx, ty, TILE_W, TILE_H, LIST_ACTIONS[i]);
+    }
+
+    if (categories.empty()) {
+        _spr.setTextColor(C_SUBTEXT, C_BG);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString("Keine Kategorien – Vorlagen im Web-UI anlegen", SCR_W / 2, HDR_H + 80);
+    }
+
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
+//   Product list screen  (taller rows, larger font)
+// ─────────────────────────────────────────────────────────
 
 void Display::showListScreen(const char *title,
                               const std::vector<String> &items,
@@ -826,21 +899,26 @@ void Display::showListScreen(const char *title,
         _spr.drawString("< wischen = zurück", SCR_W - 8, HDR_H / 2);
     }
 
-    // List rows — 7 rows × 40px = 280px (fits in 320-44-0 = 276px content area)
-    static constexpr int ITEM_H   = 38;
-    static constexpr int MAX_SHOW = 7;
-    int list_y = HDR_H + 2;
+    // Taller rows for comfortable finger tapping and larger text
+    static constexpr int ITEM_H   = 55;  // 5 rows × 55px = 275px ≈ 276px content
+    static constexpr int MAX_SHOW = 5;
+    int list_y = HDR_H;
     int shown  = (int)items.size() < MAX_SHOW ? (int)items.size() : MAX_SHOW;
 
     for (int i = 0; i < shown; i++) {
         int iy = list_y + i * ITEM_H;
         uint16_t bg = (i % 2 == 0) ? C_SURFACE : C_SURFACE2;
         _spr.fillRect(0, iy, SCR_W, ITEM_H, bg);
+
+        // Left accent stripe
+        _spr.fillRect(0, iy, 3, ITEM_H, C_ACCENT);
+
         _spr.setTextColor(C_TEXT, bg);
-        _spr.setTextFont(2);
+        _spr.setTextFont(4);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(items[i], 50).c_str(), 12, iy + ITEM_H / 2);
-        // chevron
+        _spr.drawString(trunc(items[i], 38).c_str(), 12, iy + ITEM_H / 2);
+
+        // Chevron
         _spr.setTextColor(C_ACCENT, bg);
         _spr.setTextDatum(MR_DATUM);
         _spr.drawString(">", SCR_W - 12, iy + ITEM_H / 2);
