@@ -508,6 +508,57 @@
       <div class="card-title">Sync-Queue</div>
       <div id="syncQueue" class="item-list"></div>
     </div>
+
+    <!-- SETUP WIZARD -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title" style="cursor:pointer;user-select:none" onclick="Pages.serversync.toggleSetup()">
+        &#9881; Datenbank einrichten
+        <span id="syncSetupChevron" style="float:right;transition:transform .2s">&#9660;</span>
+      </div>
+      <div id="syncSetupBody" hidden>
+        <p class="muted" style="margin:0 0 14px;font-size:.85rem;line-height:1.5">
+          Legt die Datenbank <strong>Lebensmittel_Scanner</strong> und einen dedizierten Sync-Benutzer an.<br>
+          Root-Zugangsdaten werden <strong>nie</strong> gespeichert – nur einmalig weitergeleitet.<br>
+          Andere Datenbanken (z.&nbsp;B. Kodi) werden nicht berührt.
+        </p>
+
+        <!-- Step 1: Eingabe -->
+        <div id="syncWizStep1">
+          <div class="form-stack">
+            <div class="form-field">
+              <label>MySQL Server IP</label>
+              <input type="text" id="wizHost" class="input" placeholder="192.168.1.100">
+            </div>
+            <div class="form-field">
+              <label>Root-Benutzer</label>
+              <input type="text" id="wizRootUser" class="input" placeholder="root" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label>Root-Passwort</label>
+              <input type="password" id="wizRootPass" class="input" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label>Neues Sync-Benutzer Passwort</label>
+              <input type="password" id="wizSyncPass" class="input" autocomplete="new-password">
+            </div>
+            <div class="form-field">
+              <label>Passwort wiederholen</label>
+              <input type="password" id="wizSyncPass2" class="input" autocomplete="new-password">
+            </div>
+            <button class="btn btn-ok" onclick="Pages.serversync.runSetup()">Einrichten</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Fortschritt -->
+        <div id="syncWizStep2" hidden style="text-align:center;padding:24px 0">
+          <div style="display:inline-block;width:42px;height:42px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite"></div>
+          <p id="wizProgress" style="color:var(--text-muted);margin:12px 0 0">Verbinde mit Server…</p>
+        </div>
+
+        <!-- Step 3: Ergebnis -->
+        <div id="syncWizStep3" hidden></div>
+      </div>
+    </div>
   </section>
 
   <!-- STATISTIKEN -->

@@ -1722,6 +1722,90 @@ Pages.serversync = {
       }
     });
   },
+
+  toggleSetup() {
+    const body    = document.getElementById('syncSetupBody');
+    const chevron = document.getElementById('syncSetupChevron');
+    body.hidden   = !body.hidden;
+    chevron.style.transform = body.hidden ? '' : 'rotate(180deg)';
+  },
+
+  async runSetup() {
+    const host  = document.getElementById('wizHost').value.trim();
+    const rUser = document.getElementById('wizRootUser').value.trim();
+    const rPass = document.getElementById('wizRootPass').value;
+    const sPass = document.getElementById('wizSyncPass').value;
+    const sPass2= document.getElementById('wizSyncPass2').value;
+
+    if (!host || !rUser || !rPass || !sPass) {
+      Toast.warn('Alle Felder ausfüllen');
+      return;
+    }
+    if (sPass !== sPass2) {
+      Toast.warn('Sync-Passwörter stimmen nicht überein');
+      return;
+    }
+    if (sPass.length < 8) {
+      Toast.warn('Sync-Passwort muss mindestens 8 Zeichen haben');
+      return;
+    }
+
+    // Show progress
+    document.getElementById('syncWizStep1').hidden = true;
+    document.getElementById('syncWizStep2').hidden = false;
+    document.getElementById('syncWizStep3').hidden = true;
+
+    try {
+      const r = await API.post('/api/server-sync/setup', {
+        host: host, rootUser: rUser, rootPass: rPass, syncPass: sPass,
+      });
+
+      document.getElementById('syncWizStep2').hidden = true;
+      document.getElementById('syncWizStep3').hidden = false;
+      const out = document.getElementById('syncWizStep3');
+
+      if (r.ok) {
+        out.innerHTML = `
+          <div style="border:1px solid var(--ok);border-radius:8px;padding:16px;background:rgba(80,200,100,.08)">
+            <div style="font-weight:600;color:var(--ok);margin-bottom:8px">&#10003; Einrichtung erfolgreich</div>
+            <div style="font-size:.85rem;line-height:1.7">
+              ${esc(r.message || '')}<br>
+              Benutzer: <strong>${esc(r.syncUser || 'lebensmittel_sync')}</strong><br>
+              Die Server-URL wurde automatisch gesetzt.
+            </div>
+            <button class="btn btn-ok" style="margin-top:12px" onclick="Pages.serversync.load()">&#8635; Status aktualisieren</button>
+          </div>`;
+        // Reload the settings form so the auto-saved URL appears
+        Pages.serversync.load();
+        // Clear credentials from DOM
+        document.getElementById('wizRootPass').value = '';
+        document.getElementById('wizSyncPass').value = '';
+        document.getElementById('wizSyncPass2').value = '';
+      } else {
+        out.innerHTML = `
+          <div style="border:1px solid var(--danger);border-radius:8px;padding:16px;background:rgba(220,60,60,.08)">
+            <div style="font-weight:600;color:var(--danger);margin-bottom:8px">&#10007; Fehler</div>
+            <div style="font-size:.85rem">${esc(r.error || 'Unbekannter Fehler')}</div>
+            <button class="btn" style="margin-top:12px" onclick="Pages.serversync._wizBack()">&#8592; Zurück</button>
+          </div>`;
+      }
+    } catch(e) {
+      document.getElementById('syncWizStep2').hidden = true;
+      document.getElementById('syncWizStep3').hidden = false;
+      document.getElementById('syncWizStep3').innerHTML = `
+        <div style="border:1px solid var(--danger);border-radius:8px;padding:16px;background:rgba(220,60,60,.08)">
+          <div style="font-weight:600;color:var(--danger);margin-bottom:8px">&#10007; Verbindungsfehler</div>
+          <div style="font-size:.85rem">${esc(e.message)}</div>
+          <button class="btn" style="margin-top:12px" onclick="Pages.serversync._wizBack()">&#8592; Zurück</button>
+        </div>`;
+    }
+  },
+
+  _wizBack() {
+    document.getElementById('syncWizStep1').hidden = false;
+    document.getElementById('syncWizStep2').hidden = true;
+    document.getElementById('syncWizStep3').hidden = true;
+  },
 };
 
 /* ---- STATISTICS ---- */

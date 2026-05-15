@@ -14,6 +14,8 @@
 #include <LittleFS.h>
 #include <Update.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClient.h>
 #include <esp_system.h>
 
 /* ── WiFi scan cache ──────────────────────────────────────────── */
@@ -900,6 +902,55 @@ void WebInterface::registerApiRoutes() {
         sync_manager.clearQueue();
         req->send(200, "application/json", "{\"ok\":true}");
     });
+    // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
+    // Root credentials are forwarded but NEVER stored on this device.
+    _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
+        JsonDocument inp;
+        if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"Ungültige JSON-Daten\"}");
+            return;
+        }
+        String host     = inp["host"]     | "";
+        String rootUser = inp["rootUser"] | "";
+        String syncPass = inp["syncPass"] | "";
+        if (host.isEmpty() || rootUser.isEmpty() || syncPass.isEmpty()) {
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"host, rootUser und syncPass erforderlich\"}");
+            return;
+        }
+        if (WiFi.status() != WL_CONNECTED) {
+            req->send(200, "application/json", "{\"ok\":false,\"error\":\"Kein WLAN – Setup nicht möglich\"}");
+            return;
+        }
+        String setupUrl = "http://" + host + "/lebensmittel_setup.php";
+        // Forward all credentials (rootPass included) to the server-side setup script.
+        // Nothing from this payload is written to flash.
+        JsonDocument fwd;
+        fwd["rootUser"] = inp["rootUser"];
+        fwd["rootPass"] = inp["rootPass"];
+        fwd["syncPass"] = syncPass;
+        String fwdBody;
+        serializeJson(fwd, fwdBody);
+        WiFiClient wc;
+        HTTPClient hc;
+        hc.setTimeout(15000);
+        String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
+        if (hc.begin(wc, setupUrl)) {
+            hc.addHeader("Content-Type", "application/json");
+            int code = hc.POST((uint8_t *)fwdBody.c_str(), fwdBody.length());
+            if (code > 0) result = hc.getString();
+            hc.end();
+            // On success auto-save the sync URL so the user doesn't have to type it
+            JsonDocument res;
+            if (deserializeJson(res, result) == DeserializationError::Ok && res["ok"].as<bool>()) {
+                JsonDocument cfg;
+                loadJson("/server_sync_config.json", cfg, "{}");
+                cfg["url"] = "http://" + host + "/sync_bridge.php";
+                saveJson("/server_sync_config.json", cfg);
+                sync_manager.begin();
+            }
+        }
+        req->send(200, "application/json", result);
+    }, nullptr, bodyCollect);
     _server.on("/api/test-print", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             if (!_printer) {
