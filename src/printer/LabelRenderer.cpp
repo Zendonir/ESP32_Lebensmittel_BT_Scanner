@@ -1,5 +1,6 @@
 #include "LabelRenderer.h"
 #include "config.h"
+#include "../core/DeviceConfig.h"
 
 LabelRenderer::LabelRenderer(EscPosPrinter &printer) : printer(printer) {}
 
@@ -50,7 +51,7 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     row("  Einlagerung: ", item.addedDate);
     row("  MHD:         ", item.expiryDate);
     row("  Menge:       ", String(item.quantity) + " St.");
-    row("  Haushalt:    ", String(LABEL_HOUSEHOLD));
+    row("  Haushalt:    ", device_config.getHousehold());
 
     // ── Code 128 barcode, no HRI text ────────────────────────────────────────
     printer.barcodeHeight(60);

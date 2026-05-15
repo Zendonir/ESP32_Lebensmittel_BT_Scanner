@@ -1,5 +1,6 @@
 #include "WebInterface.h"
 #include "../core/Logger.h"
+#include "../core/DeviceConfig.h"
 #include "../storage/JsonStorage.h"
 #include "../inventory/InventoryManager.h"
 #include "../models/InventoryItem.h"
@@ -411,6 +412,8 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/system-info", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
         doc["firmware"]   = "1.0.0";
+        doc["household"]  = device_config.getHousehold();
+        doc["deviceName"] = device_config.getDeviceName();
         doc["heap"]       = ESP.getFreeHeap();
         doc["heapTotal"]  = ESP.getHeapSize();
         doc["psram"]      = ESP.getFreePsram();
@@ -431,6 +434,30 @@ void WebInterface::registerApiRoutes() {
         serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
+
+    // ---- DEVICE CONFIG (GET) ----
+    _server.on("/api/device-config", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["household"]  = device_config.getHousehold();
+        doc["deviceName"] = device_config.getDeviceName();
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+
+    // ---- DEVICE CONFIG (POST) ----
+    _server.on("/api/device-config", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument doc;
+            if (deserializeJson(doc, _body) == DeserializationError::Ok) {
+                if (!doc["household"].isNull())
+                    device_config.setHousehold(doc["household"].as<String>());
+                if (!doc["deviceName"].isNull())
+                    device_config.setDeviceName(doc["deviceName"].as<String>());
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
 
     // ---- INVENTORY (GET) ----
     _server.on("/api/inventory", HTTP_GET, [this](AsyncWebServerRequest *req) {

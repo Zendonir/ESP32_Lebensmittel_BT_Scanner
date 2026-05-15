@@ -1122,15 +1122,35 @@ Pages.design = {
 Pages.system = {
   async load() {
     try {
-      const sys = await API.get('/api/system-info');
+      const [sys, cfg] = await Promise.all([
+        API.get('/api/system-info'),
+        API.get('/api/device-config'),
+      ]);
       this.render(sys);
+      document.getElementById('cfgHousehold').value  = cfg.household  || '';
+      document.getElementById('cfgDeviceName').value = cfg.deviceName || '';
     } catch(e) {
       Toast.error('System: ' + e.message);
     }
   },
 
+  async saveDeviceConfig(e) {
+    e.preventDefault();
+    try {
+      await API.post('/api/device-config', {
+        household:  document.getElementById('cfgHousehold').value.trim(),
+        deviceName: document.getElementById('cfgDeviceName').value.trim(),
+      });
+      Toast.success('Gerät & Haushalt gespeichert');
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
   render(sys) {
     document.getElementById('sysInfoList').innerHTML = `
+      <dt>Haushalt</dt><dd>${esc(sys.household || 'Standard')}</dd>
+      ${sys.deviceName ? `<dt>Gerätename</dt><dd>${esc(sys.deviceName)}</dd>` : ''}
       <dt>Firmware</dt><dd>${esc(sys.firmware || '—')}</dd>
       <dt>Uptime</dt><dd>${esc(sys.uptime || '—')}</dd>
       <dt>CPU-Frequenz</dt><dd>${esc(sys.cpuFreq || '—')} MHz</dd>

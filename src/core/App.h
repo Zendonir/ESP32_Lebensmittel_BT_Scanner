@@ -9,6 +9,7 @@
 #include "../models/ProductTemplate.h"
 #include "EventBus.h"
 #include "TimeManager.h"
+#include "DeviceConfig.h"
 #include "../storage/LittleFSManager.h"
 #include "../storage/JsonStorage.h"
 #include "../web/WebInterface.h"

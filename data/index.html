@@ -233,8 +233,19 @@
     <div class="page-header"><h1>System</h1></div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Geräteinformationen</div>
-        <dl class="info-list" id="sysInfoList"></dl>
+        <div class="card-title">Gerät &amp; Haushalt</div>
+        <form class="form-stack" onsubmit="Pages.system.saveDeviceConfig(event)">
+          <div class="form-field">
+            <label>Haushalt</label>
+            <input type="text" id="cfgHousehold" class="input" placeholder="Standard">
+          </div>
+          <div class="form-field">
+            <label>Gerätename</label>
+            <input type="text" id="cfgDeviceName" class="input" placeholder="z.B. Küche, Keller">
+          </div>
+          <p class="muted" style="font-size:.8rem;margin:0">Der Haushaltsname erscheint auf gedruckten Etiketten.</p>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
       </div>
       <div class="card">
         <div class="card-title">Aktionen</div>
@@ -247,9 +258,15 @@
         </div>
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">Speichernutzung</div>
-      <div id="sysStorageInfo"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Geräteinformationen</div>
+        <dl class="info-list" id="sysInfoList"></dl>
+      </div>
+      <div class="card">
+        <div class="card-title">Speichernutzung</div>
+        <div id="sysStorageInfo"></div>
+      </div>
     </div>
   </section>
 

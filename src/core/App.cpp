@@ -55,6 +55,7 @@ void App::begin() {
 
     initFilesystem();
     time_manager.begin(i2c_bus);
+    device_config.begin();
     labelCounter.begin();
     inventory.begin();
     printer.begin();
