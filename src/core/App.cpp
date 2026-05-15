@@ -163,21 +163,37 @@ void App::resetLCDViaTCA9554() {
     constexpr uint8_t PA_BIT     = 0x80;  // EXIO7
     constexpr uint8_t OUT_BITS   = RST_BIT | PA_BIT;
 
-    auto tca_write = [&](uint8_t reg, uint8_t val) {
+    auto tca_write = [&](uint8_t reg, uint8_t val) -> uint8_t {
         i2c_bus.beginTransmission(TCA_ADDR);
         i2c_bus.write(reg);
         i2c_bus.write(val);
-        i2c_bus.endTransmission();
+        return i2c_bus.endTransmission();
+    };
+    auto tca_read = [&](uint8_t reg) -> uint8_t {
+        i2c_bus.beginTransmission(TCA_ADDR);
+        i2c_bus.write(reg);
+        i2c_bus.endTransmission(false);
+        i2c_bus.requestFrom((uint8_t)TCA_ADDR, (uint8_t)1);
+        return i2c_bus.available() ? i2c_bus.read() : 0xFF;
     };
 
-    tca_write(REG_CONFIG, ~OUT_BITS);    // EXIO1 + EXIO7 = outputs, rest = inputs
-    tca_write(REG_OUTPUT, 0xFF);         // both high (LCD idle, PA enabled)
+    uint8_t e1 = tca_write(REG_CONFIG, ~OUT_BITS);   // EXIO1 + EXIO7 = outputs
+    uint8_t e2 = tca_write(REG_OUTPUT, 0xFF);         // both high
     delay(10);
-    tca_write(REG_OUTPUT, PA_BIT);       // LCD low (assert reset), PA still high
+    tca_write(REG_OUTPUT, PA_BIT);        // LCD low (assert reset), PA still high
     delay(10);
-    tca_write(REG_OUTPUT, 0xFF);         // LCD high (release reset), PA still high
-    delay(200);                          // ST7796 needs ~120 ms to wake
-    Logger::info("Display", "TCA9554 LCD reset done, PA_CTRL EXIO7 HIGH");
+    tca_write(REG_OUTPUT, 0xFF);          // LCD high (release reset), PA still high
+    delay(200);                           // ST7796 needs ~120 ms to wake
+
+    // Readback: verify PA_CTRL (bit 7) is actually HIGH
+    uint8_t out_rb  = tca_read(REG_OUTPUT);
+    uint8_t cfg_rb  = tca_read(REG_CONFIG);
+    bool pa_high    = (out_rb & PA_BIT) != 0;
+    Logger::info("Display", String("TCA9554 LCD reset done")
+        + "  cfg_err=" + e1 + " out_err=" + e2
+        + "  OUT=0x" + String(out_rb, HEX)
+        + "  CFG=0x" + String(cfg_rb, HEX)
+        + "  PA_CTRL(EXIO7)=" + (pa_high ? "HIGH✓" : "LOW!"));
 }
 
 void App::renderDashboard(const String &message) {
