@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <Preferences.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "config.h"
@@ -35,6 +36,7 @@ private:
     uint8_t       volume_level;
     bool          is_initialized;
     QueueHandle_t _queue;
+    Preferences   _prefs;
 };
 
 extern Audio audio_obj;

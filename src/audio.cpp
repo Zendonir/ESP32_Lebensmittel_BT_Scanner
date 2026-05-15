@@ -272,7 +272,11 @@ void Audio::toneTask(void *param) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 Audio audio_obj;
-Audio::Audio() : volume_level(100), is_initialized(false), _queue(nullptr) {}
+Audio::Audio() : volume_level(100), is_initialized(false), _queue(nullptr) {
+    _prefs.begin("audio", true);  // read-only
+    volume_level = (uint8_t)_prefs.getUInt("vol", 70);
+    _prefs.end();
+}
 
 void Audio::init(TwoWire &wire) {
     s_wire = &wire;
@@ -339,6 +343,9 @@ void Audio::stopTone()         { if (_queue) xQueueReset(_queue); }
 
 void Audio::setVolume(uint8_t volume) {
     volume_level = (volume > 100) ? 100 : volume;
+    _prefs.begin("audio", false);
+    _prefs.putUInt("vol", volume_level);
+    _prefs.end();
     if (is_initialized) {
         uint8_t dac_vol = (uint8_t)((uint32_t)volume_level * 0xBF / 100);
         es_write(0x32, dac_vol);
