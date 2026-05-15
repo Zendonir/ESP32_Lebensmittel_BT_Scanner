@@ -1407,6 +1407,14 @@ Pages.printer = {
     } catch(e) { Toast.error('Fehler: ' + e.message); }
   },
 
+  async setVolume() {
+    const vol = parseInt(document.getElementById('audioVolume').value);
+    try {
+      const res = await API.post('/api/audio/volume', { volume: vol });
+      res.ok ? Toast.success(`Lautstärke: ${vol}%`) : Toast.error(res.message || 'Fehler');
+    } catch(e) { Toast.error('Fehler: ' + e.message); }
+  },
+
   async audioTest() {
     const freq = parseInt(document.getElementById('audioFreq').value) || 1000;
     const dur  = parseInt(document.getElementById('audioDur').value)  || 300;

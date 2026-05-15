@@ -68,7 +68,7 @@ static void es8311_init(uint8_t vol_pct) {
     es_write(0x13, 0x10);   // analog bias
     es_write(0x14, 0x1A);
     es_write(0x15, 0x00);
-    es_write(0x16, 0x00);
+    es_write(0x16, 0x24);   // analog power enable (per ESP-ADF reference)
     es_write(0x17, 0xBF);
 
     // ── DAC digital path ──────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ static void es8311_init(uint8_t vol_pct) {
 // 12.288 MHz MCLK on GPIO12. Without this, the clock divider rounding on
 // the base 80 MHz APB can drift several hundred ppm and cause ES8311 jitter.
 
-static constexpr i2s_port_t I2S_PORT = I2S_NUM_0;
+static constexpr i2s_port_t I2S_PORT = I2S_NUM_1;
 
 static bool i2s_audio_init() {
     i2s_config_t cfg          = {};
@@ -128,8 +128,8 @@ static bool i2s_audio_init() {
     cfg.intr_alloc_flags      = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_desc_num          = 8;
     cfg.dma_frame_num         = 256;
-    cfg.use_apll              = true;
-    cfg.fixed_mclk            = 12288000;   // 256 × 48000 Hz
+    cfg.use_apll              = false;
+    cfg.fixed_mclk            = 12288000;   // 256 × 48000 Hz — MCLK on GPIO12
     cfg.tx_desc_auto_clear    = true;
     cfg.mclk_multiple         = I2S_MCLK_MULTIPLE_256;
 

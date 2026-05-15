@@ -868,6 +868,16 @@ void WebInterface::registerApiRoutes() {
             req->send(printed ? 200 : 503, "application/json", body);
         },
         nullptr, bodyCollect);
+    _server.on("/api/audio/volume", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            JsonDocument inp;
+            deserializeJson(inp, _body);
+            uint8_t vol = (uint8_t)constrain((int)(inp["volume"] | 70), 0, 100);
+            audio_obj.setVolume(vol);
+            String body = String("{\"ok\":true,\"volume\":") + vol + "}";
+            req->send(200, "application/json", body);
+        }, nullptr, bodyCollect);
+
     _server.on("/api/audio-test", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             JsonDocument inp;
