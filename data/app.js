@@ -568,8 +568,6 @@ Pages.templates = {
     } catch(e) {
       Toast.error('Vorlagen: ' + e.message);
     }
-    // Also load device templates shown on the same page
-    await Pages.deviceTemplates.load();
   },
 
   filter() {
@@ -583,7 +581,17 @@ Pages.templates = {
     const empty = document.getElementById('tplEmpty');
     if (!items.length) { grid.innerHTML = ''; empty.hidden = false; return; }
     empty.hidden = true;
-    grid.innerHTML = items.map((t, i) => `
+    // Group by category
+    const byCategory = {};
+    items.forEach((t, i) => {
+      const cat = t.category || 'Ohne Kategorie';
+      if (!byCategory[cat]) byCategory[cat] = [];
+      byCategory[cat].push({ t, i });
+    });
+    let html = '';
+    for (const [cat, entries] of Object.entries(byCategory).sort()) {
+      html += `<div style="grid-column:1/-1;margin:12px 0 4px"><span style="font-size:.8rem;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em">${esc(cat)}</span></div>`;
+      html += entries.map(({ t, i }) => `
       <div class="tpl-card">
         <div class="tpl-header">
           <div>
@@ -596,13 +604,14 @@ Pages.templates = {
           </div>
         </div>
         <div class="tpl-meta">
-          ${t.category ? `<span class="tpl-chip">${esc(t.category)}</span>` : ''}
           ${t.defaultDays ? `<span class="tpl-chip">${t.defaultDays} Tage MHD</span>` : ''}
           ${t.askQty ? `<span class="tpl-chip">Menge abfragen</span>` : ''}
           ${t.barcode ? `<span class="tpl-chip mono">${esc(t.barcode)}</span>` : ''}
         </div>
         ${t.description ? `<div style="font-size:.8rem;color:var(--subtext);margin-top:8px">${esc(t.description)}</div>` : ''}
       </div>`).join('');
+    }
+    grid.innerHTML = html;
     this._displayed = items;
   },
 
@@ -669,80 +678,6 @@ Pages.templates = {
   },
 };
 
-/* ---- DEVICE TEMPLATES (Geräte-Schnellauswahl) ---- */
-Pages.deviceTemplates = {
-  _items: [],
-
-  async load() {
-    try {
-      const data = await API.get('/api/templates');
-      this._items = Array.isArray(data) ? data : [];
-      this.render();
-    } catch(e) {
-      Toast.error('Gerätevorlagen: ' + e.message);
-    }
-  },
-
-  render() {
-    const grid  = document.getElementById('dtGrid');
-    const empty = document.getElementById('dtEmpty');
-    if (!grid) return;
-    if (!this._items.length) { grid.innerHTML = ''; empty.hidden = false; return; }
-    empty.hidden = true;
-    grid.innerHTML = this._items.map((t, i) => `
-      <div class="tpl-card">
-        <div class="tpl-header">
-          <div>
-            <div class="tpl-name">${esc(t.name)}</div>
-            <div class="tpl-brand" style="color:var(--subtext)">${esc(t.category)} · ${t.shelfDays} Tage MHD</div>
-          </div>
-          <button class="btn btn-sm btn-danger" onclick="Pages.deviceTemplates.remove('${esc(t.id)}')">Löschen</button>
-        </div>
-      </div>`).join('');
-  },
-
-  openAdd() {
-    Modal.show({
-      title: 'Gerätevorlage hinzufügen',
-      body: `
-        <form class="form-stack" id="dtForm">
-          <div class="form-field"><label>Produktname *</label><input class="input" id="dtName" required></div>
-          <div class="form-field"><label>Kategorie</label><input class="input" id="dtCat" value="Allgemein"></div>
-          <div class="form-field"><label>Haltbarkeit (Tage)</label><input class="input" type="number" id="dtDays" value="14" min="1" max="3650"></div>
-        </form>`,
-      actions: [
-        { label: 'Abbrechen', cls: '', onclick: Modal.hide },
-        { label: 'Hinzufügen', cls: 'btn-ok', onclick: () => this._submit() },
-      ],
-    });
-  },
-
-  async _submit() {
-    const name  = document.getElementById('dtName').value.trim();
-    const cat   = document.getElementById('dtCat').value.trim() || 'Allgemein';
-    const days  = parseInt(document.getElementById('dtDays').value, 10) || 14;
-    if (!name) { Toast.error('Name erforderlich'); return; }
-    try {
-      await API.post('/api/templates/add', { name, category: cat, shelfDays: days });
-      Modal.hide();
-      Toast.success('Gerätevorlage gespeichert');
-      await this.load();
-    } catch(e) {
-      Toast.error(e.message);
-    }
-  },
-
-  async remove(id) {
-    if (!confirm('Gerätevorlage löschen?')) return;
-    try {
-      await API.post('/api/templates/delete', { id });
-      Toast.success('Gelöscht');
-      await this.load();
-    } catch(e) {
-      Toast.error(e.message);
-    }
-  },
-};
 
 /* ---- CATEGORIES ---- */
 Pages.categories = {

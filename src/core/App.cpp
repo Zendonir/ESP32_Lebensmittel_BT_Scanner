@@ -633,7 +633,6 @@ void App::initFilesystem() {
         Logger::info("LittleFS", "Mounted OK");
         fs.ensureJsonFile("/inventory.json", "[]");
         fs.ensureJsonFile("/off_cache.json", "[]");
-        fs.ensureJsonFile("/templates.json", "[]");
     }
     loadTemplates();
 }
@@ -642,18 +641,21 @@ void App::initFilesystem() {
 
 void App::loadTemplates() {
     _templates.clear();
-    File f = LittleFS.open("/templates.json", "r");
+    // Read from the same file as the web Produktvorlagen page (/api/custom-products)
+    File f = LittleFS.open("/custom_products.json", "r");
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
     f.close();
+    int idx = 0;
     for (JsonObject obj : doc.as<JsonArray>()) {
         ProductTemplate t;
-        t.id        = obj["id"]   | "";
+        t.id        = obj["id"]   | String(idx);
         t.name      = obj["name"] | "";
         t.category  = obj["category"] | "Allgemein";
-        t.shelfDays = obj["shelfDays"] | 14;
-        if (!t.name.isEmpty()) _templates.push_back(t);
+        // custom-products uses "defaultDays"; map to shelfDays
+        t.shelfDays = obj["defaultDays"] | (obj["shelfDays"] | 14);
+        if (!t.name.isEmpty()) { _templates.push_back(t); idx++; }
     }
     Logger::info("Templates", String(_templates.size()) + " Vorlagen geladen");
 }

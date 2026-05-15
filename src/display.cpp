@@ -23,9 +23,9 @@
 static constexpr int SCR_W  = DISPLAY_LANDSCAPE_WIDTH;   // 480
 static constexpr int SCR_H  = DISPLAY_LANDSCAPE_HEIGHT;  // 320
 static constexpr int HDR_H  = 44;
-static constexpr int TAB_H  = 52;
+static constexpr int TAB_H  = 0;   // removed — navigation via swipe only
 static constexpr int CNT_Y  = HDR_H;
-static constexpr int CNT_H  = SCR_H - HDR_H - TAB_H;    // 224
+static constexpr int CNT_H  = SCR_H - HDR_H;              // 276
 
 // ─────────────────── tab bar constants ───────────────────
 static constexpr int TAB_COUNT = 6;  // STORE · INVENTAR · SCANNER · SYSTEM · PRODUKTE · EINGABE
@@ -148,26 +148,6 @@ static void draw_pill(int x, int y, const char *label, uint16_t bg) {
 //   Header bar
 // ═════════════════════════════════════════════════════════
 
-static void draw_header(bool wifiConnected) {
-    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
-    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
-    _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextFont(4);
-    _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("FoodScanner", 12, HDR_H / 2);
-    uint16_t wc = wifiConnected ? C_GREEN : C_RED;
-    _spr.fillCircle(SCR_W - 24, HDR_H / 2, 7, wc);
-    _spr.drawCircle(SCR_W - 24, HDR_H / 2, 7, C_BORDER);
-    _spr.setTextColor(C_SURFACE, wc);
-    _spr.setTextFont(1);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString("W", SCR_W - 24, HDR_H / 2);
-}
-
-// ═════════════════════════════════════════════════════════
-//   Tab bar (6 tabs, left/right arrows + dot indicators)
-// ═════════════════════════════════════════════════════════
-
 static const char *_tab_labels[TAB_COUNT] = {
     "HOME", "INVENTAR", "SCANNER", "SYSTEM", "PRODUKTE", "EINGABE"
 };
@@ -177,34 +157,24 @@ static const OnscreenAction _tab_actions[TAB_COUNT] = {
     OnscreenAction::TAB_MANUAL_PRODUCT, OnscreenAction::TAB_MANUAL_ENTRY,
 };
 
-static void draw_tabbar(UiTab activeTab) {
-    int tab_y = SCR_H - TAB_H;
-    _spr.fillRect(0, tab_y, SCR_W, TAB_H, C_SURFACE);
-    _spr.drawFastHLine(0, tab_y, SCR_W, C_BORDER);
-
-    int idx      = static_cast<int>(activeTab);
-    int prev_idx = (idx + TAB_COUNT - 1) % TAB_COUNT;
-    int next_idx = (idx + 1) % TAB_COUNT;
-
-    draw_button(8, tab_y + 8, 56, TAB_H - 16, "<",
-                C_SURFACE2, C_TEXT, 4, _tab_actions[prev_idx]);
-
+static void draw_header(UiTab activeTab, bool wifiConnected) {
+    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
+    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    // Page name top-left
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextFont(4);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString(_tab_labels[static_cast<int>(activeTab)], 12, HDR_H / 2);
+    // WiFi indicator top-right
+    uint16_t wc = wifiConnected ? C_GREEN : C_RED;
+    _spr.fillCircle(SCR_W - 24, HDR_H / 2, 7, wc);
+    _spr.drawCircle(SCR_W - 24, HDR_H / 2, 7, C_BORDER);
+    _spr.setTextColor(C_SURFACE, wc);
+    _spr.setTextFont(1);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(_tab_labels[idx], SCR_W / 2, tab_y + TAB_H / 2 - 6);
-
-    // Dot indicators — 6 dots × 16px spacing, centered
-    for (int i = 0; i < TAB_COUNT; i++) {
-        int dot_x = SCR_W / 2 - (TAB_COUNT - 1) * 8 + i * 16;
-        int dot_y = tab_y + TAB_H - 9;
-        _spr.fillCircle(dot_x, dot_y, (i == idx) ? 4 : 3,
-                        (i == idx) ? C_ACCENT : C_SURFACE2);
-    }
-
-    draw_button(SCR_W - 64, tab_y + 8, 56, TAB_H - 16, ">",
-                C_SURFACE2, C_TEXT, 4, _tab_actions[next_idx]);
+    _spr.drawString("W", SCR_W - 24, HDR_H / 2);
 }
+
 
 // ═════════════════════════════════════════════════════════
 //   Content panels
@@ -397,8 +367,7 @@ static void commit() { _spr.pushSprite(0, 0); }
 static void render_home(const HomeState &s) {
     _spr.fillSprite(C_BG);
     clear_regions();
-    draw_header(s.wifiConnected);
-    draw_tabbar(s.tab);
+    draw_header(s.tab, s.wifiConnected);
     _spr.fillRect(0, CNT_Y, SCR_W, CNT_H, C_BG);
     switch (s.tab) {
         case UiTab::STORE:          draw_panel_store(s);          break;
@@ -806,7 +775,6 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
         _spr.setTextDatum(MC_DATUM);
         _spr.drawString("Keine Eintraege", SCR_W / 2, list_y + 60);
     }
-    draw_tabbar(UiTab::INVENTORY);
     _homeState.inventoryCount = items.size();
     commit();
 }
