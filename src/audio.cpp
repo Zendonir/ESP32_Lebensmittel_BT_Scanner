@@ -237,6 +237,12 @@ void Audio::init(TwoWire &wire) {
     }
     delay(20);
 
+    // Enable the external speaker power amplifier (PA_EN active-high)
+    pinMode(PA_EN, OUTPUT);
+    digitalWrite(PA_EN, HIGH);
+    Logger::info("Audio", String("PA_EN GPIO") + PA_EN + " HIGH");
+    delay(10);
+
     es8311_init(volume_level);
     is_initialized = true;
 

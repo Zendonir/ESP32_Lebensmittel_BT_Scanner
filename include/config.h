@@ -36,6 +36,8 @@
 #define I2S_LRCK    15
 #define I2S_DOUT    16   // ESP32→ES8311 SDIN (DAC / Lautsprecher), per Hersteller-Schaltplan
 #define I2S_DIN     14   // ES8311 SDOUT→ESP32 (ADC / Mikrofon, nicht genutzt)
+// Speaker power-amplifier enable (active-high SD/EN on the NS4168/MAX98357 PA chip)
+#define PA_EN       46
 
 // ============ SD CARD (SPI) ============
 #define SD_MISO     9
