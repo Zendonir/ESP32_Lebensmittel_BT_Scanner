@@ -283,6 +283,7 @@ void App::processOnscreenAction(OnscreenAction action) {
     if (action == OnscreenAction::KB_CHAR && workflow == WorkflowMode::KB_ENTRY) {
         char c = display_obj.drainKbChar();
         if (c != 0) {
+            audio_obj.playClickTone();
             _kbText += c;
             display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
         }
@@ -309,12 +310,14 @@ void App::processOnscreenAction(OnscreenAction action) {
     switch (action) {
         // ── Tab navigation ──────────────────────────────────────────────────
         case OnscreenAction::SWIPE_LEFT:
+            audio_obj.playSwipeTone();
             action = static_cast<OnscreenAction>(
                 static_cast<int>(OnscreenAction::TAB_STORE) +
                 (static_cast<int>(_activeTab) + 1) % 6);
             processOnscreenAction(action);
             return;
         case OnscreenAction::SWIPE_RIGHT:
+            audio_obj.playSwipeTone();
             action = static_cast<OnscreenAction>(
                 static_cast<int>(OnscreenAction::TAB_STORE) +
                 (static_cast<int>(_activeTab) + 5) % 6);
@@ -394,6 +397,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::QTY_MINUS:
             if (_pendingQuantity > 1) {
+                audio_obj.playClickTone();
                 _pendingQuantity--;
                 if (workflow == WorkflowMode::ENTER_QTY)
                     display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
@@ -408,6 +412,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::QTY_PLUS:
             if (_pendingQuantity < 99) {
+                audio_obj.playClickTone();
                 _pendingQuantity++;
                 if (workflow == WorkflowMode::ENTER_QTY)
                     display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
@@ -502,6 +507,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::KB_BACKSPACE:
             if (workflow == WorkflowMode::KB_ENTRY && !_kbText.isEmpty()) {
+                audio_obj.playClickTone();
                 _kbText.remove(_kbText.length() - 1);
                 display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
             }
@@ -521,11 +527,11 @@ void App::handleScan(const ScanResult &scan) {
         return;
     }
 
-    audio_obj.playSuccessTone();
-
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
         bool removed = inventory.removeByLabel(scan.code);
+        if (removed) audio_obj.playCheckoutTone();
+        else         audio_obj.playErrorTone();
         workflow = WorkflowMode::RESULT;
         _resultSuccess = removed;
         _resultTitle = removed ? "Ausgelagert" : "Nicht gefunden";
@@ -534,6 +540,21 @@ void App::handleScan(const ScanResult &scan) {
         return;
     }
 
+    // Check 48 h recently-removed buffer before a full product lookup
+    const InventoryItem *recent = inventory.findRecent(scan.code);
+    if (recent) {
+        InventoryItem reItem = *recent;
+        inventory.addItem(reItem);
+        audio_obj.playSuccessTone();
+        workflow = WorkflowMode::RESULT;
+        _resultSuccess = true;
+        _resultTitle = "Wieder eingebucht";
+        _resultMessage = reItem.name.isEmpty() ? scan.code : reItem.name;
+        display_obj.showResult(_resultTitle, _resultMessage, true);
+        return;
+    }
+
+    audio_obj.playSuccessTone();
     startProductLookup(scan.code);
 }
 

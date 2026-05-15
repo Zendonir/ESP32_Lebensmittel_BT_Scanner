@@ -337,6 +337,9 @@ void Audio::playSuccessTone()  { playTone(880, 80);  playTone(1320, 130); }
 void Audio::playErrorTone()    { playTone(320, 120); playTone(200,  280); }
 void Audio::playWarningTone()  { playTone(880, 80);  playTone(0, 60); playTone(880, 80); }
 void Audio::playStartupTone()  { playTone(523, 80);  playTone(659, 80); playTone(784, 130); }
+void Audio::playClickTone()    { playTone(1200, 18); }
+void Audio::playSwipeTone()    { playTone(600, 35);  playTone(900, 35); }
+void Audio::playCheckoutTone() { playTone(660, 80);  playTone(440, 120); }
 void Audio::stopTone()         { if (_queue) xQueueReset(_queue); }
 
 // ── Volume ────────────────────────────────────────────────────────────────────

@@ -22,6 +22,9 @@ public:
     void playErrorTone();
     void playWarningTone();
     void playStartupTone();
+    void playClickTone();
+    void playSwipeTone();
+    void playCheckoutTone();
 
     // Volume: 0–100 %
     void setVolume(uint8_t volume);
