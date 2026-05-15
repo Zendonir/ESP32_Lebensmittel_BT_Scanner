@@ -14,6 +14,7 @@ public:
     void feed(uint8_t lines);
     void setPostFeed(uint16_t lines);
     bool printLabel(const InventoryItem &item);
+    void printManual(const String &text, bool center = false);
     size_t printTestPage(bool includeQr = false);
     size_t printPlainTest();
     size_t printBaudProbe();

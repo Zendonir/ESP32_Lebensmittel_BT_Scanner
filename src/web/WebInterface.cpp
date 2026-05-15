@@ -6,6 +6,7 @@
 #include "wifi_manager.h"
 #include "../scanner/BarcodeManager.h"
 #include "../printer/PrinterManager.h"
+#include "../audio.h"
 #include "config.h"
 
 #include <LittleFS.h>
@@ -867,6 +868,39 @@ void WebInterface::registerApiRoutes() {
             req->send(printed ? 200 : 503, "application/json", body);
         },
         nullptr, bodyCollect);
+    _server.on("/api/audio-test", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            JsonDocument inp;
+            deserializeJson(inp, _body);
+            uint16_t freq = inp["freq"] | 1000;
+            uint16_t dur  = inp["dur"]  | 300;
+            freq = constrain(freq, 50, 8000);
+            dur  = constrain(dur,  50, 5000);
+            audio_obj.playTone(freq, dur);
+            Logger::info("Audio", String("Web tone test: ") + freq + " Hz, " + dur + " ms");
+            String body = String("{\"ok\":true,\"freq\":") + freq + ",\"dur\":" + dur + "}";
+            req->send(200, "application/json", body);
+        }, nullptr, bodyCollect);
+
+    _server.on("/api/print-manual", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            if (!_printer || !_printer->isReady()) {
+                req->send(503, "application/json", "{\"ok\":false,\"message\":\"Drucker nicht bereit\"}");
+                return;
+            }
+            JsonDocument inp;
+            deserializeJson(inp, _body);
+            String text  = inp["text"]  | "";
+            String align = inp["align"] | "left";
+            if (text.isEmpty()) {
+                req->send(400, "application/json", "{\"ok\":false,\"message\":\"Kein Text\"}");
+                return;
+            }
+            // Print via EscPosPrinter-compatible API through printer manager
+            _printer->printManual(text, align == "center");
+            req->send(200, "application/json", "{\"ok\":true,\"message\":\"Gedruckt\"}");
+        }, nullptr, bodyCollect);
+
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
     _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));

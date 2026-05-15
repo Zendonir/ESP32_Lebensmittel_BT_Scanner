@@ -37,6 +37,30 @@ void PrinterManager::setPostFeed(uint16_t lines) {
     postFeedDots = lines;
 }
 
+void PrinterManager::printManual(const String &text, bool center) {
+    if (!printer.isReady()) return;
+    printer.reset();
+    printer.setCodePage(16);
+    printer.flush();
+    delay(80);
+
+    printer.setAlign(center ? 1 : 0);
+
+    // Split on '\n' and print each line
+    int start = 0;
+    int len   = (int)text.length();
+    for (int i = 0; i <= len; i++) {
+        if (i == len || text[i] == '\n') {
+            printer.println(text.substring(start, i));
+            start = i + 1;
+        }
+    }
+
+    printer.setAlign(0);
+    printer.feedDots(postFeedDots);
+    printer.flush();
+}
+
 bool PrinterManager::printLabel(const InventoryItem &item) {
     renderer.setPostFeed(postFeedDots);
     return renderer.printInventoryLabel(item);

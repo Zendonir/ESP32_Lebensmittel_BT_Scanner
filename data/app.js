@@ -1323,26 +1323,50 @@ Pages.printer = {
     }
   },
 
-  async testLabel() { return this.test('label'); },
-
-  async test(type) {
-    const labels = {
-      label: 'Testlabel (vollständig)',
-      text:  'ESC/POS Testseite',
-      qr:    'ESC/POS + QR',
-      plain: 'UART Plain',
-      baud:  'Baudrate Probe',
-    };
-    const el = document.getElementById('prTestResult');
-    if (el) el.textContent = `⏳ ${labels[type] || type} …`;
+  async testLabel() {
     try {
-      const res = await API.post('/api/test-print', { type });
-      const bytes = Number.isFinite(res.bytes) ? ` · ${res.bytes} B` : '';
-      const msg = `${res.ok ? '✓' : '✗'} ${labels[type] || type}${bytes}`;
-      if (el) el.textContent = msg;
-      res.ok ? Toast.success(res.message || 'Gesendet') : Toast.error(res.message || 'Fehler');
+      const res = await API.post('/api/test-print', { type: 'label' });
+      Toast.success(res.message || 'Testlabel gesendet');
+    } catch(e) { Toast.error('Fehler: ' + e.message); }
+  },
+
+  async audioTest() {
+    const freq = parseInt(document.getElementById('audioFreq').value) || 1000;
+    const dur  = parseInt(document.getElementById('audioDur').value)  || 300;
+    await this._playTone(freq, dur);
+  },
+
+  async audioPreset(freq, dur) {
+    document.getElementById('audioFreq').value = freq;
+    document.getElementById('audioDur').value  = dur;
+    await this._playTone(freq, dur);
+  },
+
+  async _playTone(freq, dur) {
+    const el = document.getElementById('audioTestResult');
+    if (el) el.textContent = `⏳ ${freq} Hz · ${dur} ms …`;
+    try {
+      const res = await API.post('/api/audio-test', { freq, dur });
+      if (el) el.textContent = res.ok ? `✓ ${freq} Hz · ${dur} ms` : `✗ ${res.message || 'Fehler'}`;
+      res.ok ? Toast.success(`Ton: ${freq} Hz, ${dur} ms`) : Toast.error(res.message || 'Fehler');
     } catch(e) {
-      if (el) el.textContent = `✗ Fehler`;
+      if (el) el.textContent = '✗ Fehler';
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async printManual() {
+    const text  = document.getElementById('prManualText').value.trim();
+    const align = document.querySelector('input[name="prManualAlign"]:checked')?.value || 'left';
+    const el    = document.getElementById('prManualResult');
+    if (!text) { Toast.error('Kein Text eingegeben'); return; }
+    if (el) el.textContent = '⏳ Drucken …';
+    try {
+      const res = await API.post('/api/print-manual', { text, align });
+      if (el) el.textContent = res.ok ? `✓ Gedruckt (${align})` : `✗ ${res.message || 'Fehler'}`;
+      res.ok ? Toast.success('Manueller Druck gesendet') : Toast.error(res.message || 'Fehler');
+    } catch(e) {
+      if (el) el.textContent = '✗ Fehler';
       Toast.error('Fehler: ' + e.message);
     }
   },
