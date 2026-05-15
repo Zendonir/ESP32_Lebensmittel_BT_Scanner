@@ -6,7 +6,7 @@
 #include "wifi_manager.h"
 #include "../scanner/BarcodeManager.h"
 #include "../printer/PrinterManager.h"
-#include "../audio.h"
+#include "audio.h"
 #include "config.h"
 
 #include <LittleFS.h>
