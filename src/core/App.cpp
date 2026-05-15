@@ -153,12 +153,15 @@ void App::initI2C() {
 }
 
 void App::resetLCDViaTCA9554() {
-    // TCA9554 at I2C 0x20: EXIO1 (bit 1) drives the LCD reset line.
-    // Reg 0x03 = Configuration (0=output). Reg 0x01 = Output Port.
+    // TCA9554 at I2C 0x20:
+    //   EXIO1 (bit 1) = LCD_RST
+    //   EXIO7 (bit 7) = PA_CTRL  → NS4150B speaker amp enable (active-high)
     constexpr uint8_t TCA_ADDR   = 0x20;
     constexpr uint8_t REG_OUTPUT = 0x01;
     constexpr uint8_t REG_CONFIG = 0x03;
     constexpr uint8_t RST_BIT    = 0x02;  // EXIO1
+    constexpr uint8_t PA_BIT     = 0x80;  // EXIO7
+    constexpr uint8_t OUT_BITS   = RST_BIT | PA_BIT;
 
     auto tca_write = [&](uint8_t reg, uint8_t val) {
         i2c_bus.beginTransmission(TCA_ADDR);
@@ -167,14 +170,14 @@ void App::resetLCDViaTCA9554() {
         i2c_bus.endTransmission();
     };
 
-    tca_write(REG_CONFIG, ~RST_BIT);     // EXIO1 = output, all others = input
-    tca_write(REG_OUTPUT, 0xFF);         // EXIO1 high (idle)
+    tca_write(REG_CONFIG, ~OUT_BITS);    // EXIO1 + EXIO7 = outputs, rest = inputs
+    tca_write(REG_OUTPUT, 0xFF);         // both high (LCD idle, PA enabled)
     delay(10);
-    tca_write(REG_OUTPUT, ~RST_BIT);     // EXIO1 low  (assert reset)
+    tca_write(REG_OUTPUT, PA_BIT);       // LCD low (assert reset), PA still high
     delay(10);
-    tca_write(REG_OUTPUT, 0xFF);         // EXIO1 high (release reset)
+    tca_write(REG_OUTPUT, 0xFF);         // LCD high (release reset), PA still high
     delay(200);                          // ST7796 needs ~120 ms to wake
-    Logger::info("Display", "TCA9554 LCD reset done");
+    Logger::info("Display", "TCA9554 LCD reset done, PA_CTRL EXIO7 HIGH");
 }
 
 void App::renderDashboard(const String &message) {
