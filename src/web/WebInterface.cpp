@@ -686,6 +686,7 @@ void WebInterface::registerApiRoutes() {
         doc["bleConnected"] = ble_scanner.isConnected();
         doc["bleConnecting"] = ble_scanner.isConnecting();
         doc["bleLastError"] = ble_scanner.getLastError();
+        doc["idleTimeoutMin"] = ble_scanner.getIdleTimeoutMin();
         doc["lastScan"] = barcode_manager.getLastScan().isEmpty()
             ? ble_scanner.getLastScan()
             : barcode_manager.getLastScan();
@@ -701,11 +702,15 @@ void WebInterface::registerApiRoutes() {
                 if (!incoming["autoReconnect"].isNull()) {
                     ble_scanner.setAutoReconnect(incoming["autoReconnect"].as<bool>());
                 }
+                if (!incoming["idleTimeoutMin"].isNull()) {
+                    ble_scanner.setIdleTimeout(incoming["idleTimeoutMin"].as<uint32_t>());
+                }
 
                 JsonDocument existing;
                 loadJson("/scanner_config.json", existing, "{}");
                 existing["mode"] = "ble_hid";
                 existing["autoReconnect"] = ble_scanner.getAutoReconnect();
+                existing["idleTimeoutMin"] = ble_scanner.getIdleTimeoutMin();
                 existing["bleAddress"] = ble_scanner.getDeviceAddress();
                 existing["bleDevice"] = ble_scanner.getDeviceName();
                 saveJson("/scanner_config.json", existing);

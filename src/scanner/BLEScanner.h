@@ -37,6 +37,10 @@ public:
 
     void setAutoReconnect(bool enabled);
     bool getAutoReconnect() const { return autoReconnect; }
+
+    void     setIdleTimeout(uint32_t minutes);
+    uint32_t getIdleTimeoutMin() const { return _idleTimeoutMs / 60000; }
+
     bool isConnected()  const { return connected; }
     bool isConnecting() const { return connecting || connectRequested; }
     String getDeviceAddress() const { return deviceAddress; }
@@ -63,7 +67,10 @@ private:
     String currentCode;
     String lastScan;
     String lastError;
-    uint8_t reconnectFailures = 0;
+    uint8_t  reconnectFailures = 0;
+    uint32_t _idleTimeoutMs   = 0;   // 0 = disabled
+    uint32_t _lastActivityMs  = 0;
+    uint32_t _reconnectAfterMs = 0;  // millis() target for post-idle reconnect; 0 = not pending
 
     SemaphoreHandle_t _mutex = nullptr;
 };

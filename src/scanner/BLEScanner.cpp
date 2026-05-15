@@ -204,6 +204,25 @@ void BLEScanner::begin() {
 }
 
 void BLEScanner::loop() {
+    // ── Idle timeout: disconnect if no scan received within _idleTimeoutMs ────
+    if (connected && _idleTimeoutMs > 0
+            && (millis() - _lastActivityMs) >= _idleTimeoutMs) {
+        Serial.println("[BLE] Idle timeout – disconnecting");
+        reconnectPaused   = true;              // block immediate reconnect
+        _reconnectAfterMs = millis() + 60000;  // try again in 60 s
+        _setConnected(false);
+        if (s_client && s_client->isConnected()) s_client->disconnect();
+    }
+
+    // ── Delayed auto-reconnect after idle disconnect ───────────────────────
+    if (!connected && !connecting && !connectRequested
+            && _reconnectAfterMs != 0 && millis() >= _reconnectAfterMs) {
+        _reconnectAfterMs = 0;
+        reconnectPaused   = false;
+        Serial.println("[BLE] Reconnect after idle timeout");
+        _startScan();
+    }
+
     if (!connectRequested) return;
     connectRequested = false;
 
@@ -231,9 +250,11 @@ void BLEScanner::_setConnected(bool c) {
     connected  = c;
     connecting = false;
     if (c) {
-        reconnectFailures = 0;
-        reconnectPaused   = false;
-        lastError         = "";
+        reconnectFailures  = 0;
+        reconnectPaused    = false;
+        _reconnectAfterMs  = 0;
+        _lastActivityMs    = millis();
+        lastError          = "";
     }
 }
 
@@ -314,8 +335,15 @@ void BLEScanner::setAutoReconnect(bool enabled) {
     saveSettings();
 }
 
+void BLEScanner::setIdleTimeout(uint32_t minutes) {
+    _idleTimeoutMs = minutes * 60000;
+    saveSettings();
+    Serial.printf("[BLE] Idle timeout set to %u min\n", minutes);
+}
+
 void BLEScanner::handleNotify(uint8_t *data, size_t len) {
     if (!_mutex || len < 3) return;
+    _lastActivityMs = millis();  // reset idle timer on any HID input
     uint8_t mod = data[0];
     xSemaphoreTake(_mutex, portMAX_DELAY);
     for (size_t i = 2; i < len && i < 8; i++) {
@@ -370,10 +398,11 @@ String BLEScanner::getStatus() const {
 void BLEScanner::loadSettings() {
     Preferences p;
     if (!p.begin("scanner", true)) return;
-    autoReconnect = p.getBool("autoReconnect", true);
-    deviceAddress = p.getString("addr", "");
-    deviceName    = p.getString("name", "");
-    _addrType     = (uint8_t)p.getUChar("addrType", 0);
+    autoReconnect  = p.getBool("autoReconnect", true);
+    deviceAddress  = p.getString("addr", "");
+    deviceName     = p.getString("name", "");
+    _addrType      = (uint8_t)p.getUChar("addrType", 0);
+    _idleTimeoutMs = (uint32_t)p.getUInt("idleMin", 0) * 60000;
     p.end();
 }
 
@@ -384,5 +413,6 @@ void BLEScanner::saveSettings() {
     p.putString("addr", deviceAddress);
     p.putString("name", deviceName);
     p.putUChar("addrType", _addrType);
+    p.putUInt("idleMin", _idleTimeoutMs / 60000);
     p.end();
 }

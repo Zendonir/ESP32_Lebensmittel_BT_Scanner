@@ -1423,6 +1423,7 @@ Pages.scanner = {
     try {
       const cfg = await API.get('/api/scanner-config');
       document.getElementById('scanAutoReconnect').checked = cfg.autoReconnect !== false;
+      document.getElementById('scanIdleTimeout').value = cfg.idleTimeoutMin ?? 0;
       document.getElementById('scanBleDevice').textContent = cfg.bleDevice || cfg.bleAddress || '—';
       const status = cfg.bleLastError ? `${cfg.bleStatus}: ${cfg.bleLastError}` : (cfg.bleStatus || (cfg.bleConnected ? 'connected' : 'disconnected'));
       document.getElementById('scanBleStatus').textContent = status;
@@ -1438,6 +1439,7 @@ Pages.scanner = {
       await API.post('/api/scanner-config', {
         mode: 'ble_hid',
         autoReconnect: document.getElementById('scanAutoReconnect').checked,
+        idleTimeoutMin: parseInt(document.getElementById('scanIdleTimeout').value, 10) || 0,
       });
       Toast.success('Bluetooth-Scanner-Einstellungen gespeichert');
       this.load();
