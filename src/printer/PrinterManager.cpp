@@ -87,10 +87,13 @@ void PrinterManager::printManualLabel(const String &text, bool center) {
 
     // Inventory label content height (double-height name + 4 rows × 24 + barcode ≈ 210 dots).
     // Distribute evenly across N lines so manual label uses the same paper length.
+    // Content dots matches inventory label: double-height name + 4 rows×24 + barcode ≈ 210 dots.
+    // ESC 3 n takes n as a 1-byte value (max 255 dots). Do not cap below max — few lines
+    // with large spacing still consume the correct total paper (N × spacing = CONTENT_DOTS).
     const int CONTENT_DOTS = 210;
     int spacing = CONTENT_DOTS / lineCount;
-    if (spacing < 24) spacing = 24;
-    if (spacing > 80) spacing = 80;
+    if (spacing < 24)  spacing = 24;   // minimum legible line advance
+    if (spacing > 255) spacing = 255;  // ESC 3 n max
     bool doubleH = (spacing >= 48);
 
     printer.setLineSpacing((uint8_t)spacing);

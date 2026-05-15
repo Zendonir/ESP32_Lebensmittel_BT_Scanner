@@ -42,9 +42,11 @@ static void es8311_init(uint8_t vol_pct) {
     es_write(0x07, 0xFF);   // LRCK_DIV low byte = 255 → divisor 256 → 48 000 Hz
     es_write(0x08, 0x00);
 
-    // Serial port: I²S standard, 32-bit word
-    es_write(0x09, 0x00);   // ADC interface: I²S std, 32-bit (0x04)? Try 0x00 = 24bit first
-    es_write(0x0A, 0x00);   // DAC interface: I²S std, 32-bit
+    // Serial port: I²S standard, 32-bit word length
+    // REG09 [2:0]: word length 000=16bit, 100=32bit → 0x04
+    // REG09 [5:4]: format 00=I²S std → 0x04 total
+    es_write(0x09, 0x04);   // ADC serial: I²S std, 32-bit
+    es_write(0x0A, 0x04);   // DAC serial: I²S std, 32-bit
 
     // ADC section (mic disabled)
     es_write(0x0D, 0x01);
@@ -88,7 +90,7 @@ static bool i2s_audio_init() {
     i2s_config_t cfg = {};
     cfg.mode               = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
     cfg.sample_rate        = 48000;
-    cfg.bits_per_sample    = I2S_BITS_PER_SAMPLE_16BIT;
+    cfg.bits_per_sample    = I2S_BITS_PER_SAMPLE_32BIT;
     cfg.channel_format     = I2S_CHANNEL_FMT_RIGHT_LEFT;
     cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     cfg.intr_alloc_flags   = ESP_INTR_FLAG_LEVEL1;
@@ -118,7 +120,7 @@ static bool i2s_audio_init() {
     }
 
     i2s_zero_dma_buffer((i2s_port_t)I2S_NUM);
-    Logger::info("Audio", String("I2S bereit: 48kHz 16bit stereo MCLK=GPIO") + I2S_MCLK
+    Logger::info("Audio", String("I2S bereit: 48kHz 32bit stereo MCLK=GPIO") + I2S_MCLK
         + " BCLK=GPIO" + I2S_BCLK + " LRCK=GPIO" + I2S_LRCK + " DOUT=GPIO" + I2S_DOUT);
     return true;
 }
@@ -132,7 +134,7 @@ static constexpr size_t   CHUNK = 128;
 
 void Audio::toneTask(void *param) {
     auto *self = static_cast<Audio *>(param);
-    int16_t buf[CHUNK * 2];  // 16-bit stereo
+    int32_t buf[CHUNK * 2];  // 32-bit stereo: L+R per frame
     ToneCmd cmd;
 
     for (;;) {
@@ -142,26 +144,26 @@ void Audio::toneTask(void *param) {
         uint32_t total = (uint32_t)SR * cmd.ms / 1000;
         float step  = 2.0f * M_PI * (float)cmd.freq / (float)SR;
         float phase = 0.0f;
-        // 16-bit amplitude: 32767 * vol/100
-        float amp = 32767.0f * self->volume_level / 100.0f;
+        // 32-bit amplitude: ~75% of full scale × vol%
+        float amp = (float)0x3FFFFFFF * self->volume_level / 100.0f;
 
         while (total > 0) {
             size_t n = (total < CHUNK) ? (size_t)total : CHUNK;
             for (size_t i = 0; i < n; i++) {
-                int16_t s       = (int16_t)(sinf(phase) * amp);
-                buf[i * 2]      = s;
-                buf[i * 2 + 1]  = s;
+                int32_t s       = (int32_t)(sinf(phase) * amp);
+                buf[i * 2]      = s;   // Left
+                buf[i * 2 + 1]  = s;   // Right
                 phase += step;
                 if (phase >= 2.0f * M_PI) phase -= 2.0f * M_PI;
             }
             size_t written = 0;
-            i2s_write((i2s_port_t)I2S_NUM, buf, n * 4, &written, pdMS_TO_TICKS(500));
+            i2s_write((i2s_port_t)I2S_NUM, buf, n * 8, &written, pdMS_TO_TICKS(500));
             total -= (uint32_t)n;
         }
-        // Short silence to flush DMA
-        memset(buf, 0, CHUNK * 4);
+        // Short silence to flush DMA cleanly
+        memset(buf, 0, CHUNK * 8);
         size_t w = 0;
-        i2s_write((i2s_port_t)I2S_NUM, buf, CHUNK * 4, &w, pdMS_TO_TICKS(100));
+        i2s_write((i2s_port_t)I2S_NUM, buf, CHUNK * 8, &w, pdMS_TO_TICKS(100));
     }
 }
 
