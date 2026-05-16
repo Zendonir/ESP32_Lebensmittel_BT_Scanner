@@ -40,6 +40,7 @@ private:
         // Template-based product selection
         TMPL_CATEGORY,       // showing category list
         TMPL_PRODUCT,        // showing product list for selected category
+        TMPL_BRAND,          // brand selection when template has >1 brand
         TMPL_MHD,            // MHD + qty confirm before saving
         // Fully manual keyboard entry
         KB_ENTRY,            // keyboard input for product name
@@ -71,6 +72,7 @@ private:
     std::vector<ProductTemplate> templatesForCategory(const String &cat) const;
     void showTmplCategories();
     void showTmplProducts();
+    void showTmplBrands();
     void startTmplMHD();
     String calcMHD(int shelfDays, int offset) const;
 
@@ -115,6 +117,7 @@ private:
     std::vector<ProductTemplate> _templates;
     String   _selectedCategory;
     int      _selectedTemplateIdx = -1;
+    String   _selectedBrand;             // brand chosen in TMPL_BRAND step
     int      _mhdOffset           = 0;   // ±days applied to template's shelfDays
 
     // Keyboard entry state

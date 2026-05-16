@@ -365,10 +365,23 @@ void App::processOnscreenAction(OnscreenAction action) {
             showTmplCategories();
             return;
         }
-        if (workflow == WorkflowMode::TMPL_MHD) {
+        if (workflow == WorkflowMode::TMPL_BRAND) {
             audio_obj.playSwipeTone();
             workflow = WorkflowMode::TMPL_PRODUCT;
             showTmplProducts();
+            return;
+        }
+        if (workflow == WorkflowMode::TMPL_MHD) {
+            audio_obj.playSwipeTone();
+            auto products = templatesForCategory(_selectedCategory);
+            if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                    && products[_selectedTemplateIdx].brands.size() > 1) {
+                workflow = WorkflowMode::TMPL_BRAND;
+                showTmplBrands();
+            } else {
+                workflow = WorkflowMode::TMPL_PRODUCT;
+                showTmplProducts();
+            }
             return;
         }
     }
@@ -386,6 +399,17 @@ void App::processOnscreenAction(OnscreenAction action) {
         } else if (workflow == WorkflowMode::TMPL_PRODUCT) {
             _selectedTemplateIdx = idx;
             startTmplMHD();
+        } else if (workflow == WorkflowMode::TMPL_BRAND) {
+            auto products = templatesForCategory(_selectedCategory);
+            if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
+                const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+                if (idx < (int)tmpl.brands.size()) {
+                    _pendingProduct.brand = tmpl.brands[idx];
+                    workflow              = WorkflowMode::TMPL_MHD;
+                    String mhd = calcMHD(tmpl.shelfDays, _mhdOffset);
+                    display_obj.showTemplateMHD(tmpl.name, mhd, _pendingQuantity);
+                }
+            }
         }
         return;
     }
@@ -530,10 +554,21 @@ void App::processOnscreenAction(OnscreenAction action) {
                 // Go back to category selection
                 workflow = WorkflowMode::TMPL_CATEGORY;
                 showTmplCategories();
-            } else if (workflow == WorkflowMode::TMPL_MHD) {
+            } else if (workflow == WorkflowMode::TMPL_BRAND) {
                 // Go back to product selection
                 workflow = WorkflowMode::TMPL_PRODUCT;
                 showTmplProducts();
+            } else if (workflow == WorkflowMode::TMPL_MHD) {
+                // Go back to brand selection (if >1 brand) or product selection
+                auto products = templatesForCategory(_selectedCategory);
+                if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                        && products[_selectedTemplateIdx].brands.size() > 1) {
+                    workflow = WorkflowMode::TMPL_BRAND;
+                    showTmplBrands();
+                } else {
+                    workflow = WorkflowMode::TMPL_PRODUCT;
+                    showTmplProducts();
+                }
             } else {
                 workflow = WorkflowMode::HOME;
                 state.setState(AppState::MAIN);
@@ -820,6 +855,14 @@ void App::loadTemplates() {
         t.category  = obj["category"] | "Allgemein";
         // custom-products uses "defaultDays"; map to shelfDays
         t.shelfDays = obj["defaultDays"] | (obj["shelfDays"] | 14);
+        t.brands.clear();
+        if (obj["brands"].is<JsonArray>()) {
+            for (JsonVariant b : obj["brands"].as<JsonArray>())
+                t.brands.push_back(b.as<String>());
+        } else if (obj["brand"].is<const char *>()) {
+            String s = obj["brand"] | "";
+            if (!s.isEmpty()) t.brands.push_back(s);
+        }
         if (!t.name.isEmpty()) { _templates.push_back(t); idx++; }
     }
     Logger::info("Templates", String(_templates.size()) + " Vorlagen geladen");
@@ -862,6 +905,13 @@ void App::showTmplProducts() {
     display_obj.showListScreen(_selectedCategory.c_str(), items, true);
 }
 
+void App::showTmplBrands() {
+    auto products = templatesForCategory(_selectedCategory);
+    if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
+    const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+    display_obj.showListScreen(tmpl.name.c_str(), tmpl.brands, true);
+}
+
 void App::startTmplMHD() {
     auto products = templatesForCategory(_selectedCategory);
     if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) {
@@ -875,9 +925,17 @@ void App::startTmplMHD() {
     _pendingProduct.barcode = "";
     _pendingQuantity        = 1;
     _mhdOffset              = 0;
-    workflow                = WorkflowMode::TMPL_MHD;
-    String mhd = calcMHD(tmpl.shelfDays, 0);
-    display_obj.showTemplateMHD(tmpl.name, mhd, _pendingQuantity);
+    _selectedBrand          = "";
+
+    if (tmpl.brands.size() > 1) {
+        workflow = WorkflowMode::TMPL_BRAND;
+        showTmplBrands();
+    } else {
+        _pendingProduct.brand = tmpl.brands.size() == 1 ? tmpl.brands[0] : "";
+        workflow              = WorkflowMode::TMPL_MHD;
+        String mhd = calcMHD(tmpl.shelfDays, 0);
+        display_obj.showTemplateMHD(tmpl.name, mhd, _pendingQuantity);
+    }
 }
 
 void App::initWebServer() {

@@ -117,7 +117,10 @@ const Modal = (() => {
   const body     = () => document.getElementById('modalBody');
   const footer   = () => document.getElementById('modalFooter');
 
+  let _noBackdropClose = false;
+
   function show(cfg) {
+    _noBackdropClose = !!cfg.noBackdropClose;
     title().textContent = cfg.title || '';
     body().innerHTML    = cfg.body  || '';
     footer().innerHTML  = '';
@@ -133,6 +136,7 @@ const Modal = (() => {
   }
 
   function hide() {
+    _noBackdropClose = false;
     backdrop().hidden = true;
     document.body.style.overflow = '';
   }
@@ -148,8 +152,8 @@ const Modal = (() => {
     });
   }
 
-  backdrop()?.addEventListener('click', e => { if (e.target === backdrop()) hide(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+  backdrop()?.addEventListener('click', e => { if (!_noBackdropClose && e.target === backdrop()) hide(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !_noBackdropClose) hide(); });
 
   return { show, hide, confirm };
 })();
@@ -615,7 +619,7 @@ Pages.templates = {
         <div class="tpl-header">
           <div>
             <div class="tpl-name">${esc(t.name)}</div>
-            ${t.brand ? `<div class="tpl-brand">${esc(t.brand)}</div>` : ''}
+            ${(Array.isArray(t.brands) && t.brands.length) ? `<div class="tpl-brand">${t.brands.map(esc).join(', ')}</div>` : t.brand ? `<div class="tpl-brand">${esc(t.brand)}</div>` : ''}
           </div>
           <div class="btn-group">
             <button class="btn btn-sm" onclick="Pages.templates.edit(${i})">Bearbeiten</button>
@@ -636,18 +640,40 @@ Pages.templates = {
 
   _displayed: [],
 
+  _brands: [],
+
+  _renderBrands() {
+    const list = document.getElementById('tfBrandList');
+    if (!list) return;
+    list.innerHTML = this._brands.map((b, i) =>
+      `<div style="display:flex;gap:8px;margin-bottom:6px">` +
+      `<input class="input" style="flex:1" value="${esc(b)}" oninput="Pages.templates._brands[${i}]=this.value">` +
+      `<button type="button" class="btn btn-sm btn-danger" onclick="Pages.templates._removeBrand(${i})">−</button>` +
+      `</div>`
+    ).join('');
+  },
+
+  _addBrand() { this._brands.push(''); this._renderBrands(); },
+  _removeBrand(i) { this._brands.splice(i, 1); this._renderBrands(); },
+
   openAdd() { this._openForm(null); },
   edit(i)   { this._openForm(this._displayed[i]); },
 
   _openForm(t) {
+    this._brands = Array.isArray(t?.brands) ? [...t.brands] : (t?.brand ? [t.brand] : []);
     const catOpts = State.categories.map(c =>
       `<option value="${esc(c.name)}" ${t?.category===c.name?'selected':''}>${esc(c.name)}</option>`).join('');
     Modal.show({
       title: t ? 'Vorlage bearbeiten' : 'Neue Vorlage',
+      noBackdropClose: true,
       body: `
         <form class="form-stack" id="tplForm">
           <div class="form-field"><label>Name *</label><input class="input" id="tfName" value="${esc(t?.name||'')}" required></div>
-          <div class="form-field"><label>Marke</label><input class="input" id="tfBrand" value="${esc(t?.brand||'')}"></div>
+          <div class="form-field">
+            <label>Marken</label>
+            <div id="tfBrandList"></div>
+            <button type="button" class="btn btn-sm" style="margin-top:4px" onclick="Pages.templates._addBrand()">+ Marke hinzufügen</button>
+          </div>
           <div class="form-field"><label>Barcode</label><input class="input" id="tfBarcode" value="${esc(t?.barcode||'')}"></div>
           <div class="form-field"><label>Kategorie</label><select class="select" id="tfCat"><option value="">—</option>${catOpts}</select></div>
           <div class="form-field"><label>Beschreibung</label><input class="input" id="tfDesc" value="${esc(t?.description||'')}"></div>
@@ -659,14 +685,16 @@ Pages.templates = {
         { label: t ? 'Speichern' : 'Erstellen', cls: 'btn-ok', onclick: () => this._submit(t) },
       ],
     });
+    this._renderBrands();
   },
 
   async _submit(original) {
     const name = document.getElementById('tfName').value.trim();
     if (!name) { Toast.warn('Name erforderlich'); return; }
+    const brands = this._brands.map(b => b.trim()).filter(b => b.length > 0);
     const data = {
       name,
-      brand:       document.getElementById('tfBrand').value.trim(),
+      brands,
       barcode:     document.getElementById('tfBarcode').value.trim(),
       category:    document.getElementById('tfCat').value,
       description: document.getElementById('tfDesc').value.trim(),
