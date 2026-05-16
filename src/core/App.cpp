@@ -8,6 +8,7 @@
 
 #include <WiFi.h>
 #include <esp_log.h>
+#include <nvs_flash.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
@@ -22,6 +23,17 @@ App::App()
       web(80) {}
 
 void App::begin() {
+    // Initialize NVS before anything else.  NimBLE accesses NVS very early
+    // (background task at ~1 ms) and can race with the framework's lazy init,
+    // causing "nvs_open failed: NOT_INITIALIZED".  Explicit init here wins the race.
+    {
+        esp_err_t ret = nvs_flash_init();
+        if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+            nvs_flash_erase();
+            nvs_flash_init();
+        }
+    }
+
     Logger::begin(115200);
     // Suppress ESP-IDF internal log output on UART0 (GPIO43 = printer TX).
     // esp_log uses UART0 by default; only errors are critical enough to keep.

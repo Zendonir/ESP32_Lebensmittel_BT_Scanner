@@ -1762,13 +1762,10 @@ Pages.serversync = {
 
       if (r.ok) {
         const syncUser = r.syncUser || 'lebensmittel_sync';
-        // Auto-fill and save the connection settings
+        // The backend already saved ip/user/pass — just update the DOM fields.
         document.getElementById('syncIp').value   = host;
         document.getElementById('syncUser').value = syncUser;
         document.getElementById('syncPass').value = sPass;
-        try {
-          await API.post('/api/server-sync', { ip: host, user: syncUser, pass: sPass });
-        } catch(_) {}
 
         out.innerHTML = `
           <div style="border:1px solid var(--ok);border-radius:8px;padding:16px;background:rgba(80,200,100,.08)">

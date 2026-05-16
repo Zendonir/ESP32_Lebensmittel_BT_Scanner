@@ -14,6 +14,7 @@ struct SyncEvent {
 class SyncManager {
 public:
     void   begin();
+    void   loadConfig();   // public so WebInterface can reload after a settings save
     void   loop();
     void   enqueue(const String &type, const String &jsonPayload);
     size_t pending() const { return _queue.size(); }

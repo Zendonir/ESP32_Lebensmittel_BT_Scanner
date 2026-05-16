@@ -787,7 +787,8 @@ void WebInterface::registerApiRoutes() {
     });
     _server.on("/api/server-sync",   HTTP_POST, [](AsyncWebServerRequest *req) {
         mergePost(req, "/server_sync_config.json", "{}");
-        sync_manager.begin(); // reload config after save
+        // Reload config so the next loop() picks up the new ip/user/pass
+        sync_manager.loadConfig();
     }, nullptr, bodyCollect);
 
     // ---- WIFI ----
