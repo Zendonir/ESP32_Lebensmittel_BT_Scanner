@@ -67,6 +67,7 @@ void App::begin() {
     state.setState(wifi_manager.isConnected() ? AppState::MAIN : AppState::AP_MODE);
 
     initFilesystem();
+    loadDisplayConfig();
     time_manager.begin(i2c_bus);
     device_config.begin();
     labelCounter.begin();
@@ -145,6 +146,11 @@ void App::loop() {
         Logger::debug("Event", String("Event received: ") + static_cast<int>(event.type));
     }
 
+    // Display standby
+    if (_standbyMs > 0 && _displayOn && (millis() - _lastActivityMs >= _standbyMs)) {
+        setBacklight(false);
+    }
+
     yield();
 }
 
@@ -162,6 +168,24 @@ void App::initBacklight() {
         Logger::warn("Display", "PWM attach failed; using digital backlight ON");
     }
     Logger::info("Display", String("Backlight ON GPIO ") + LCD_BL);
+}
+
+void App::setBacklight(bool on) {
+    _displayOn = on;
+    if (LCD_BL < 0) return;
+    ledcWrite(LCD_BL, on ? 255 : 0);
+}
+
+void App::loadDisplayConfig() {
+    JsonDocument doc;
+    if (LittleFS.exists("/display_config.json")) {
+        File f = LittleFS.open("/display_config.json", "r");
+        if (f) { deserializeJson(doc, f); f.close(); }
+    }
+    uint32_t secs = doc["standby_sec"] | 0;
+    _standbyMs = secs * 1000UL;
+    _lastActivityMs = millis();
+    Logger::info("Display", String("Standby: ") + (secs ? String(secs) + "s" : "nie"));
 }
 
 void App::initI2C() {
@@ -266,11 +290,17 @@ void App::renderActiveTab(const String &message, bool force) {
 }
 
 void App::handleTouch() {
-    // LVGL reads the touch IC via its own input-device driver (called inside
-    // display_obj.tick()).  We only need to dequeue whatever action a button
-    // callback posted into the single-slot queue.
     OnscreenAction action = display_obj.hitTest(0, 0);
-    if (action != OnscreenAction::NONE) processOnscreenAction(action);
+    if (action == OnscreenAction::NONE) return;
+
+    // Any touch resets the standby timer; if the display was off, just wake it
+    _lastActivityMs = millis();
+    if (!_displayOn) {
+        setBacklight(true);
+        return;  // swallow the touch — don't trigger accidental actions
+    }
+
+    processOnscreenAction(action);
 }
 
 char App::digitForAction(OnscreenAction action) const {
@@ -572,6 +602,9 @@ void App::processOnscreenAction(OnscreenAction action) {
 }
 
 void App::handleScan(const ScanResult &scan) {
+    _lastActivityMs = millis();
+    if (!_displayOn) setBacklight(true);
+
     Logger::info("Scanner", String("Barcode: ") + scan.code);
 
     if (workflow != WorkflowMode::HOME && workflow != WorkflowMode::RESULT) {

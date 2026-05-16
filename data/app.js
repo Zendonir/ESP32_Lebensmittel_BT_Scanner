@@ -1122,13 +1122,15 @@ Pages.design = {
 Pages.system = {
   async load() {
     try {
-      const [sys, cfg] = await Promise.all([
+      const [sys, cfg, disp] = await Promise.all([
         API.get('/api/system-info'),
         API.get('/api/device-config'),
+        API.get('/api/display-config'),
       ]);
       this.render(sys);
       document.getElementById('cfgHousehold').value  = cfg.household  || '';
       document.getElementById('cfgDeviceName').value = cfg.deviceName || '';
+      document.getElementById('cfgStandby').value    = String(disp.standby_sec ?? 0);
     } catch(e) {
       Toast.error('System: ' + e.message);
     }
@@ -1137,10 +1139,14 @@ Pages.system = {
   async saveDeviceConfig(e) {
     e.preventDefault();
     try {
-      await API.post('/api/device-config', {
-        household:  document.getElementById('cfgHousehold').value.trim(),
-        deviceName: document.getElementById('cfgDeviceName').value.trim(),
-      });
+      const standbySec = parseInt(document.getElementById('cfgStandby').value, 10) || 0;
+      await Promise.all([
+        API.post('/api/device-config', {
+          household:  document.getElementById('cfgHousehold').value.trim(),
+          deviceName: document.getElementById('cfgDeviceName').value.trim(),
+        }),
+        API.post('/api/display-config', { standby_sec: standbySec }),
+      ]);
       Toast.success('Gerät & Haushalt gespeichert');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);

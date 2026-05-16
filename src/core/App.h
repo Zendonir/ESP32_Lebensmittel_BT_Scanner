@@ -27,6 +27,7 @@ public:
     App();
     void begin();
     void loop();
+    void loadDisplayConfig();   // called from WebInterface after display-config POST
 
 private:
     enum class WorkflowMode {
@@ -45,6 +46,7 @@ private:
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
+    void setBacklight(bool on);
     void initI2C();
     void resetLCDViaTCA9554();
     void initFilesystem();
@@ -91,6 +93,9 @@ private:
     String          _statusMessage;
     String          _lastUiSignature;
     UiTab           _activeTab = UiTab::STORE;
+    uint32_t        _standbyMs = 0;        // 0 = never; 120000 / 300000 ms
+    uint32_t        _lastActivityMs = 0;
+    bool            _displayOn = true;
     ProductInfo     _pendingProduct;
     String          _pendingDateDraft;
     String          _pendingExpiryDate;

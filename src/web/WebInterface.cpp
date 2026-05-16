@@ -1,4 +1,5 @@
 #include "WebInterface.h"
+#include "../core/App.h"
 #include "../core/Logger.h"
 #include "../core/DeviceConfig.h"
 #include "../storage/JsonStorage.h"
@@ -717,6 +718,23 @@ void WebInterface::registerApiRoutes() {
 
     _server.on("/api/font-config",   HTTP_GET,  cfgGet("/font_config.json"));
     _server.on("/api/font-config",   HTTP_POST, cfgPost("/font_config.json"), nullptr, bodyCollect);
+
+    _server.on("/api/display-config", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        if (LittleFS.exists("/display_config.json")) {
+            File f = LittleFS.open("/display_config.json", "r");
+            if (f) { deserializeJson(doc, f); f.close(); }
+        }
+        if (!doc["standby_sec"].is<uint32_t>()) doc["standby_sec"] = 0;
+        String body; serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/display-config", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            mergePost(req, "/display_config.json", "{}");
+            app.loadDisplayConfig();
+        },
+        nullptr, bodyCollect);
 
     _server.on("/api/printer-config", HTTP_GET, [this](AsyncWebServerRequest *req) {
         JsonDocument doc;
