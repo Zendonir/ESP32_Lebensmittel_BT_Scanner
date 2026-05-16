@@ -7,9 +7,9 @@
 void MySQLDirect::sha1(const uint8_t *data, size_t len, uint8_t out[20]) {
     mbedtls_sha1_context ctx;
     mbedtls_sha1_init(&ctx);
-    mbedtls_sha1_starts_ret(&ctx);
-    mbedtls_sha1_update_ret(&ctx, data, len);
-    mbedtls_sha1_finish_ret(&ctx, out);
+    mbedtls_sha1_starts(&ctx);
+    mbedtls_sha1_update(&ctx, data, len);
+    mbedtls_sha1_finish(&ctx, out);
     mbedtls_sha1_free(&ctx);
 }
 

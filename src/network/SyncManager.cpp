@@ -3,7 +3,6 @@
 #include <ArduinoJson.h>
 #include "../storage/AppFS.h"
 #include <WiFi.h>
-#include <WiFiClient.h>
 #include "MySQLDirect.h"
 
 SyncManager sync_manager;
@@ -11,11 +10,11 @@ SyncManager sync_manager;
 static constexpr const char *QUEUE_FILE  = "/sync_queue.json";
 static constexpr const char *CONFIG_FILE = "/server_sync_config.json";
 
-// SQL string escaping: replace ' with '' and \ with \\
 static String sqlEsc(const String &s) {
     String r;
     r.reserve(s.length());
-    for (char c : s) {
+    for (size_t i = 0; i < s.length(); i++) {
+        char c = s[i];
         if (c == '\'') r += "''";
         else if (c == '\\') r += "\\\\";
         else r += c;
@@ -40,7 +39,6 @@ void SyncManager::loop() {
 
     SyncEvent &ev = _queue.front();
 
-    // Parse the event payload JSON
     JsonDocument doc;
     if (deserializeJson(doc, ev.payload) != DeserializationError::Ok) {
         Logger::error("Sync", String("bad payload type=") + ev.type);
@@ -59,13 +57,14 @@ void SyncManager::loop() {
         String category     = sqlEsc(doc["category"]     | "");
         String expiryDate   = sqlEsc(doc["expiryDate"]   | "");
         String addedDate    = sqlEsc(doc["addedDate"]    | "");
-        int    quantity     = doc["quantity"]             | 1;
+        int    qty          = doc["quantity"]             | 1;
         String household    = sqlEsc(doc["household"]    | "");
         String deviceName   = sqlEsc(doc["deviceName"]   | "");
 
-        sql  = "INSERT INTO `Lebensmittel_Scanner`.`inventar` ";
-        sql += "(`label_barcode`,`barcode`,`name`,`brand`,`category`,`expiry_date`,`added_date`,`quantity`,`household`,`device_name`) ";
-        sql += "VALUES ('";
+        sql  = "INSERT INTO `Lebensmittel_Scanner`.`inventar`";
+        sql += " (`label_barcode`,`barcode`,`name`,`brand`,`category`,";
+        sql += "`expiry_date`,`added_date`,`quantity`,`household`,`device_name`)";
+        sql += " VALUES ('";
         sql += labelBarcode; sql += "','";
         sql += barcode;      sql += "','";
         sql += name;         sql += "','";
@@ -73,19 +72,20 @@ void SyncManager::loop() {
         sql += category;     sql += "','";
         sql += expiryDate;   sql += "','";
         sql += addedDate;    sql += "',";
-        sql += quantity;     sql += ",'";
+        sql += qty;          sql += ",'";
         sql += household;    sql += "','";
-        sql += deviceName;   sql += "') ";
-        sql += "ON DUPLICATE KEY UPDATE ";
-        sql += "`barcode`=VALUES(`barcode`),`name`=VALUES(`name`),`brand`=VALUES(`brand`),";
-        sql += "`category`=VALUES(`category`),`expiry_date`=VALUES(`expiry_date`),";
-        sql += "`added_date`=VALUES(`added_date`),`quantity`=VALUES(`quantity`),";
-        sql += "`household`=VALUES(`household`),`device_name`=VALUES(`device_name`)";
+        sql += deviceName;   sql += "')";
+        sql += " ON DUPLICATE KEY UPDATE";
+        sql += " `barcode`=VALUES(`barcode`),`name`=VALUES(`name`),";
+        sql += "`brand`=VALUES(`brand`),`category`=VALUES(`category`),";
+        sql += "`expiry_date`=VALUES(`expiry_date`),`added_date`=VALUES(`added_date`),";
+        sql += "`quantity`=VALUES(`quantity`),`household`=VALUES(`household`),";
+        sql += "`device_name`=VALUES(`device_name`)";
 
     } else if (ev.type == "REMOVE_LABEL") {
-        String labelBarcode = sqlEsc(doc["labelBarcode"] | "");
+        String lb = sqlEsc(doc["labelBarcode"] | "");
         sql  = "DELETE FROM `Lebensmittel_Scanner`.`inventar` WHERE `label_barcode`='";
-        sql += labelBarcode;
+        sql += lb;
         sql += "'";
 
     } else {
@@ -158,8 +158,6 @@ bool SyncManager::testConnection(String &outMsg) {
     if (ok) db.close();
     return ok;
 }
-
-// ---------- private ----------
 
 void SyncManager::loadConfig() {
     if (!AppFS::fs().exists(CONFIG_FILE)) return;
