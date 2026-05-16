@@ -192,6 +192,23 @@ static void sendNoCacheFile(AsyncWebServerRequest *req, const char *path, const 
     req->send(response);
 }
 
+// ETag derived from compile time — changes whenever firmware is rebuilt/reflashed.
+// Browser caches static assets and revalidates with If-None-Match; server sends
+// 304 (no body) when unchanged, which is nearly instant even over slow WiFi.
+static const char *BUILD_ETAG = "\"" __DATE__ "-" __TIME__ "\"";
+
+static void sendCachedFile(AsyncWebServerRequest *req, const char *path, const char *contentType) {
+    AsyncWebHeader *etag = req->getHeader("If-None-Match");
+    if (etag && etag->value() == BUILD_ETAG) {
+        req->send(304);
+        return;
+    }
+    AsyncWebServerResponse *response = req->beginResponse(LittleFS, path, contentType);
+    response->addHeader("Cache-Control", "no-cache");
+    response->addHeader("ETag", BUILD_ETAG);
+    req->send(response);
+}
+
 void WebInterface::registerStaticRoutes() {
     // Root: show WiFi setup while offline/AP-only; /?app=1 opens the main SPA explicitly
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -205,7 +222,7 @@ void WebInterface::registerStaticRoutes() {
             return;
         }
         if (LittleFS.exists("/index.html")) {
-            sendNoCacheFile(req, "/index.html", "text/html");
+            sendCachedFile(req, "/index.html", "text/html");
             return;
         }
         // Filesystem not uploaded yet
@@ -275,14 +292,14 @@ void WebInterface::registerStaticRoutes() {
 
     _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/style.css"))
-            sendNoCacheFile(req, "/style.css", "text/css");
+            sendCachedFile(req, "/style.css", "text/css");
         else
             req->send(404, "text/plain", "style.css not found – run uploadfs");
     });
 
     _server.on("/app.js", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/app.js"))
-            sendNoCacheFile(req, "/app.js", "application/javascript");
+            sendCachedFile(req, "/app.js", "application/javascript");
         else
             req->send(404, "text/plain", "app.js not found – run uploadfs");
     });
@@ -301,7 +318,7 @@ void WebInterface::registerStaticRoutes() {
         }
         // SPA fallback — all non-API routes load the app
         if (LittleFS.exists("/index.html"))
-            sendNoCacheFile(req, "/index.html", "text/html");
+            sendCachedFile(req, "/index.html", "text/html");
         else
             req->send(404, "text/plain", "Not found");
     });
