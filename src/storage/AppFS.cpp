@@ -3,9 +3,9 @@
 #include <SD_MMC.h>
 #include "../core/Logger.h"
 
-// UserDataFS is intentionally file-scoped so callers never need the
-// LittleFSFS type in their headers – they use AppFS::fs() instead.
-static LittleFSFS UserDataFS;
+// Use decltype so we match whatever class LittleFS is in this framework version,
+// avoiding a hard-coded 'LittleFSFS' that may not exist.
+static decltype(LittleFS) UserDataFS;
 static bool _sd = false;
 
 bool AppFS::begin() {
