@@ -36,7 +36,7 @@ private:
 
     void saveQueue();
     void loadQueue();
-    bool postJson(const String &json, int *outCode = nullptr);
+    bool execDirectMySQL(const String &sql);
 };
 
 extern SyncManager sync_manager;

@@ -16,8 +16,9 @@
 #include "../storage/AppFS.h"
 #include <Update.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
 #include <WiFiClient.h>
+#include <MySQL_Connection.h>
+#include <MySQL_Cursor.h>
 #include <esp_system.h>
 
 /* ── WiFi scan cache ──────────────────────────────────────────── */
@@ -837,9 +838,9 @@ void WebInterface::registerApiRoutes() {
         sync_manager.clearQueue();
         req->send(200, "application/json", "{\"ok\":true}");
     });
-    // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
-    // Root credentials are forwarded but NEVER stored on this device.
-    // The HTTP relay runs in a dedicated FreeRTOS task so the async server is not blocked.
+    // Setup wizard: connect directly to MySQL as root, create DB/tables/user, then store
+    // the sync credentials. Root credentials are NEVER stored on this device.
+    // Runs in a dedicated FreeRTOS task so the async server is not blocked.
     _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
         Serial.println("[SetupWizard] *** HANDLER ENTERED ***");
         Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
@@ -881,69 +882,138 @@ void WebInterface::registerApiRoutes() {
             return;
         }
 
-        // Build forwarded body
-        JsonDocument fwd;
-        fwd["rootUser"] = rootUser;
-        fwd["rootPass"] = rootPass;
-        fwd["syncPass"] = syncPass;
-        String fwdBody;
-        serializeJson(fwd, fwdBody);
-        String setupUrl = "http://" + host + "/lebensmittel_setup.php";
-        Serial.printf("[SetupWizard] Spawning task for URL: %s\n", setupUrl.c_str());
+        Serial.printf("[SetupWizard] Spawning direct-MySQL task for host: %s\n", host.c_str());
         Serial.flush();
 
-        // Offload the blocking HTTP request to a FreeRTOS task so the async server stays responsive.
+        // Offload the blocking MySQL operations to a FreeRTOS task.
         struct Payload {
             AsyncWebServerRequest *req;
-            String url;
-            String body;
-            String syncPass;
             String host;
+            String rootUser;
+            String rootPass;
+            String syncPass;
         };
-        auto *p = new Payload{req, setupUrl, fwdBody, syncPass, host};
+        auto *p = new Payload{req, host, rootUser, rootPass, syncPass};
 
         xTaskCreate([](void *param) {
             auto *p = static_cast<Payload *>(param);
-            Serial.printf("[SetupWizard] Task running, POST → %s\n", p->url.c_str());
+            Serial.printf("[SetupWizard] Task running, connecting to MySQL at %s:3306\n", p->host.c_str());
             Serial.flush();
 
+            IPAddress serverIP;
+            serverIP.fromString(p->host);
+            char userBuf[64], passBuf[128];
+            strncpy(userBuf, p->rootUser.c_str(), 63); userBuf[63] = 0;
+            strncpy(passBuf, p->rootPass.c_str(), 127); passBuf[127] = 0;
+
             WiFiClient wc;
-            HTTPClient hc;
-            hc.setTimeout(12000);
-            hc.setConnectTimeout(6000);
-            String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
-            if (hc.begin(wc, p->url)) {
-                hc.addHeader("Content-Type", "application/json");
-                int code = hc.POST((uint8_t *)p->body.c_str(), p->body.length());
-                Serial.printf("[SetupWizard] HTTP POST code=%d\n", code);
-                Serial.flush();
-                if (code > 0) {
-                    result = hc.getString();
-                    Serial.printf("[SetupWizard] Response: %s\n", result.substring(0, 200).c_str());
-                    Serial.flush();
-                    // If server returned ok, persist config
-                    JsonDocument res;
-                    if (deserializeJson(res, result) == DeserializationError::Ok && res["ok"].as<bool>()) {
-                        JsonDocument cfg;
-                        loadJson("/server_sync_config.json", cfg, "{}");
-                        cfg["ip"]   = p->host;
-                        cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
-                        cfg["pass"] = p->syncPass;
-                        saveJson("/server_sync_config.json", cfg);
-                        sync_manager.loadConfig();
-                        Serial.printf("[SetupWizard] Config saved OK\n");
-                        Serial.flush();
-                    }
-                } else {
-                    Serial.printf("[SetupWizard] HTTP POST error code=%d\n", code);
-                    Serial.flush();
-                }
-                hc.end();
-            } else {
-                Serial.println("[SetupWizard] hc.begin() failed");
-                Serial.flush();
+            wc.setTimeout(6000);
+            MySQL_Connection conn((Client*)&wc);
+            bool connected = conn.connect(serverIP, 3306, userBuf, passBuf);
+            Serial.printf("[SetupWizard] MySQL connect result: %d\n", (int)connected);
+            Serial.flush();
+
+            if (!connected) {
+                p->req->send(200, "application/json", "{\"ok\":false,\"error\":\"MySQL-Verbindung fehlgeschlagen\"}");
+                delete p;
+                vTaskDelete(nullptr);
+                return;
             }
-            p->req->send(200, "application/json", result);
+
+            MySQL_Cursor cur(&conn);
+            String syncPass = p->syncPass;
+
+            // Helper lambda to execute a single SQL statement
+            auto execSQL = [&](const char *sql) -> bool {
+                Serial.printf("[SetupWizard] SQL: %.120s\n", sql);
+                Serial.flush();
+                bool ok = cur.execute(sql);
+                Serial.printf("[SetupWizard] SQL result: %d\n", (int)ok);
+                Serial.flush();
+                return ok;
+            };
+
+            bool ok = true;
+
+            // 1. Create database
+            ok = ok && execSQL(
+                "CREATE DATABASE IF NOT EXISTS `Lebensmittel_Scanner` "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            );
+
+            // 2. Create inventar table
+            ok = ok && execSQL(
+                "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`inventar` ("
+                "`id` INT AUTO_INCREMENT PRIMARY KEY,"
+                "`label_barcode` VARCHAR(60) NOT NULL UNIQUE,"
+                "`barcode` VARCHAR(60),"
+                "`name` VARCHAR(200),"
+                "`brand` VARCHAR(100),"
+                "`category` VARCHAR(100),"
+                "`expiry_date` VARCHAR(20),"
+                "`added_date` VARCHAR(20),"
+                "`quantity` INT DEFAULT 1,"
+                "`household` VARCHAR(100),"
+                "`device_name` VARCHAR(100),"
+                "`synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+
+            // 3. Create sync_log table
+            ok = ok && execSQL(
+                "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`sync_log` ("
+                "`id` INT AUTO_INCREMENT PRIMARY KEY,"
+                "`event_type` VARCHAR(30),"
+                "`label_barcode` VARCHAR(60),"
+                "`barcode` VARCHAR(60),"
+                "`name` VARCHAR(200),"
+                "`household` VARCHAR(100),"
+                "`device_name` VARCHAR(100),"
+                "`event_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+
+            // 4. Create sync user (if not exists)
+            {
+                String sql4 = String("CREATE USER IF NOT EXISTS 'lebensmittel_sync'@'%' "
+                                     "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'";
+                ok = ok && execSQL(sql4.c_str());
+            }
+
+            // 5. Ensure password is correct (ALTER USER)
+            {
+                String sql5 = String("ALTER USER 'lebensmittel_sync'@'%' "
+                                     "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'";
+                ok = ok && execSQL(sql5.c_str());
+            }
+
+            // 6. Grant privileges
+            ok = ok && execSQL(
+                "GRANT SELECT,INSERT,UPDATE,DELETE ON `Lebensmittel_Scanner`.* TO 'lebensmittel_sync'@'%'"
+            );
+
+            // 7. Flush privileges
+            ok = ok && execSQL("FLUSH PRIVILEGES");
+
+            conn.close();
+            Serial.printf("[SetupWizard] All SQL steps ok=%d\n", (int)ok);
+            Serial.flush();
+
+            if (ok) {
+                // Save config (root credentials are NOT stored)
+                JsonDocument cfg;
+                cfg["ip"]   = p->host;
+                cfg["user"] = "lebensmittel_sync";
+                cfg["pass"] = syncPass;
+                saveJson("/server_sync_config.json", cfg);
+                sync_manager.loadConfig();
+                Serial.printf("[SetupWizard] Config saved OK\n");
+                Serial.flush();
+                p->req->send(200, "application/json", "{\"ok\":true}");
+            } else {
+                p->req->send(200, "application/json", "{\"ok\":false,\"error\":\"MySQL-Setup fehlgeschlagen\"}");
+            }
+
             delete p;
             vTaskDelete(nullptr);
         }, "setup_wiz", 8192, p, 1, nullptr);

@@ -3,18 +3,25 @@
 #include <ArduinoJson.h>
 #include "../storage/AppFS.h"
 #include <WiFi.h>
-#include <HTTPClient.h>
 #include <WiFiClient.h>
+#include <MySQL_Connection.h>
+#include <MySQL_Cursor.h>
 
 SyncManager sync_manager;
 
 static constexpr const char *QUEUE_FILE  = "/sync_queue.json";
 static constexpr const char *CONFIG_FILE = "/server_sync_config.json";
 
-// Derive the sync_bridge URL from the stored IP
-static String bridgeUrl(const String &ip) {
-    if (ip.isEmpty()) return "";
-    return "http://" + ip + "/sync_bridge.php";
+// SQL string escaping: replace ' with '' and \ with \\
+static String sqlEsc(const String &s) {
+    String r;
+    r.reserve(s.length());
+    for (char c : s) {
+        if (c == '\'') r += "''";
+        else if (c == '\\') r += "\\\\";
+        else r += c;
+    }
+    return r;
 }
 
 void SyncManager::begin() {
@@ -33,7 +40,63 @@ void SyncManager::loop() {
     _lastAttemptMs = now;
 
     SyncEvent &ev = _queue.front();
-    bool ok = postJson(ev.payload);
+
+    // Parse the event payload JSON
+    JsonDocument doc;
+    if (deserializeJson(doc, ev.payload) != DeserializationError::Ok) {
+        Logger::error("Sync", String("bad payload type=") + ev.type);
+        _queue.erase(_queue.begin());
+        saveQueue();
+        return;
+    }
+
+    String sql;
+
+    if (ev.type == "ADD") {
+        String labelBarcode = sqlEsc(doc["labelBarcode"] | "");
+        String barcode      = sqlEsc(doc["barcode"]      | "");
+        String name         = sqlEsc(doc["name"]         | "");
+        String brand        = sqlEsc(doc["brand"]        | "");
+        String category     = sqlEsc(doc["category"]     | "");
+        String expiryDate   = sqlEsc(doc["expiryDate"]   | "");
+        String addedDate    = sqlEsc(doc["addedDate"]    | "");
+        int    quantity     = doc["quantity"]             | 1;
+        String household    = sqlEsc(doc["household"]    | "");
+        String deviceName   = sqlEsc(doc["deviceName"]   | "");
+
+        sql  = "INSERT INTO `Lebensmittel_Scanner`.`inventar` ";
+        sql += "(`label_barcode`,`barcode`,`name`,`brand`,`category`,`expiry_date`,`added_date`,`quantity`,`household`,`device_name`) ";
+        sql += "VALUES ('";
+        sql += labelBarcode; sql += "','";
+        sql += barcode;      sql += "','";
+        sql += name;         sql += "','";
+        sql += brand;        sql += "','";
+        sql += category;     sql += "','";
+        sql += expiryDate;   sql += "','";
+        sql += addedDate;    sql += "',";
+        sql += quantity;     sql += ",'";
+        sql += household;    sql += "','";
+        sql += deviceName;   sql += "') ";
+        sql += "ON DUPLICATE KEY UPDATE ";
+        sql += "`barcode`=VALUES(`barcode`),`name`=VALUES(`name`),`brand`=VALUES(`brand`),";
+        sql += "`category`=VALUES(`category`),`expiry_date`=VALUES(`expiry_date`),";
+        sql += "`added_date`=VALUES(`added_date`),`quantity`=VALUES(`quantity`),";
+        sql += "`household`=VALUES(`household`),`device_name`=VALUES(`device_name`)";
+
+    } else if (ev.type == "REMOVE_LABEL") {
+        String labelBarcode = sqlEsc(doc["labelBarcode"] | "");
+        sql  = "DELETE FROM `Lebensmittel_Scanner`.`inventar` WHERE `label_barcode`='";
+        sql += labelBarcode;
+        sql += "'";
+
+    } else {
+        Logger::warn("Sync", String("unknown event type=") + ev.type + ", dropping");
+        _queue.erase(_queue.begin());
+        saveQueue();
+        return;
+    }
+
+    bool ok = execDirectMySQL(sql);
     if (ok) {
         Logger::info("Sync", String("sent type=") + ev.type);
         _lastSyncTime = time(nullptr);
@@ -96,16 +159,27 @@ bool SyncManager::testConnection(String &outMsg) {
         return false;
     }
 
-    JsonDocument doc;
-    doc["type"] = "PING";
-    String body;
-    serializeJson(doc, body);
+    IPAddress serverIP;
+    if (!serverIP.fromString(_ip)) {
+        outMsg = "Ungültige Server-IP: " + _ip;
+        return false;
+    }
 
-    int code = 0;
-    bool ok  = postJson(body, &code);
-    outMsg = ok
-        ? "Verbindung erfolgreich (HTTP " + String(code) + ")"
-        : "Verbindung fehlgeschlagen (HTTP " + String(code) + ")";
+    char userBuf[64], passBuf[64];
+    strncpy(userBuf, _user.c_str(), 63); userBuf[63] = 0;
+    strncpy(passBuf, _pass.c_str(), 63); passBuf[63] = 0;
+
+    WiFiClient wc;
+    wc.setTimeout(5000);
+    MySQL_Connection conn((Client*)&wc);
+
+    bool ok = conn.connect(serverIP, 3306, userBuf, passBuf);
+    if (ok) {
+        conn.close();
+        outMsg = "MySQL-Verbindung erfolgreich";
+    } else {
+        outMsg = "MySQL-Verbindung fehlgeschlagen";
+    }
     return ok;
 }
 
@@ -156,26 +230,25 @@ void SyncManager::loadQueue() {
     }
 }
 
-bool SyncManager::postJson(const String &json, int *outCode) {
-    String url = bridgeUrl(_ip);
-    HTTPClient http;
-    http.setTimeout(8000);
-    http.setReuse(false);
+bool SyncManager::execDirectMySQL(const String &sql) {
+    if (_ip.isEmpty()) return false;
+    IPAddress serverIP;
+    if (!serverIP.fromString(_ip)) return false;
 
-    bool ok   = false;
-    int  code = 0;
+    char userBuf[64], passBuf[64];
+    strncpy(userBuf, _user.c_str(), 63); userBuf[63] = 0;
+    strncpy(passBuf, _pass.c_str(), 63); passBuf[63] = 0;
 
-    WiFiClient client;
-    if (http.begin(client, url)) {
-        http.addHeader("Content-Type", "application/json");
-        // Send credentials as headers — bridge uses them to connect to MySQL
-        http.addHeader("X-DB-User", _user);
-        http.addHeader("X-DB-Pass", _pass);
-        code = http.POST((uint8_t *)json.c_str(), json.length());
-        http.end();
-        ok = (code >= 200 && code < 300);
+    WiFiClient wc;
+    wc.setTimeout(5000);
+    MySQL_Connection conn((Client*)&wc);
+
+    if (!conn.connect(serverIP, 3306, userBuf, passBuf)) {
+        Logger::warn("Sync", "MySQL connect failed");
+        return false;
     }
-
-    if (outCode) *outCode = code;
+    MySQL_Cursor cur(&conn);
+    bool ok = cur.execute(sql.c_str());
+    conn.close();
     return ok;
 }
