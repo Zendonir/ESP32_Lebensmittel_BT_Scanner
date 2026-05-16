@@ -22,7 +22,7 @@ void WiFiManager::init() {
     Serial.flush();
     current_mode = MODE_AP_STA;
 
-    if (autoConnect(20000)) {
+    if (autoConnect(45000)) {
         Serial.printf("[WiFi] Station connected, IP: %s\n", WiFi.localIP().toString().c_str());
         // WiFi is up – shut the AP down so the hotspot is invisible and
         // captive-portal redirects don't intercept normal browser traffic.
@@ -86,17 +86,22 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
     uint32_t start = millis();
     wl_status_t lastStatus = WL_IDLE_STATUS;
     int retries = 0;
+    uint32_t stuckSince = millis();   // tracks when we last saw a status we wanted to leave
+    wl_status_t stuckStatus = WL_DISCONNECTED;
+
     while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
         wl_status_t status = WiFi.status();
         if (status != lastStatus) {
             Serial.printf("[WiFi] Auto-connect status: %d\n", status);
             Serial.flush();
             lastStatus = status;
+            // Reset stuck timer on any status change
+            stuckSince  = millis();
+            stuckStatus = status;
         }
+
         // WL_CONNECT_FAILED: router rejected the attempt (wrong password, RF issue,
         // or router busy).  Retry up to 3 times.
-        // Wait only for WL_DISCONNECTED (6) — WL_IDLE_STATUS (0) may mean the stack
-        // is already mid-connect, which would cause ESP_ERR_WIFI_STATE on begin().
         if (status == WL_CONNECT_FAILED && retries < 3) {
             retries++;
             Serial.printf("[WiFi] Connection failed, retry %d/3 – waiting for clean disconnect...\n", retries);
@@ -116,7 +121,26 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
             Serial.flush();
             WiFi.begin(ssid, pass[0] ? pass : nullptr);
             lastStatus = WL_IDLE_STATUS;
+            stuckSince = millis();
         }
+
+        // WL_DISCONNECTED held for >8 s without any progress means the stack
+        // silently failed to start the connection (common when the AP is on a
+        // crowded channel or when APSTA mode delays the STA associate).
+        // Treat it like a connect failure and retry.
+        if ((status == WL_DISCONNECTED || status == WL_IDLE_STATUS)
+                && retries < 3
+                && millis() - stuckSince > 8000) {
+            retries++;
+            Serial.printf("[WiFi] Stuck at status %d for 8s, retry %d/3\n", status, retries);
+            Serial.flush();
+            WiFi.disconnect(false, false);
+            delay(500);
+            WiFi.begin(ssid, pass[0] ? pass : nullptr);
+            lastStatus = WL_IDLE_STATUS;
+            stuckSince = millis();
+        }
+
         delay(250);
     }
     // Re-enable auto-reconnect so the station can recover from transient drops
