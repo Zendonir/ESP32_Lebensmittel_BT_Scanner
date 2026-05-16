@@ -927,7 +927,9 @@ void WebInterface::registerApiRoutes() {
     });
     // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
     // Root credentials are forwarded but NEVER stored on this device.
+    // BUILD-MARKER: v2 – logging active
     _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
+        Serial.println("[SetupWizard] *** HANDLER ENTERED ***");
         Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
                       static_cast<unsigned>(_body.length()));
         Serial.flush();
