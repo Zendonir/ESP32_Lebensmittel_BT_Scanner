@@ -4,3 +4,11 @@ CONFIG_FATFS_EXFAT_SUPPORT=y
 # NimBLE initialization triggers inter-core IPC calls that overflow the
 # default ipc0 task stack (1024 bytes) on ESP32-S3.
 CONFIG_ESP_IPC_TASK_STACK_SIZE=2048
+
+# mbedTLS memory: free handshake data as soon as it is no longer needed so the
+# peak heap usage during HTTPS (OpenFoodFacts) stays below the available
+# internal SRAM.  Without these flags the SSL client holds ~50 KB simultaneously,
+# causing MBEDTLS_ERR_SSL_ALLOC_FAILED when WiFi + BLE + LVGL are all active.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y

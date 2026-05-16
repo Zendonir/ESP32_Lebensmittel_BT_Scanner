@@ -75,6 +75,10 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
 
     WiFi.mode(WIFI_MODE_APSTA);
     WiFi.setSleep(false);
+    // Disable auto-reconnect so the ESP-IDF WiFi stack doesn't start its own
+    // reconnect attempt between our retries, which would cause ESP_ERR_WIFI_STATE
+    // when we call WiFi.begin() while the stack is already connecting.
+    WiFi.setAutoReconnect(false);
     WiFi.begin(ssid, pass[0] ? pass : nullptr);
     Serial.printf("[WiFi] Auto-connect to saved SSID: %s\n", ssid);
     Serial.flush();
@@ -91,21 +95,19 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
         }
         // WL_CONNECT_FAILED: router rejected the attempt (wrong password, RF issue,
         // or router busy).  Retry up to 3 times.
-        // IMPORTANT: WiFi.disconnect() returns immediately but the internal ESP-IDF
-        // state machine needs time to fully reset before the next WiFi.begin() can
-        // succeed — calling begin() too early causes ESP_ERR_WIFI_STATE (0x3006).
-        // Wait until status becomes WL_DISCONNECTED (6) before retrying.
+        // Wait only for WL_DISCONNECTED (6) — WL_IDLE_STATUS (0) may mean the stack
+        // is already mid-connect, which would cause ESP_ERR_WIFI_STATE on begin().
         if (status == WL_CONNECT_FAILED && retries < 3) {
             retries++;
             Serial.printf("[WiFi] Connection failed, retry %d/3 – waiting for clean disconnect...\n", retries);
             Serial.flush();
             WiFi.disconnect(false, false);
 
-            // Wait up to 3 s for the WiFi stack to fully settle into DISCONNECTED state
+            // Wait up to 3 s for the WiFi stack to reach WL_DISCONNECTED
             uint32_t discStart = millis();
             while (millis() - discStart < 3000) {
                 wl_status_t s = WiFi.status();
-                if (s == WL_DISCONNECTED || s == WL_IDLE_STATUS || s == WL_NO_SSID_AVAIL) break;
+                if (s == WL_DISCONNECTED || s == WL_NO_SSID_AVAIL) break;
                 delay(50);
             }
             delay(300); // extra margin for the internal state machine
@@ -117,6 +119,9 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
         }
         delay(250);
     }
+    // Re-enable auto-reconnect so the station can recover from transient drops
+    // during normal operation without requiring a full restart.
+    WiFi.setAutoReconnect(true);
     if (WiFi.status() == WL_CONNECTED) {
         current_ssid = ssid;
         return true;
