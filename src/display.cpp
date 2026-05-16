@@ -915,7 +915,7 @@ void Display::showListScreen(const char *title,
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
         _spr.setTextFont(2);
         _spr.setTextDatum(MR_DATUM);
-        _spr.drawString("< wischen = zur\xFCck", SCR_W - 8, HDR_H / 2);
+        _spr.drawString("< wischen = zur\xFC" "ck", SCR_W - 8, HDR_H / 2);
     }
 
     // Taller rows for comfortable finger tapping and larger text
@@ -974,7 +974,7 @@ void Display::showTemplateMHD(const String &productName,
     _spr.drawString(trunc(productName, 22).c_str(), 8, HDR_H / 2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
-    _spr.drawString("< wischen = zur\xFCck", SCR_W - 8, HDR_H / 2);
+    _spr.drawString("< wischen = zur\xFC" "ck", SCR_W - 8, HDR_H / 2);
 
     // MHD display (no day-adjust buttons)
     int mhd_y = HDR_H + 6;

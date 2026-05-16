@@ -34,7 +34,6 @@ private:
     static constexpr uint32_t RETRY_INTERVAL_MS = 30000;
     static constexpr uint8_t  MAX_RETRIES        = 5;
 
-    void loadConfig();
     void saveQueue();
     void loadQueue();
     bool postJson(const String &json, int *outCode = nullptr);
