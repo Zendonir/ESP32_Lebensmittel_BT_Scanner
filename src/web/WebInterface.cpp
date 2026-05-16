@@ -467,8 +467,8 @@ void WebInterface::registerApiRoutes() {
         doc["ip"]         = WiFi.localIP().toString();
         const char *hn    = WiFi.getHostname();
         doc["hostname"]   = hn ? hn : "esp32-scanner";
-        doc["fsUsed"]     = (uint32_t)UserDataFS.usedBytes();
-        doc["fsTotal"]    = (uint32_t)UserDataFS.totalBytes();
+        doc["fsUsed"]     = (uint32_t)AppFS::userDataUsedBytes();
+        doc["fsTotal"]    = (uint32_t)AppFS::userDataTotalBytes();
         doc["sdMounted"]  = AppFS::usingSD();
         unsigned long s   = millis() / 1000;
         char up[32];
@@ -1397,12 +1397,12 @@ void WebInterface::registerApiRoutes() {
         [](AsyncWebServerRequest *req) {
             req->send(200, "application/json", "{\"ok\":true}");
             delay(300);
-            UserDataFS.format();
+            AppFS::formatUserData();
             esp_restart();
         });
     _server.on("/api/format-fs", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            UserDataFS.format();
+            AppFS::formatUserData();
             req->send(200, "application/json", "{\"ok\":true}");
         });
     _server.on("/api/cache/clear", HTTP_POST,

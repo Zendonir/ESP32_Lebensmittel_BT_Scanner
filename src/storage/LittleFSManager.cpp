@@ -13,25 +13,18 @@ bool LittleFSManager::begin() {
     Logger::info("LittleFS", String("Web partition – ") + LittleFS.usedBytes() + "/" + LittleFS.totalBytes() + " B");
 
     // Mount user-data partition (label "userdata" – never touched by uploadfs).
-    if (!UserDataFS.begin(false, "/userdata", 10, "userdata")) {
-        Logger::warn("LittleFS", "Userdata partition mount failed – formatting once");
-        if (!UserDataFS.begin(true, "/userdata", 10, "userdata")) {
-            Logger::error("LittleFS", "Userdata partition format failed");
-            return false;
-        }
-    }
-    Logger::info("LittleFS", String("Userdata partition – ") + UserDataFS.usedBytes() + "/" + UserDataFS.totalBytes() + " B");
+    AppFS::beginUserData();
 
     AppFS::begin();
     return true;
 }
 
 bool LittleFSManager::exists(const char *path) const {
-    return UserDataFS.exists(path);
+    return AppFS::fs().exists(path);
 }
 
 bool LittleFSManager::readFile(const char *path, String &out) const {
-    File file = UserDataFS.open(path, "r");
+    File file = AppFS::fs().open(path, "r");
     if (!file) return false;
     out = file.readString();
     file.close();
@@ -40,16 +33,16 @@ bool LittleFSManager::readFile(const char *path, String &out) const {
 
 bool LittleFSManager::writeFileAtomic(const char *path, const String &content) const {
     String tmpPath = String(path) + ".tmp";
-    File file = UserDataFS.open(tmpPath, "w");
+    File file = AppFS::fs().open(tmpPath, "w");
     if (!file) return false;
     size_t written = file.print(content);
     file.close();
     if (written != content.length()) {
-        UserDataFS.remove(tmpPath);
+        AppFS::fs().remove(tmpPath);
         return false;
     }
-    UserDataFS.remove(path);
-    return UserDataFS.rename(tmpPath, path);
+    AppFS::fs().remove(path);
+    return AppFS::fs().rename(tmpPath, path);
 }
 
 bool LittleFSManager::ensureJsonFile(const char *path, const char *defaultJson) const {

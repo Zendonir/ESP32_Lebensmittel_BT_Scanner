@@ -1,15 +1,13 @@
 #pragma once
 #include <FS.h>
-#include <LittleFS.h>
-
-// Second LittleFS instance mounted on the "userdata" partition.
-// Web-file serving uses the global LittleFS (mounted on "spiffs" partition).
-// User data uses UserDataFS so uploadfs never overwrites it.
-extern LittleFSFS UserDataFS;
 
 namespace AppFS {
-    bool begin();
+    bool begin();           // try SD_MMC, fall back silently
+    bool beginUserData();   // mount the userdata LittleFS partition
     bool usingSD();
-    fs::FS& fs();      // user data: SD_MMC if mounted, else UserDataFS
-    fs::FS& webFs();   // web static files: always LittleFS (spiffs partition)
+    fs::FS& fs();           // user data: SD_MMC if mounted, else userdata partition
+    fs::FS& webFs();        // web static files: spiffs partition (LittleFS)
+    void formatUserData();  // erase only the userdata partition (factory-reset)
+    size_t userDataUsedBytes();
+    size_t userDataTotalBytes();
 }
