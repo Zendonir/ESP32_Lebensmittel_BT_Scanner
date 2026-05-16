@@ -329,13 +329,15 @@ void WebInterface::sendError(AsyncWebServerRequest *req, const char *msg, int co
 /* Global body buffer — rebuilt per-request by bodyCollect() */
 static String _body;
 
-static void bodyCollect(AsyncWebServerRequest *, uint8_t *data, size_t len,
+static void bodyCollect(AsyncWebServerRequest *req, uint8_t *data, size_t len,
                         size_t index, size_t total) {
     if (index == 0) {
         _body = "";
-        _body.reserve(total);
+        _body.reserve(total > 0 ? total : 512);
     }
     _body += String(reinterpret_cast<char *>(data), len);
+    // If server doesn't send Content-Length (chunked), trigger manually on non-empty chunk
+    (void)req; (void)total;
 }
 
 static bool loadJson(const char *path, JsonDocument &doc,
@@ -798,6 +800,125 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/telegram",      HTTP_GET,  cfgGet("/telegram_config.json"));
     _server.on("/api/telegram",      HTTP_POST, cfgPost("/telegram_config.json"), nullptr, bodyCollect);
 
+    // Sub-routes MUST be registered before the base "/api/server-sync" route because
+    // ESPAsyncWebServer uses prefix matching — POST /api/server-sync would otherwise
+    // intercept /api/server-sync/setup, /api/server-sync/test etc.
+    _server.on("/api/server-sync/test", HTTP_POST, [](AsyncWebServerRequest *req) {
+        String msg;
+        bool ok = sync_manager.testConnection(msg);
+        JsonDocument doc;
+        doc["ok"]      = ok;
+        doc["message"] = msg;
+        String body; serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/server-sync/queue", HTTP_GET, [](AsyncWebServerRequest *req) {
+        req->send(200, "application/json", sync_manager.getQueueJson());
+    });
+    _server.on("/api/server-sync/queue/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
+        sync_manager.clearQueue();
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+    // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
+    // Root credentials are forwarded but NEVER stored on this device.
+    _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
+        Serial.println("[SetupWizard] *** HANDLER ENTERED ***");
+        Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
+                      static_cast<unsigned>(_body.length()));
+        Serial.flush();
+
+        JsonDocument inp;
+        DeserializationError derr = deserializeJson(inp, _body);
+        if (derr != DeserializationError::Ok) {
+            Serial.printf("[SetupWizard] JSON parse failed: %s\n", derr.c_str());
+            Serial.flush();
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"Ungültige JSON-Daten\"}");
+            return;
+        }
+        String host     = inp["host"]     | "";
+        String rootUser = inp["rootUser"] | "";
+        String rootPass = inp["rootPass"] | "";
+        String syncPass = inp["syncPass"] | "";
+        Serial.printf("[SetupWizard] Fields: host='%s' rootUser='%s' rootPassLen=%u syncPassLen=%u\n",
+                      host.c_str(), rootUser.c_str(),
+                      static_cast<unsigned>(rootPass.length()),
+                      static_cast<unsigned>(syncPass.length()));
+        Serial.flush();
+
+        if (host.isEmpty() || rootUser.isEmpty() || rootPass.isEmpty() || syncPass.isEmpty()) {
+            Serial.printf("[SetupWizard] Validation failed: host=%d rootUser=%d rootPass=%d syncPass=%d\n",
+                          (int)!host.isEmpty(), (int)!rootUser.isEmpty(),
+                          (int)!rootPass.isEmpty(), (int)!syncPass.isEmpty());
+            Serial.flush();
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"host, rootUser, rootPass und syncPass erforderlich\"}");
+            return;
+        }
+        wl_status_t wifiSt = WiFi.status();
+        Serial.printf("[SetupWizard] WiFi status=%d connected=%d\n",
+                      static_cast<int>(wifiSt), wifiSt == WL_CONNECTED);
+        Serial.flush();
+        if (wifiSt != WL_CONNECTED) {
+            req->send(200, "application/json", "{\"ok\":false,\"error\":\"Kein WLAN – Setup nicht möglich\"}");
+            return;
+        }
+        String setupUrl = "http://" + host + "/lebensmittel_setup.php";
+        Serial.printf("[SetupWizard] Calling URL: %s\n", setupUrl.c_str());
+        Serial.flush();
+
+        JsonDocument fwd;
+        fwd["rootUser"] = inp["rootUser"];
+        fwd["rootPass"] = inp["rootPass"];
+        fwd["syncPass"] = syncPass;
+        String fwdBody;
+        serializeJson(fwd, fwdBody);
+        WiFiClient wc;
+        HTTPClient hc;
+        hc.setTimeout(15000);
+        String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
+        bool httpOk = hc.begin(wc, setupUrl);
+        Serial.printf("[SetupWizard] hc.begin() returned %d\n", httpOk ? 1 : 0);
+        Serial.flush();
+        if (httpOk) {
+            hc.addHeader("Content-Type", "application/json");
+            int code = hc.POST((uint8_t *)fwdBody.c_str(), fwdBody.length());
+            Serial.printf("[SetupWizard] HTTP POST response code=%d\n", code);
+            Serial.flush();
+            if (code > 0) {
+                result = hc.getString();
+                String preview = result.substring(0, 200);
+                Serial.printf("[SetupWizard] Response body (first 200 chars): %s\n", preview.c_str());
+                Serial.flush();
+            } else {
+                Serial.printf("[SetupWizard] HTTP POST failed, no response body\n");
+                Serial.flush();
+            }
+            hc.end();
+            JsonDocument res;
+            if (deserializeJson(res, result) == DeserializationError::Ok) {
+                bool resOk = res["ok"].as<bool>();
+                const char *resErr = res["error"] | "";
+                Serial.printf("[SetupWizard] Response parsed: ok=%d error='%s'\n", resOk ? 1 : 0, resErr);
+                Serial.flush();
+                if (resOk) {
+                    JsonDocument cfg;
+                    loadJson("/server_sync_config.json", cfg, "{}");
+                    cfg["ip"]   = host;
+                    cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
+                    cfg["pass"] = syncPass;
+                    saveJson("/server_sync_config.json", cfg);
+                    sync_manager.begin();
+                    Serial.printf("[SetupWizard] Config saved: ip='%s' user='%s'\n",
+                                  host.c_str(), (res["syncUser"] | String("lebensmittel_sync")).c_str());
+                    Serial.flush();
+                }
+            } else {
+                Serial.printf("[SetupWizard] Failed to parse response JSON\n");
+                Serial.flush();
+            }
+        }
+        req->send(200, "application/json", result);
+    }, nullptr, bodyCollect);
+
     _server.on("/api/server-sync", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
         loadJson("/server_sync_config.json", doc, "{}");
@@ -909,127 +1030,6 @@ void WebInterface::registerApiRoutes() {
     };
     _server.on("/api/mqtt/test",            HTTP_POST, stub("{\"ok\":false,\"message\":\"MQTT nicht konfiguriert\"}"));
     _server.on("/api/telegram/test",        HTTP_POST, stub("{\"ok\":false,\"message\":\"Telegram nicht konfiguriert\"}"));
-    _server.on("/api/server-sync/test", HTTP_POST, [](AsyncWebServerRequest *req) {
-        String msg;
-        bool ok = sync_manager.testConnection(msg);
-        JsonDocument doc;
-        doc["ok"]      = ok;
-        doc["message"] = msg;
-        String body; serializeJson(doc, body);
-        req->send(200, "application/json", body);
-    });
-    _server.on("/api/server-sync/queue", HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(200, "application/json", sync_manager.getQueueJson());
-    });
-    _server.on("/api/server-sync/queue/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
-        sync_manager.clearQueue();
-        req->send(200, "application/json", "{\"ok\":true}");
-    });
-    // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
-    // Root credentials are forwarded but NEVER stored on this device.
-    // BUILD-MARKER: v2 – logging active
-    _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
-        Serial.println("[SetupWizard] *** HANDLER ENTERED ***");
-        Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
-                      static_cast<unsigned>(_body.length()));
-        Serial.flush();
-
-        JsonDocument inp;
-        DeserializationError derr = deserializeJson(inp, _body);
-        if (derr != DeserializationError::Ok) {
-            Serial.printf("[SetupWizard] JSON parse failed: %s\n", derr.c_str());
-            Serial.flush();
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"Ungültige JSON-Daten\"}");
-            return;
-        }
-        String host     = inp["host"]     | "";
-        String rootUser = inp["rootUser"] | "";
-        String rootPass = inp["rootPass"] | "";
-        String syncPass = inp["syncPass"] | "";
-        Serial.printf("[SetupWizard] Fields: host='%s' rootUser='%s' rootPassLen=%u syncPassLen=%u\n",
-                      host.c_str(), rootUser.c_str(),
-                      static_cast<unsigned>(rootPass.length()),
-                      static_cast<unsigned>(syncPass.length()));
-        Serial.flush();
-
-        if (host.isEmpty() || rootUser.isEmpty() || rootPass.isEmpty() || syncPass.isEmpty()) {
-            Serial.printf("[SetupWizard] Validation failed: host=%d rootUser=%d rootPass=%d syncPass=%d\n",
-                          (int)!host.isEmpty(), (int)!rootUser.isEmpty(),
-                          (int)!rootPass.isEmpty(), (int)!syncPass.isEmpty());
-            Serial.flush();
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"host, rootUser, rootPass und syncPass erforderlich\"}");
-            return;
-        }
-        wl_status_t wifiSt = WiFi.status();
-        Serial.printf("[SetupWizard] WiFi status=%d connected=%d\n",
-                      static_cast<int>(wifiSt), wifiSt == WL_CONNECTED);
-        Serial.flush();
-        if (wifiSt != WL_CONNECTED) {
-            req->send(200, "application/json", "{\"ok\":false,\"error\":\"Kein WLAN – Setup nicht möglich\"}");
-            return;
-        }
-        String setupUrl = "http://" + host + "/lebensmittel_setup.php";
-        Serial.printf("[SetupWizard] Calling URL: %s\n", setupUrl.c_str());
-        Serial.flush();
-
-        // Forward all credentials (rootPass included) to the server-side setup script.
-        // Nothing from this payload is written to flash.
-        JsonDocument fwd;
-        fwd["rootUser"] = inp["rootUser"];
-        fwd["rootPass"] = inp["rootPass"];
-        fwd["syncPass"] = syncPass;
-        String fwdBody;
-        serializeJson(fwd, fwdBody);
-        WiFiClient wc;
-        HTTPClient hc;
-        hc.setTimeout(15000);
-        String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
-        bool httpOk = hc.begin(wc, setupUrl);
-        Serial.printf("[SetupWizard] hc.begin() returned %d\n", httpOk ? 1 : 0);
-        Serial.flush();
-        if (httpOk) {
-            hc.addHeader("Content-Type", "application/json");
-            int code = hc.POST((uint8_t *)fwdBody.c_str(), fwdBody.length());
-            Serial.printf("[SetupWizard] HTTP POST response code=%d\n", code);
-            Serial.flush();
-            if (code > 0) {
-                result = hc.getString();
-                String preview = result.substring(0, 200);
-                Serial.printf("[SetupWizard] Response body (first 200 chars): %s\n", preview.c_str());
-                Serial.flush();
-            } else {
-                Serial.printf("[SetupWizard] HTTP POST failed, no response body\n");
-                Serial.flush();
-            }
-            hc.end();
-            // On success save ip/user/pass — the JS layer also does this,
-            // but we do it here too so the device is configured even if the
-            // browser page is closed before the JS success handler fires.
-            JsonDocument res;
-            if (deserializeJson(res, result) == DeserializationError::Ok) {
-                bool resOk = res["ok"].as<bool>();
-                const char *resErr = res["error"] | "";
-                Serial.printf("[SetupWizard] Response parsed: ok=%d error='%s'\n", resOk ? 1 : 0, resErr);
-                Serial.flush();
-                if (resOk) {
-                    JsonDocument cfg;
-                    loadJson("/server_sync_config.json", cfg, "{}");
-                    cfg["ip"]   = host;
-                    cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
-                    cfg["pass"] = syncPass;
-                    saveJson("/server_sync_config.json", cfg);
-                    sync_manager.begin();
-                    Serial.printf("[SetupWizard] Config saved: ip='%s' user='%s'\n",
-                                  host.c_str(), (res["syncUser"] | String("lebensmittel_sync")).c_str());
-                    Serial.flush();
-                }
-            } else {
-                Serial.printf("[SetupWizard] Failed to parse response JSON\n");
-                Serial.flush();
-            }
-        }
-        req->send(200, "application/json", result);
-    }, nullptr, bodyCollect);
     _server.on("/api/test-print", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             if (!_printer) {
