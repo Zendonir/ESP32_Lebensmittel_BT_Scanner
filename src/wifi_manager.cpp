@@ -102,9 +102,9 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
 
         // WL_CONNECT_FAILED: router rejected the attempt (wrong password, RF issue,
         // or router busy).  Retry up to 3 times.
-        if (status == WL_CONNECT_FAILED && retries < 3) {
+        if (status == WL_CONNECT_FAILED && retries < 6) {
             retries++;
-            Serial.printf("[WiFi] Connection failed, retry %d/3 – waiting for clean disconnect...\n", retries);
+            Serial.printf("[WiFi] Connection failed, retry %d/6 – waiting for clean disconnect...\n", retries);
             Serial.flush();
             WiFi.disconnect(false, false);
 
@@ -117,7 +117,7 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
             }
             delay(300); // extra margin for the internal state machine
 
-            Serial.printf("[WiFi] Retry %d/3 – calling begin...\n", retries);
+            Serial.printf("[WiFi] Retry %d/6 – calling begin...\n", retries);
             Serial.flush();
             WiFi.begin(ssid, pass[0] ? pass : nullptr);
             lastStatus = WL_IDLE_STATUS;
@@ -129,10 +129,10 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
         // crowded channel or when APSTA mode delays the STA associate).
         // Treat it like a connect failure and retry.
         if ((status == WL_DISCONNECTED || status == WL_IDLE_STATUS)
-                && retries < 3
+                && retries < 6
                 && millis() - stuckSince > 8000) {
             retries++;
-            Serial.printf("[WiFi] Stuck at status %d for 8s, retry %d/3\n", status, retries);
+            Serial.printf("[WiFi] Stuck at status %d for 8s, retry %d/6\n", status, retries);
             Serial.flush();
             WiFi.disconnect(false, false);
             delay(500);
