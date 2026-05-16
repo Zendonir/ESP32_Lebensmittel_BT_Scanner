@@ -1,0 +1,2 @@
+# Enable exFAT support in FATFS so SD_MMC can mount exFAT-formatted cards
+CONFIG_FATFS_EXFAT_SUPPORT=y
