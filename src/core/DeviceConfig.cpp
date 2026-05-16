@@ -4,7 +4,7 @@ DeviceConfig device_config;
 
 void DeviceConfig::begin() {
     Preferences p;
-    if (!p.begin("device", true)) return;
+    if (!p.begin("device", false)) return;  // false = read-write, creates namespace on first boot
     _household      = p.getString("household", "Standard");
     _deviceName     = p.getString("devName",   "");
     _activeLocation = p.getString("location",  "");
