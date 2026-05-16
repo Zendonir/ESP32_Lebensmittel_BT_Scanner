@@ -11,6 +11,7 @@
 #include <nvs_flash.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include "../storage/AppFS.h"
 
 App app;
 
@@ -258,7 +259,8 @@ void App::renderActiveTab(const String &message, bool force) {
         barcode_manager.getLastScan(),
         barcode_manager.getLastType(),
         inventory.items().size(),
-        _statusMessage);
+        _statusMessage,
+        AppFS::usingSD());
     _lastUiSignature = signature;
     _lastUiRefreshMs = millis();
 }

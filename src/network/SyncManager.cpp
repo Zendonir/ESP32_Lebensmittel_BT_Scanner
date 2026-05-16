@@ -1,7 +1,7 @@
 #include "SyncManager.h"
 #include "../core/Logger.h"
 #include <ArduinoJson.h>
-#include <LittleFS.h>
+#include "../storage/AppFS.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClient.h>
@@ -112,8 +112,8 @@ bool SyncManager::testConnection(String &outMsg) {
 // ---------- private ----------
 
 void SyncManager::loadConfig() {
-    if (!LittleFS.exists(CONFIG_FILE)) return;
-    File f = LittleFS.open(CONFIG_FILE, "r");
+    if (!AppFS::fs().exists(CONFIG_FILE)) return;
+    File f = AppFS::fs().open(CONFIG_FILE, "r");
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
@@ -133,13 +133,13 @@ void SyncManager::saveQueue() {
         o["retries"]   = ev.retries;
         o["createdMs"] = ev.createdMs;
     }
-    File f = LittleFS.open(QUEUE_FILE, "w");
+    File f = AppFS::fs().open(QUEUE_FILE, "w");
     if (f) { serializeJson(doc, f); f.close(); }
 }
 
 void SyncManager::loadQueue() {
-    if (!LittleFS.exists(QUEUE_FILE)) return;
-    File f = LittleFS.open(QUEUE_FILE, "r");
+    if (!AppFS::fs().exists(QUEUE_FILE)) return;
+    File f = AppFS::fs().open(QUEUE_FILE, "r");
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }

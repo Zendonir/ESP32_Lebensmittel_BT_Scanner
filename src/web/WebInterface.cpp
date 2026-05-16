@@ -12,6 +12,7 @@
 #include "config.h"
 
 #include <LittleFS.h>
+#include "../storage/AppFS.h"
 #include <Update.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -319,7 +320,7 @@ static void bodyCollect(AsyncWebServerRequest *, uint8_t *data, size_t len,
 
 static bool loadJson(const char *path, JsonDocument &doc,
                      const char *fallback = "{}") {
-    File f = LittleFS.open(path, "r");
+    File f = AppFS::fs().open(path, "r");
     if (!f) {
         deserializeJson(doc, fallback);
         return false;
@@ -332,12 +333,12 @@ static bool loadJson(const char *path, JsonDocument &doc,
 
 static bool saveJson(const char *path, JsonDocument &doc) {
     String tmp = String(path) + ".tmp";
-    File f = LittleFS.open(tmp.c_str(), "w");
+    File f = AppFS::fs().open(tmp.c_str(), "w");
     if (!f) return false;
     serializeJson(doc, f);
     f.close();
-    LittleFS.remove(path);
-    return LittleFS.rename(tmp.c_str(), path);
+    AppFS::fs().remove(path);
+    return AppFS::fs().rename(tmp.c_str(), path);
 }
 
 /* Serve a JSON file (GET) with fallback if missing */
@@ -428,6 +429,7 @@ void WebInterface::registerApiRoutes() {
         doc["hostname"]   = hn ? hn : "esp32-scanner";
         doc["fsUsed"]     = (uint32_t)LittleFS.usedBytes();
         doc["fsTotal"]    = (uint32_t)LittleFS.totalBytes();
+        doc["sdMounted"]  = AppFS::usingSD();
         unsigned long s   = millis() / 1000;
         char up[32];
         snprintf(up, sizeof(up), "%lud %02luh %02lum",
@@ -687,7 +689,7 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/ui-config",     HTTP_POST, cfgPost("/ui_config.json"), nullptr, bodyCollect);
     _server.on("/api/ui-config/reset", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            LittleFS.remove("/ui_config.json");
+            AppFS::fs().remove("/ui_config.json");
             req->send(200, "application/json", "{\"ok\":true}");
         });
 
@@ -906,23 +908,48 @@ void WebInterface::registerApiRoutes() {
     // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
     // Root credentials are forwarded but NEVER stored on this device.
     _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
+        Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
+                      static_cast<unsigned>(_body.length()));
+        Serial.flush();
+
         JsonDocument inp;
-        if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+        DeserializationError derr = deserializeJson(inp, _body);
+        if (derr != DeserializationError::Ok) {
+            Serial.printf("[SetupWizard] JSON parse failed: %s\n", derr.c_str());
+            Serial.flush();
             req->send(400, "application/json", "{\"ok\":false,\"error\":\"Ungültige JSON-Daten\"}");
             return;
         }
         String host     = inp["host"]     | "";
         String rootUser = inp["rootUser"] | "";
+        String rootPass = inp["rootPass"] | "";
         String syncPass = inp["syncPass"] | "";
-        if (host.isEmpty() || rootUser.isEmpty() || syncPass.isEmpty()) {
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"host, rootUser und syncPass erforderlich\"}");
+        Serial.printf("[SetupWizard] Fields: host='%s' rootUser='%s' rootPassLen=%u syncPassLen=%u\n",
+                      host.c_str(), rootUser.c_str(),
+                      static_cast<unsigned>(rootPass.length()),
+                      static_cast<unsigned>(syncPass.length()));
+        Serial.flush();
+
+        if (host.isEmpty() || rootUser.isEmpty() || rootPass.isEmpty() || syncPass.isEmpty()) {
+            Serial.printf("[SetupWizard] Validation failed: host=%d rootUser=%d rootPass=%d syncPass=%d\n",
+                          (int)!host.isEmpty(), (int)!rootUser.isEmpty(),
+                          (int)!rootPass.isEmpty(), (int)!syncPass.isEmpty());
+            Serial.flush();
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"host, rootUser, rootPass und syncPass erforderlich\"}");
             return;
         }
-        if (WiFi.status() != WL_CONNECTED) {
+        wl_status_t wifiSt = WiFi.status();
+        Serial.printf("[SetupWizard] WiFi status=%d connected=%d\n",
+                      static_cast<int>(wifiSt), wifiSt == WL_CONNECTED);
+        Serial.flush();
+        if (wifiSt != WL_CONNECTED) {
             req->send(200, "application/json", "{\"ok\":false,\"error\":\"Kein WLAN – Setup nicht möglich\"}");
             return;
         }
         String setupUrl = "http://" + host + "/lebensmittel_setup.php";
+        Serial.printf("[SetupWizard] Calling URL: %s\n", setupUrl.c_str());
+        Serial.flush();
+
         // Forward all credentials (rootPass included) to the server-side setup script.
         // Nothing from this payload is written to flash.
         JsonDocument fwd;
@@ -935,23 +962,48 @@ void WebInterface::registerApiRoutes() {
         HTTPClient hc;
         hc.setTimeout(15000);
         String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
-        if (hc.begin(wc, setupUrl)) {
+        bool httpOk = hc.begin(wc, setupUrl);
+        Serial.printf("[SetupWizard] hc.begin() returned %d\n", httpOk ? 1 : 0);
+        Serial.flush();
+        if (httpOk) {
             hc.addHeader("Content-Type", "application/json");
             int code = hc.POST((uint8_t *)fwdBody.c_str(), fwdBody.length());
-            if (code > 0) result = hc.getString();
+            Serial.printf("[SetupWizard] HTTP POST response code=%d\n", code);
+            Serial.flush();
+            if (code > 0) {
+                result = hc.getString();
+                String preview = result.substring(0, 200);
+                Serial.printf("[SetupWizard] Response body (first 200 chars): %s\n", preview.c_str());
+                Serial.flush();
+            } else {
+                Serial.printf("[SetupWizard] HTTP POST failed, no response body\n");
+                Serial.flush();
+            }
             hc.end();
             // On success save ip/user/pass — the JS layer also does this,
             // but we do it here too so the device is configured even if the
             // browser page is closed before the JS success handler fires.
             JsonDocument res;
-            if (deserializeJson(res, result) == DeserializationError::Ok && res["ok"].as<bool>()) {
-                JsonDocument cfg;
-                loadJson("/server_sync_config.json", cfg, "{}");
-                cfg["ip"]   = host;
-                cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
-                cfg["pass"] = syncPass;
-                saveJson("/server_sync_config.json", cfg);
-                sync_manager.begin();
+            if (deserializeJson(res, result) == DeserializationError::Ok) {
+                bool resOk = res["ok"].as<bool>();
+                const char *resErr = res["error"] | "";
+                Serial.printf("[SetupWizard] Response parsed: ok=%d error='%s'\n", resOk ? 1 : 0, resErr);
+                Serial.flush();
+                if (resOk) {
+                    JsonDocument cfg;
+                    loadJson("/server_sync_config.json", cfg, "{}");
+                    cfg["ip"]   = host;
+                    cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
+                    cfg["pass"] = syncPass;
+                    saveJson("/server_sync_config.json", cfg);
+                    sync_manager.begin();
+                    Serial.printf("[SetupWizard] Config saved: ip='%s' user='%s'\n",
+                                  host.c_str(), (res["syncUser"] | String("lebensmittel_sync")).c_str());
+                    Serial.flush();
+                }
+            } else {
+                Serial.printf("[SetupWizard] Failed to parse response JSON\n");
+                Serial.flush();
             }
         }
         req->send(200, "application/json", result);
@@ -1141,7 +1193,7 @@ void WebInterface::registerApiRoutes() {
         });
     _server.on("/api/cache/clear", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            LittleFS.remove("/off_cache.json");
+            AppFS::fs().remove("/off_cache.json");
             req->send(200, "application/json", "{\"ok\":true}");
         });
 

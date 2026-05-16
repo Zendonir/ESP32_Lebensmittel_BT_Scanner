@@ -1,11 +1,13 @@
 #include "LittleFSManager.h"
 #include "../core/Logger.h"
 #include <LittleFS.h>
+#include "AppFS.h"
 
 bool LittleFSManager::begin() {
     // Try to mount without formatting first so uploaded web files are preserved.
     if (LittleFS.begin(false)) {
         Logger::info("LittleFS", String("Mounted – ") + LittleFS.usedBytes() + "/" + LittleFS.totalBytes() + " bytes used");
+        AppFS::begin();
         return true;
     }
     // Only format if the partition exists but has never been initialised
@@ -16,6 +18,7 @@ bool LittleFSManager::begin() {
         return false;
     }
     Logger::warn("LittleFS", "Formatted OK – run 'Upload Filesystem Image' to install web files");
+    AppFS::begin();
     return true;
 }
 

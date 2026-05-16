@@ -90,6 +90,7 @@ static TFT_eSprite _spr(&_tft);
 struct HomeState {
     UiTab  tab;
     bool   wifiConnected;
+    bool   sdMounted = false;
     String ssid, ip;
     String scannerStatus, scannerName;
     String lastScan, lastType;
@@ -314,6 +315,8 @@ static void draw_panel_system(const HomeState &s) {
     _spr.drawString("FoodScanner ESP32-S3", 250, py + 34);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.drawString("ST7796 | FT6336 | 480x320", 250, py + 54);
+    _spr.setTextColor(s.sdMounted ? C_GREEN : C_SUBTEXT, C_SURFACE);
+    _spr.drawString(s.sdMounted ? "SD: eingelegt" : "SD: nicht eingelegt", 250, py + 74);
 
     // Scanner card below
     bool ble_ok = (s.scannerStatus == "connected");
@@ -555,10 +558,11 @@ void Display::showHome(UiTab activeTab,
                        const String &ssid, const String &ip, bool wifiConnected,
                        const String &scannerStatus, const String &scannerName,
                        const String &lastScan, const String &lastType,
-                       size_t inventoryCount, const String &message) {
+                       size_t inventoryCount, const String &message, bool sdMounted) {
     if (!_initialized) return;
     _homeState.tab            = activeTab;
     _homeState.wifiConnected  = wifiConnected;
+    _homeState.sdMounted      = sdMounted;
     _homeState.ssid           = ssid;
     _homeState.ip             = ip;
     _homeState.scannerStatus  = scannerStatus;
