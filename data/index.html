@@ -505,8 +505,8 @@
         <div id="syncStatus" class="status-badge-row"></div>
         <div class="form-field" style="margin-top:16px"><label>Letzte Synchronisation</label><div id="syncLastSync" class="value-display">—</div></div>
         <div class="btn-group-v" style="margin-top:16px">
-          <button class="btn btn-ok" onclick="Pages.serversync.testConnection()">Verbindung testen</button>
-          <button class="btn" onclick="Pages.serversync.showQueue()">Queue anzeigen</button>
+          <button id="btnTestSync" class="btn btn-ok" onclick="Pages.serversync.testConnection()">Verbindung testen</button>
+          <button id="btnShowQueue" class="btn" onclick="Pages.serversync.showQueue()">Queue anzeigen</button>
           <button class="btn btn-danger" onclick="Pages.serversync.clearQueue()">Queue löschen</button>
         </div>
       </div>

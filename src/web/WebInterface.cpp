@@ -829,14 +829,14 @@ void WebInterface::registerApiRoutes() {
         doc["message"] = msg;
         String body; serializeJson(doc, body);
         req->send(200, "application/json", body);
-    });
+    }, nullptr, bodyCollect);
     _server.on("/api/server-sync/queue", HTTP_GET, [](AsyncWebServerRequest *req) {
         req->send(200, "application/json", sync_manager.getQueueJson());
     });
     _server.on("/api/server-sync/queue/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
         sync_manager.clearQueue();
         req->send(200, "application/json", "{\"ok\":true}");
-    });
+    }, nullptr, bodyCollect);
     // Setup wizard: connect directly to MySQL as root, create DB/tables/user, then store
     // the sync credentials. Root credentials are NEVER stored on this device.
     _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {

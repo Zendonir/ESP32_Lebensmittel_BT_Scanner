@@ -1710,26 +1710,41 @@ Pages.serversync = {
   },
 
   async testConnection() {
+    const btn = document.getElementById('btnTestSync');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Teste…';
     try {
       const r = await API.post('/api/server-sync/test', {});
       Toast[r.ok ? 'success' : 'error'](r.message || (r.ok ? 'Verbunden' : 'Fehler'));
     } catch(e) {
-      Toast.error('Fehler: ' + e.message);
+      Toast.error('Verbindungstest: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
     }
   },
 
   async showQueue() {
+    const btn = document.getElementById('btnShowQueue');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Lädt…';
     try {
       const q = await API.get('/api/server-sync/queue');
       const card = document.getElementById('syncQueueCard');
       const list = document.getElementById('syncQueue');
-      card.hidden = false;
       const items = Array.isArray(q) ? q : [];
       list.innerHTML = items.length
         ? items.map(qi => `<div class="item-row"><div class="item-row-name">${esc(qi.type||'')}</div><div class="item-row-sub">${esc(qi.data||'')}</div></div>`).join('')
         : '<div class="muted" style="padding:8px">Queue ist leer</div>';
+      card.hidden = false;
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch(e) {
-      Toast.error('Fehler: ' + e.message);
+      Toast.error('Queue: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
     }
   },
 
