@@ -349,20 +349,36 @@ void App::processOnscreenAction(OnscreenAction action) {
 
     switch (action) {
         // ── Tab navigation ──────────────────────────────────────────────────
-        case OnscreenAction::SWIPE_LEFT:
+        case OnscreenAction::SWIPE_LEFT: {
             audio_obj.playSwipeTone();
+            static const UiTab CYCLE[] = {
+                UiTab::STORE, UiTab::INVENTORY, UiTab::SYSTEM,
+                UiTab::MANUAL_PRODUCT, UiTab::MANUAL_ENTRY
+            };
+            static constexpr int NC = 5;
+            int ci = 0;
+            for (int i = 0; i < NC; i++) if (CYCLE[i] == _activeTab) { ci = i; break; }
             action = static_cast<OnscreenAction>(
                 static_cast<int>(OnscreenAction::TAB_STORE) +
-                (static_cast<int>(_activeTab) + 1) % 6);
+                static_cast<int>(CYCLE[(ci + 1) % NC]));
             processOnscreenAction(action);
             return;
-        case OnscreenAction::SWIPE_RIGHT:
+        }
+        case OnscreenAction::SWIPE_RIGHT: {
             audio_obj.playSwipeTone();
+            static const UiTab CYCLE[] = {
+                UiTab::STORE, UiTab::INVENTORY, UiTab::SYSTEM,
+                UiTab::MANUAL_PRODUCT, UiTab::MANUAL_ENTRY
+            };
+            static constexpr int NC = 5;
+            int ci = 0;
+            for (int i = 0; i < NC; i++) if (CYCLE[i] == _activeTab) { ci = i; break; }
             action = static_cast<OnscreenAction>(
                 static_cast<int>(OnscreenAction::TAB_STORE) +
-                (static_cast<int>(_activeTab) + 5) % 6);
+                static_cast<int>(CYCLE[(ci + NC - 1) % NC]));
             processOnscreenAction(action);
             return;
+        }
         case OnscreenAction::TAB_STORE:
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::STORE;
@@ -376,8 +392,8 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::TAB_SCANNER:
             workflow = WorkflowMode::HOME;
-            _activeTab = UiTab::SCANNER;
-            renderActiveTab("Scanner verbinden im Web-UI oder per gespeicherter Kopplung");
+            _activeTab = UiTab::SYSTEM;
+            renderActiveTab("Systemstatus und Setup AP");
             break;
         case OnscreenAction::TAB_SYSTEM:
             workflow = WorkflowMode::HOME;
@@ -395,7 +411,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _activeTab = UiTab::MANUAL_ENTRY;
             _kbText = "";
             display_obj.kbReset();
-            display_obj.showKeyboardEntry("Produktname eingeben", "");
+            display_obj.showKeyboardEntry("Manuelle Eingabe", "");
             break;
         case OnscreenAction::REFRESH:
             workflow = WorkflowMode::HOME;

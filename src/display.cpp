@@ -314,6 +314,24 @@ static void draw_panel_system(const HomeState &s) {
     _spr.drawString("FoodScanner ESP32-S3", 250, py + 34);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.drawString("ST7796 | FT6336 | 480x320", 250, py + 54);
+
+    // Scanner card below
+    bool ble_ok = (s.scannerStatus == "connected");
+    draw_card(4, py + 136, SCR_W - 8, 112, C_SURFACE, C_YELLOW);
+    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.setTextDatum(TL_DATUM);
+    _spr.drawString("BLE-HID BARCODE SCANNER", 12, py + 142);
+    uint16_t sc = ble_ok ? C_GREEN : C_YELLOW;
+    _spr.setTextColor(sc, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.drawString(ble_ok ? "Verbunden" : "Getrennt", 12, py + 160);
+    String name_str = s.scannerName.isEmpty() ? "Koppeln im Web-UI" : trunc(s.scannerName, 36);
+    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.drawString(name_str.c_str(), 12, py + 196);
+    draw_button(SCR_W - 222, py + 186, 210, 34,
+                "Verbinden / Trennen", C_ACCENT, C_BG, 2, OnscreenAction::SCANNER_RECONNECT);
 }
 
 static void draw_panel_manual_product(const HomeState &) {
@@ -362,7 +380,7 @@ static void render_home(const HomeState &s) {
     switch (s.tab) {
         case UiTab::STORE:          draw_panel_store(s);          break;
         case UiTab::INVENTORY:      draw_panel_inventory_empty(s); break;
-        case UiTab::SCANNER:        draw_panel_scanner(s);        break;
+        case UiTab::SCANNER:        draw_panel_system(s);         break;
         case UiTab::SYSTEM:         draw_panel_system(s);         break;
         case UiTab::MANUAL_PRODUCT: draw_panel_manual_product(s); break;
         case UiTab::MANUAL_ENTRY:   draw_panel_manual_entry(s);   break;
@@ -662,10 +680,11 @@ static void draw_qty_grid(int top_y, int selected) {
             int bx = x0 + c * (BTN_W + GAP);
             int by = top_y + r * (BTN_H + GAP);
             bool sel = (n == selected);
-            uint16_t bg  = sel ? C_ACCENT  : C_SURFACE2;
-            uint16_t fg  = sel ? C_BG      : C_TEXT;
-            uint8_t  rad = sel ? 8 : 6;
-            draw_button(bx, by, BTN_W, BTN_H, String(n).c_str(), bg, fg, rad, QTY_ACTIONS[n - 1]);
+            uint16_t bg = sel ? C_ACCENT : C_SURFACE2;
+            uint16_t fg = sel ? C_BG     : C_TEXT;
+            // Always font 4 — previously `rad` (8 or 6) was mistakenly
+            // passed as the font, making the selected button use font-8 (giant).
+            draw_button(bx, by, BTN_W, BTN_H, String(n).c_str(), bg, fg, 4, QTY_ACTIONS[n - 1]);
         }
     }
 }
@@ -691,7 +710,7 @@ void Display::showQuantityEntry(const ProductInfo &product,
     _spr.setTextColor(C_ACCENT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge auswählen", SCR_W / 2, HDR_H + 8);
+    _spr.drawString("Menge ausw\xE4hlen", SCR_W / 2, HDR_H + 8);
 
     // 4×3 quantity grid
     draw_qty_grid(HDR_H + 28, quantity);
@@ -825,7 +844,7 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("Kategorie waehlen", 12, HDR_H / 2);
+    _spr.drawString("Kategorie w\xE4hlen", 12, HDR_H / 2);
 
     // 2 columns × 4 rows, content area 480×276
     static constexpr int COLS     = 2;
@@ -896,7 +915,7 @@ void Display::showListScreen(const char *title,
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
         _spr.setTextFont(2);
         _spr.setTextDatum(MR_DATUM);
-        _spr.drawString("< wischen = zurück", SCR_W - 8, HDR_H / 2);
+        _spr.drawString("< wischen = zur\xFCck", SCR_W - 8, HDR_H / 2);
     }
 
     // Taller rows for comfortable finger tapping and larger text
@@ -955,7 +974,7 @@ void Display::showTemplateMHD(const String &productName,
     _spr.drawString(trunc(productName, 22).c_str(), 8, HDR_H / 2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
-    _spr.drawString("< wischen = zurück", SCR_W - 8, HDR_H / 2);
+    _spr.drawString("< wischen = zur\xFCck", SCR_W - 8, HDR_H / 2);
 
     // MHD display (no day-adjust buttons)
     int mhd_y = HDR_H + 6;
@@ -975,7 +994,7 @@ void Display::showTemplateMHD(const String &productName,
     _spr.setTextColor(C_ACCENT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge auswählen", SCR_W / 2, mhd_y + 44);
+    _spr.drawString("Menge ausw\xE4hlen", SCR_W / 2, mhd_y + 44);
 
     // 4×3 quantity grid
     draw_qty_grid(mhd_y + 62, qty);
@@ -1032,7 +1051,7 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextFont(2);
+    _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 8, HDR_H / 2);
 
