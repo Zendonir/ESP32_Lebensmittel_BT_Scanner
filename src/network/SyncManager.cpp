@@ -4,8 +4,7 @@
 #include "../storage/AppFS.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
-#include <MySQL_Connection.h>
-#include <MySQL_Cursor.h>
+#include "MySQLDirect.h"
 
 SyncManager sync_manager;
 
@@ -150,36 +149,13 @@ String SyncManager::getQueueJson() const {
 }
 
 bool SyncManager::testConnection(String &outMsg) {
-    if (_ip.isEmpty()) {
-        outMsg = "Keine Server-IP konfiguriert";
-        return false;
-    }
-    if (WiFi.status() != WL_CONNECTED) {
-        outMsg = "Kein WLAN";
-        return false;
-    }
-
-    IPAddress serverIP;
-    if (!serverIP.fromString(_ip)) {
-        outMsg = "Ungültige Server-IP: " + _ip;
-        return false;
-    }
-
-    char userBuf[64], passBuf[64];
-    strncpy(userBuf, _user.c_str(), 63); userBuf[63] = 0;
-    strncpy(passBuf, _pass.c_str(), 63); passBuf[63] = 0;
-
-    WiFiClient wc;
-    wc.setTimeout(5000);
-    MySQL_Connection conn((Client*)&wc);
-
-    bool ok = conn.connect(serverIP, 3306, userBuf, passBuf);
-    if (ok) {
-        conn.close();
-        outMsg = "MySQL-Verbindung erfolgreich";
-    } else {
-        outMsg = "MySQL-Verbindung fehlgeschlagen";
-    }
+    if (_ip.isEmpty()) { outMsg = "Keine Server-IP konfiguriert"; return false; }
+    if (WiFi.status() != WL_CONNECTED) { outMsg = "Kein WLAN"; return false; }
+    MySQLDirect db;
+    bool ok = db.connect(_ip, 3306, _user, _pass);
+    outMsg = ok ? "MySQL-Verbindung erfolgreich"
+                : ("Verbindung fehlgeschlagen: " + db.lastError());
+    if (ok) db.close();
     return ok;
 }
 
@@ -232,23 +208,13 @@ void SyncManager::loadQueue() {
 
 bool SyncManager::execDirectMySQL(const String &sql) {
     if (_ip.isEmpty()) return false;
-    IPAddress serverIP;
-    if (!serverIP.fromString(_ip)) return false;
-
-    char userBuf[64], passBuf[64];
-    strncpy(userBuf, _user.c_str(), 63); userBuf[63] = 0;
-    strncpy(passBuf, _pass.c_str(), 63); passBuf[63] = 0;
-
-    WiFiClient wc;
-    wc.setTimeout(5000);
-    MySQL_Connection conn((Client*)&wc);
-
-    if (!conn.connect(serverIP, 3306, userBuf, passBuf)) {
-        Logger::warn("Sync", "MySQL connect failed");
+    MySQLDirect db;
+    if (!db.connect(_ip, 3306, _user, _pass)) {
+        Logger::warn("Sync", String("MySQL connect failed: ") + db.lastError());
         return false;
     }
-    MySQL_Cursor cur(&conn);
-    bool ok = cur.execute(sql.c_str());
-    conn.close();
+    bool ok = db.execute(sql);
+    if (!ok) Logger::warn("Sync", String("MySQL exec failed: ") + db.lastError());
+    db.close();
     return ok;
 }

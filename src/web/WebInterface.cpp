@@ -17,8 +17,7 @@
 #include <Update.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
-#include <MySQL_Connection.h>
-#include <MySQL_Cursor.h>
+#include "../network/MySQLDirect.h"
 #include <esp_system.h>
 
 /* ── WiFi scan cache ──────────────────────────────────────────── */
@@ -900,102 +899,74 @@ void WebInterface::registerApiRoutes() {
             Serial.printf("[SetupWizard] Task running, connecting to MySQL at %s:3306\n", p->host.c_str());
             Serial.flush();
 
-            IPAddress serverIP;
-            serverIP.fromString(p->host);
-            char userBuf[64], passBuf[128];
-            strncpy(userBuf, p->rootUser.c_str(), 63); userBuf[63] = 0;
-            strncpy(passBuf, p->rootPass.c_str(), 127); passBuf[127] = 0;
-
-            WiFiClient wc;
-            wc.setTimeout(6000);
-            MySQL_Connection conn((Client*)&wc);
-            bool connected = conn.connect(serverIP, 3306, userBuf, passBuf);
-            Serial.printf("[SetupWizard] MySQL connect result: %d\n", (int)connected);
+            MySQLDirect db;
+            bool connected = db.connect(p->host, 3306, p->rootUser, p->rootPass);
+            Serial.printf("[SetupWizard] MySQL connect: %s\n",
+                          connected ? "OK" : db.lastError().c_str());
             Serial.flush();
 
             if (!connected) {
-                p->req->send(200, "application/json", "{\"ok\":false,\"error\":\"MySQL-Verbindung fehlgeschlagen\"}");
+                String err = "{\"ok\":false,\"error\":\"MySQL-Verbindung fehlgeschlagen: "
+                             + db.lastError() + "\"}";
+                p->req->send(200, "application/json", err);
                 delete p;
                 vTaskDelete(nullptr);
                 return;
             }
 
-            MySQL_Cursor cur(&conn);
             String syncPass = p->syncPass;
 
-            // Helper lambda to execute a single SQL statement
-            auto execSQL = [&](const char *sql) -> bool {
-                Serial.printf("[SetupWizard] SQL: %.120s\n", sql);
+            auto execSQL = [&](const String &sql) -> bool {
+                Serial.printf("[SetupWizard] SQL: %.120s\n", sql.c_str());
                 Serial.flush();
-                bool ok = cur.execute(sql);
-                Serial.printf("[SetupWizard] SQL result: %d\n", (int)ok);
+                bool ok = db.execute(sql);
+                Serial.printf("[SetupWizard] result: %s\n",
+                              ok ? "OK" : db.lastError().c_str());
                 Serial.flush();
                 return ok;
             };
 
             bool ok = true;
 
-            // 1. Create database
             ok = ok && execSQL(
                 "CREATE DATABASE IF NOT EXISTS `Lebensmittel_Scanner` "
-                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            );
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
-            // 2. Create inventar table
             ok = ok && execSQL(
                 "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`inventar` ("
                 "`id` INT AUTO_INCREMENT PRIMARY KEY,"
                 "`label_barcode` VARCHAR(60) NOT NULL UNIQUE,"
-                "`barcode` VARCHAR(60),"
-                "`name` VARCHAR(200),"
-                "`brand` VARCHAR(100),"
-                "`category` VARCHAR(100),"
-                "`expiry_date` VARCHAR(20),"
-                "`added_date` VARCHAR(20),"
-                "`quantity` INT DEFAULT 1,"
-                "`household` VARCHAR(100),"
-                "`device_name` VARCHAR(100),"
+                "`barcode` VARCHAR(60),`name` VARCHAR(200),`brand` VARCHAR(100),"
+                "`category` VARCHAR(100),`expiry_date` VARCHAR(20),"
+                "`added_date` VARCHAR(20),`quantity` INT DEFAULT 1,"
+                "`household` VARCHAR(100),`device_name` VARCHAR(100),"
                 "`synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-            );
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-            // 3. Create sync_log table
             ok = ok && execSQL(
                 "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`sync_log` ("
-                "`id` INT AUTO_INCREMENT PRIMARY KEY,"
-                "`event_type` VARCHAR(30),"
-                "`label_barcode` VARCHAR(60),"
-                "`barcode` VARCHAR(60),"
-                "`name` VARCHAR(200),"
-                "`household` VARCHAR(100),"
+                "`id` INT AUTO_INCREMENT PRIMARY KEY,`event_type` VARCHAR(30),"
+                "`label_barcode` VARCHAR(60),`barcode` VARCHAR(60),"
+                "`name` VARCHAR(200),`household` VARCHAR(100),"
                 "`device_name` VARCHAR(100),"
                 "`event_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-            );
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-            // 4. Create sync user (if not exists)
-            {
-                String sql4 = String("CREATE USER IF NOT EXISTS 'lebensmittel_sync'@'%' "
-                                     "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'";
-                ok = ok && execSQL(sql4.c_str());
-            }
-
-            // 5. Ensure password is correct (ALTER USER)
-            {
-                String sql5 = String("ALTER USER 'lebensmittel_sync'@'%' "
-                                     "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'";
-                ok = ok && execSQL(sql5.c_str());
-            }
-
-            // 6. Grant privileges
             ok = ok && execSQL(
-                "GRANT SELECT,INSERT,UPDATE,DELETE ON `Lebensmittel_Scanner`.* TO 'lebensmittel_sync'@'%'"
-            );
+                String("CREATE USER IF NOT EXISTS 'lebensmittel_sync'@'%' "
+                       "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'");
 
-            // 7. Flush privileges
+            ok = ok && execSQL(
+                String("ALTER USER 'lebensmittel_sync'@'%' "
+                       "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'");
+
+            ok = ok && execSQL(
+                "GRANT SELECT,INSERT,UPDATE,DELETE ON `Lebensmittel_Scanner`.* "
+                "TO 'lebensmittel_sync'@'%'");
+
             ok = ok && execSQL("FLUSH PRIVILEGES");
 
-            conn.close();
+            db.close();
             Serial.printf("[SetupWizard] All SQL steps ok=%d\n", (int)ok);
             Serial.flush();
 
