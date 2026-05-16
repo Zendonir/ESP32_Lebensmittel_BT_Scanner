@@ -9,7 +9,6 @@
 #include <WiFi.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
-#include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "../storage/AppFS.h"
 
@@ -203,8 +202,8 @@ void App::setBacklight(bool on) {
 
 void App::loadDisplayConfig() {
     JsonDocument doc;
-    if (LittleFS.exists("/display_config.json")) {
-        File f = LittleFS.open("/display_config.json", "r");
+    if (AppFS::fs().exists("/display_config.json")) {
+        File f = AppFS::fs().open("/display_config.json", "r");
         if (f) { deserializeJson(doc, f); f.close(); }
     }
     uint32_t secs = doc["standby_sec"] | 0;
@@ -881,7 +880,7 @@ void App::initFilesystem() {
 void App::loadTemplates() {
     _templates.clear();
     // Read from the same file as the web Produktvorlagen page (/api/custom-products)
-    File f = LittleFS.open("/custom_products.json", "r");
+    File f = AppFS::fs().open("/custom_products.json", "r");
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
@@ -979,7 +978,7 @@ void App::startTmplMHD() {
 
 std::vector<String> App::loadLocationNames() const {
     std::vector<String> names;
-    File f = LittleFS.open("/locations.json", "r");
+    File f = AppFS::fs().open("/locations.json", "r");
     if (!f) return names;
     JsonDocument doc;
     if (deserializeJson(doc, f) == DeserializationError::Ok && doc.is<JsonArray>()) {

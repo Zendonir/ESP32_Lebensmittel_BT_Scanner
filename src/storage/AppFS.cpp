@@ -1,7 +1,8 @@
 #include "AppFS.h"
-#include <LittleFS.h>
 #include <SD_MMC.h>
 #include "../core/Logger.h"
+
+LittleFSFS UserDataFS;
 
 static bool _sd = false;
 
@@ -13,7 +14,7 @@ bool AppFS::begin() {
         Logger::info("AppFS", String("SD card ") + mb + " MB – Datenspeicher auf SD");
         return true;
     }
-    Logger::warn("AppFS", "Keine SD-Karte – Datenspeicher auf LittleFS");
+    Logger::warn("AppFS", "Keine SD-Karte – Datenspeicher auf UserDataFS");
     _sd = false;
     return true;
 }
@@ -21,5 +22,9 @@ bool AppFS::begin() {
 bool AppFS::usingSD() { return _sd; }
 
 fs::FS& AppFS::fs() {
-    return _sd ? (fs::FS&)SD_MMC : (fs::FS&)LittleFS;
+    return _sd ? (fs::FS&)SD_MMC : (fs::FS&)UserDataFS;
+}
+
+fs::FS& AppFS::webFs() {
+    return (fs::FS&)LittleFS;
 }

@@ -467,8 +467,8 @@ void WebInterface::registerApiRoutes() {
         doc["ip"]         = WiFi.localIP().toString();
         const char *hn    = WiFi.getHostname();
         doc["hostname"]   = hn ? hn : "esp32-scanner";
-        doc["fsUsed"]     = (uint32_t)LittleFS.usedBytes();
-        doc["fsTotal"]    = (uint32_t)LittleFS.totalBytes();
+        doc["fsUsed"]     = (uint32_t)UserDataFS.usedBytes();
+        doc["fsTotal"]    = (uint32_t)UserDataFS.totalBytes();
         doc["sdMounted"]  = AppFS::usingSD();
         unsigned long s   = millis() / 1000;
         char up[32];
@@ -824,8 +824,8 @@ void WebInterface::registerApiRoutes() {
 
     _server.on("/api/display-config", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
-        if (LittleFS.exists("/display_config.json")) {
-            File f = LittleFS.open("/display_config.json", "r");
+        if (AppFS::fs().exists("/display_config.json")) {
+            File f = AppFS::fs().open("/display_config.json", "r");
             if (f) { deserializeJson(doc, f); f.close(); }
         }
         if (!doc["standby_sec"].is<uint32_t>()) doc["standby_sec"] = 0;
@@ -1397,12 +1397,12 @@ void WebInterface::registerApiRoutes() {
         [](AsyncWebServerRequest *req) {
             req->send(200, "application/json", "{\"ok\":true}");
             delay(300);
-            LittleFS.format();
+            UserDataFS.format();
             esp_restart();
         });
     _server.on("/api/format-fs", HTTP_POST,
         [](AsyncWebServerRequest *req) {
-            LittleFS.format();
+            UserDataFS.format();
             req->send(200, "application/json", "{\"ok\":true}");
         });
     _server.on("/api/cache/clear", HTTP_POST,
