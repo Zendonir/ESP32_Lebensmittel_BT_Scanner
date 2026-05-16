@@ -76,18 +76,29 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
     WiFi.mode(WIFI_MODE_APSTA);
     WiFi.setSleep(false);
     WiFi.begin(ssid, pass[0] ? pass : nullptr);
-    Serial.print("[WiFi] Auto-connect to saved SSID: ");
-    Serial.println(ssid);
+    Serial.printf("[WiFi] Auto-connect to saved SSID: %s\n", ssid);
     Serial.flush();
 
     uint32_t start = millis();
     wl_status_t lastStatus = WL_IDLE_STATUS;
+    int retries = 0;
     while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
         wl_status_t status = WiFi.status();
         if (status != lastStatus) {
             Serial.printf("[WiFi] Auto-connect status: %d\n", status);
             Serial.flush();
             lastStatus = status;
+        }
+        // WL_CONNECT_FAILED means the router rejected the attempt (auth error or
+        // transient RF issue).  Retry up to 3 times before giving up.
+        if (status == WL_CONNECT_FAILED && retries < 3) {
+            retries++;
+            Serial.printf("[WiFi] Connection failed, retry %d/3...\n", retries);
+            Serial.flush();
+            WiFi.disconnect(false, false);
+            delay(500);
+            WiFi.begin(ssid, pass[0] ? pass : nullptr);
+            lastStatus = WL_IDLE_STATUS;
         }
         delay(250);
     }

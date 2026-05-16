@@ -1140,15 +1140,17 @@ Pages.design = {
 Pages.system = {
   async load() {
     try {
-      const [sys, cfg, disp] = await Promise.all([
+      const [sys, cfg] = await Promise.all([
         API.get('/api/system-info'),
         API.get('/api/device-config'),
-        API.get('/api/display-config'),
       ]);
       this.render(sys);
       document.getElementById('cfgHousehold').value  = cfg.household  || '';
       document.getElementById('cfgDeviceName').value = cfg.deviceName || '';
-      document.getElementById('cfgStandby').value    = String(disp.standby_sec ?? 0);
+      try {
+        const disp = await API.get('/api/display-config');
+        document.getElementById('cfgStandby').value = String(disp.standby_sec ?? 0);
+      } catch(_) {}
     } catch(e) {
       Toast.error('System: ' + e.message);
     }

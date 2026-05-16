@@ -1,2 +1,6 @@
 # Enable exFAT support in FATFS so SD_MMC can mount exFAT-formatted cards
 CONFIG_FATFS_EXFAT_SUPPORT=y
+
+# NimBLE initialization triggers inter-core IPC calls that overflow the
+# default ipc0 task stack (1024 bytes) on ESP32-S3.
+CONFIG_ESP_IPC_TASK_STACK_SIZE=2048
