@@ -22,7 +22,7 @@ void WiFiManager::init() {
     Serial.flush();
     current_mode = MODE_AP_STA;
 
-    if (autoConnect(10000)) {
+    if (autoConnect(20000)) {
         Serial.printf("[WiFi] Station connected, IP: %s\n", WiFi.localIP().toString().c_str());
         // WiFi is up – shut the AP down so the hotspot is invisible and
         // captive-portal redirects don't intercept normal browser traffic.
@@ -89,14 +89,29 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
             Serial.flush();
             lastStatus = status;
         }
-        // WL_CONNECT_FAILED means the router rejected the attempt (auth error or
-        // transient RF issue).  Retry up to 3 times before giving up.
+        // WL_CONNECT_FAILED: router rejected the attempt (wrong password, RF issue,
+        // or router busy).  Retry up to 3 times.
+        // IMPORTANT: WiFi.disconnect() returns immediately but the internal ESP-IDF
+        // state machine needs time to fully reset before the next WiFi.begin() can
+        // succeed — calling begin() too early causes ESP_ERR_WIFI_STATE (0x3006).
+        // Wait until status becomes WL_DISCONNECTED (6) before retrying.
         if (status == WL_CONNECT_FAILED && retries < 3) {
             retries++;
-            Serial.printf("[WiFi] Connection failed, retry %d/3...\n", retries);
+            Serial.printf("[WiFi] Connection failed, retry %d/3 – waiting for clean disconnect...\n", retries);
             Serial.flush();
             WiFi.disconnect(false, false);
-            delay(500);
+
+            // Wait up to 3 s for the WiFi stack to fully settle into DISCONNECTED state
+            uint32_t discStart = millis();
+            while (millis() - discStart < 3000) {
+                wl_status_t s = WiFi.status();
+                if (s == WL_DISCONNECTED || s == WL_IDLE_STATUS || s == WL_NO_SSID_AVAIL) break;
+                delay(50);
+            }
+            delay(300); // extra margin for the internal state machine
+
+            Serial.printf("[WiFi] Retry %d/3 – calling begin...\n", retries);
+            Serial.flush();
             WiFi.begin(ssid, pass[0] ? pass : nullptr);
             lastStatus = WL_IDLE_STATUS;
         }
