@@ -640,6 +640,8 @@ void App::handleScan(const ScanResult &scan) {
     // Check 48 h recently-removed buffer before a full product lookup
     const InventoryItem *recent = inventory.findRecent(scan.code);
     if (recent) {
+        Logger::info("Scanner", String("48h-buffer hit for bc=") + scan.code +
+                     " lb=" + recent->labelBarcode + " name=" + recent->name);
         InventoryItem reItem = *recent;
         inventory.addItem(reItem);
         audio_obj.playSuccessTone();

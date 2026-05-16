@@ -13,7 +13,11 @@ public:
     explicit InventoryManager(InventoryStorage &storage);
     bool begin();
     bool addItem(const InventoryItem &item);
+    // Updates existing item in-place by labelBarcode; returns false if not found.
+    bool updateByLabel(const String &labelBarcode, const InventoryItem &updated);
     bool removeByLabel(const String &labelBarcode);
+    // Removes without recording to the 48h buffer (web UI permanent delete).
+    bool removeByLabelPermanent(const String &labelBarcode);
     bool removeByBarcode(const String &barcode);
     const std::vector<InventoryItem> &items() const;
 

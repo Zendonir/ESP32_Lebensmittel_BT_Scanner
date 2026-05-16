@@ -524,7 +524,7 @@ void WebInterface::registerApiRoutes() {
         sendJson(req, doc);
     });
 
-    // ---- INVENTORY (POST – add) ----
+    // ---- INVENTORY (POST – add or update) ----
     _server.on("/api/inventory", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             if (!_invMgr) { sendError(req, "Inventory nicht verfügbar"); return; }
@@ -541,7 +541,22 @@ void WebInterface::registerApiRoutes() {
             item.addedDate    = body["addedDate"]    | "";
             item.quantity     = body["quantity"]     | 1;
             item.labelBarcode = body["labelBarcode"] | "";
-            _invMgr->addItem(item);
+
+            if (!item.labelBarcode.isEmpty()) {
+                // Edit path: update existing item in-place by labelBarcode
+                Serial.printf("[Web] POST /api/inventory UPDATE lb='%s' name='%s'\n",
+                              item.labelBarcode.c_str(), item.name.c_str());
+                bool updated = _invMgr->updateByLabel(item.labelBarcode, item);
+                if (!updated) {
+                    // labelBarcode provided but not found: fall back to add
+                    Serial.printf("[Web] updateByLabel not found, falling back to addItem\n");
+                    _invMgr->addItem(item);
+                }
+            } else {
+                // New item path: always append
+                Serial.printf("[Web] POST /api/inventory ADD name='%s'\n", item.name.c_str());
+                _invMgr->addItem(item);
+            }
             sendOk(req);
         },
         nullptr, bodyCollect);
@@ -556,8 +571,10 @@ void WebInterface::registerApiRoutes() {
             }
             String lb = key["labelBarcode"] | "";
             String bc = key["barcode"]      | "";
+            Serial.printf("[Web] DELETE inventory lb='%s' bc='%s'\n", lb.c_str(), bc.c_str());
             if (!lb.isEmpty())
-                _invMgr->removeByLabel(lb);
+                // Permanent delete: skip 48h buffer so the item is not re-created on next scan
+                _invMgr->removeByLabelPermanent(lb);
             else if (!bc.isEmpty())
                 _invMgr->removeByBarcode(bc);
             sendOk(req);

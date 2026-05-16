@@ -9,18 +9,58 @@ bool InventoryManager::begin() {
 }
 
 bool InventoryManager::addItem(const InventoryItem &item) {
+    Serial.printf("[Inv] addItem lb='%s' bc='%s' name='%s'\n",
+                  item.labelBarcode.c_str(), item.barcode.c_str(), item.name.c_str());
     inventory.push_back(item);
-    return storage.save(inventory);
+    bool ok = storage.save(inventory);
+    Serial.printf("[Inv] addItem -> saved=%d total=%u\n", ok, (unsigned)inventory.size());
+    return ok;
+}
+
+bool InventoryManager::updateByLabel(const String &labelBarcode, const InventoryItem &updated) {
+    Serial.printf("[Inv] updateByLabel lb='%s' name='%s'\n",
+                  labelBarcode.c_str(), updated.name.c_str());
+    for (auto &it : inventory) {
+        if (it.labelBarcode == labelBarcode) {
+            it = updated;
+            it.labelBarcode = labelBarcode;  // preserve key
+            bool ok = storage.save(inventory);
+            Serial.printf("[Inv] updateByLabel -> found, saved=%d\n", ok);
+            return ok;
+        }
+    }
+    Serial.printf("[Inv] updateByLabel -> NOT FOUND lb='%s'\n", labelBarcode.c_str());
+    return false;
 }
 
 bool InventoryManager::removeByLabel(const String &labelBarcode) {
+    Serial.printf("[Inv] removeByLabel lb='%s'\n", labelBarcode.c_str());
     for (auto it = inventory.begin(); it != inventory.end(); ++it) {
         if (it->labelBarcode == labelBarcode) {
+            Serial.printf("[Inv] removeByLabel -> found '%s', recording removal\n", it->name.c_str());
             recordRemoval(*it);
             inventory.erase(it);
-            return storage.save(inventory);
+            bool ok = storage.save(inventory);
+            Serial.printf("[Inv] removeByLabel -> saved=%d total=%u\n", ok, (unsigned)inventory.size());
+            return ok;
         }
     }
+    Serial.printf("[Inv] removeByLabel -> NOT FOUND lb='%s'\n", labelBarcode.c_str());
+    return false;
+}
+
+bool InventoryManager::removeByLabelPermanent(const String &labelBarcode) {
+    Serial.printf("[Inv] removeByLabelPermanent lb='%s'\n", labelBarcode.c_str());
+    for (auto it = inventory.begin(); it != inventory.end(); ++it) {
+        if (it->labelBarcode == labelBarcode) {
+            Serial.printf("[Inv] removeByLabelPermanent -> found '%s', no buffer\n", it->name.c_str());
+            inventory.erase(it);
+            bool ok = storage.save(inventory);
+            Serial.printf("[Inv] removeByLabelPermanent -> saved=%d total=%u\n", ok, (unsigned)inventory.size());
+            return ok;
+        }
+    }
+    Serial.printf("[Inv] removeByLabelPermanent -> NOT FOUND lb='%s'\n", labelBarcode.c_str());
     return false;
 }
 
