@@ -73,20 +73,6 @@ static void add_region(int16_t x, int16_t y, int16_t w, int16_t h, OnscreenActio
 // ─────────────────── active location (shared across all screens) ─────────
 static String _s_active_location;
 
-// Draw location pill in top-right of header; registers LOCATION_BADGE hit region.
-// Call after filling the header rect. x_right is where the pill ends (e.g. SCR_W - 8).
-static void draw_location_badge(int x_right) {
-    if (_s_active_location.isEmpty()) return;
-    String label = _s_active_location;
-    if (label.length() > 14) label = label.substring(0, 14);
-    _spr.setTextFont(1);
-    _spr.setTextDatum(MR_DATUM);
-    _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.drawString(label.c_str(), x_right, HDR_H / 2);
-    // Hit region covers right portion of header for LOCATION_BADGE action
-    add_region(x_right - 100, 0, 100, HDR_H, OnscreenAction::LOCATION_BADGE);
-}
-
 // ─────────────────── touch debounce state ────────────────
 static bool     _touch_was_pressed = false;
 static uint32_t _touch_press_ms    = 0;
@@ -102,6 +88,19 @@ static volatile char           _pending_kb_char = 0;
 // ─────────────────── TFT + sprite ────────────────────────
 static TFT_eSPI    _tft;
 static TFT_eSprite _spr(&_tft);
+
+// Draw location pill in top-right of header; registers LOCATION_BADGE hit region.
+// x_right is the right edge of the pill in pixels.
+static void draw_location_badge(int x_right) {
+    if (_s_active_location.isEmpty()) return;
+    String label = _s_active_location;
+    if (label.length() > 14) label = label.substring(0, 14);
+    _spr.setTextFont(1);
+    _spr.setTextDatum(MR_DATUM);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.drawString(label.c_str(), x_right, HDR_H / 2);
+    add_region(x_right - 100, 0, 100, HDR_H, OnscreenAction::LOCATION_BADGE);
+}
 
 // ─────────────────── home screen cache ───────────────────
 struct HomeState {
