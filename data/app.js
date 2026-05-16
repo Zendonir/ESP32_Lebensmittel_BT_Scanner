@@ -42,6 +42,24 @@ const API = (() => {
   return {
     get:  (ep)      => request('GET',  ep),
     post: (ep, data) => request('POST', ep, data),
+    slowPost: (ep, data) => {
+      // Like post() but 25 s timeout — for long-running server operations (setup wizard)
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      return fetch(ep, {
+        method: 'POST', signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }).then(async res => {
+        clearTimeout(timer);
+        const text = await res.text();
+        return text ? JSON.parse(text) : {};
+      }).catch(e => {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') throw new Error('Timeout (25s) bei ' + ep);
+        throw e;
+      });
+    },
 
     async postForm(endpoint, formData) {
       const ctrl = new AbortController();
@@ -1758,7 +1776,7 @@ Pages.serversync = {
     document.getElementById('syncWizStep3').hidden = true;
 
     try {
-      const r = await API.post('/api/server-sync/setup', {
+      const r = await API.slowPost('/api/server-sync/setup', {
         host: host, rootUser: rUser, rootPass: rPass, syncPass: sPass,
       });
 

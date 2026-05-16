@@ -839,6 +839,7 @@ void WebInterface::registerApiRoutes() {
     });
     // Setup wizard: relay credentials to lebensmittel_setup.php on the target server.
     // Root credentials are forwarded but NEVER stored on this device.
+    // The HTTP relay runs in a dedicated FreeRTOS task so the async server is not blocked.
     _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
         Serial.println("[SetupWizard] *** HANDLER ENTERED ***");
         Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
@@ -876,65 +877,77 @@ void WebInterface::registerApiRoutes() {
                       static_cast<int>(wifiSt), wifiSt == WL_CONNECTED);
         Serial.flush();
         if (wifiSt != WL_CONNECTED) {
-            req->send(200, "application/json", "{\"ok\":false,\"error\":\"Kein WLAN – Setup nicht möglich\"}");
+            req->send(200, "application/json", "{\"ok\":false,\"error\":\"Kein WLAN – Gerät muss mit dem Heimnetz verbunden sein\"}");
             return;
         }
-        String setupUrl = "http://" + host + "/lebensmittel_setup.php";
-        Serial.printf("[SetupWizard] Calling URL: %s\n", setupUrl.c_str());
-        Serial.flush();
 
+        // Build forwarded body
         JsonDocument fwd;
-        fwd["rootUser"] = inp["rootUser"];
-        fwd["rootPass"] = inp["rootPass"];
+        fwd["rootUser"] = rootUser;
+        fwd["rootPass"] = rootPass;
         fwd["syncPass"] = syncPass;
         String fwdBody;
         serializeJson(fwd, fwdBody);
-        WiFiClient wc;
-        HTTPClient hc;
-        hc.setTimeout(15000);
-        String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
-        bool httpOk = hc.begin(wc, setupUrl);
-        Serial.printf("[SetupWizard] hc.begin() returned %d\n", httpOk ? 1 : 0);
+        String setupUrl = "http://" + host + "/lebensmittel_setup.php";
+        Serial.printf("[SetupWizard] Spawning task for URL: %s\n", setupUrl.c_str());
         Serial.flush();
-        if (httpOk) {
-            hc.addHeader("Content-Type", "application/json");
-            int code = hc.POST((uint8_t *)fwdBody.c_str(), fwdBody.length());
-            Serial.printf("[SetupWizard] HTTP POST response code=%d\n", code);
+
+        // Offload the blocking HTTP request to a FreeRTOS task so the async server stays responsive.
+        struct Payload {
+            AsyncWebServerRequest *req;
+            String url;
+            String body;
+            String syncPass;
+            String host;
+        };
+        auto *p = new Payload{req, setupUrl, fwdBody, syncPass, host};
+
+        xTaskCreate([](void *param) {
+            auto *p = static_cast<Payload *>(param);
+            Serial.printf("[SetupWizard] Task running, POST → %s\n", p->url.c_str());
             Serial.flush();
-            if (code > 0) {
-                result = hc.getString();
-                String preview = result.substring(0, 200);
-                Serial.printf("[SetupWizard] Response body (first 200 chars): %s\n", preview.c_str());
+
+            WiFiClient wc;
+            HTTPClient hc;
+            hc.setTimeout(12000);
+            hc.setConnectTimeout(6000);
+            String result = "{\"ok\":false,\"error\":\"Server nicht erreichbar\"}";
+            if (hc.begin(wc, p->url)) {
+                hc.addHeader("Content-Type", "application/json");
+                int code = hc.POST((uint8_t *)p->body.c_str(), p->body.length());
+                Serial.printf("[SetupWizard] HTTP POST code=%d\n", code);
                 Serial.flush();
-            } else {
-                Serial.printf("[SetupWizard] HTTP POST failed, no response body\n");
-                Serial.flush();
-            }
-            hc.end();
-            JsonDocument res;
-            if (deserializeJson(res, result) == DeserializationError::Ok) {
-                bool resOk = res["ok"].as<bool>();
-                const char *resErr = res["error"] | "";
-                Serial.printf("[SetupWizard] Response parsed: ok=%d error='%s'\n", resOk ? 1 : 0, resErr);
-                Serial.flush();
-                if (resOk) {
-                    JsonDocument cfg;
-                    loadJson("/server_sync_config.json", cfg, "{}");
-                    cfg["ip"]   = host;
-                    cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
-                    cfg["pass"] = syncPass;
-                    saveJson("/server_sync_config.json", cfg);
-                    sync_manager.begin();
-                    Serial.printf("[SetupWizard] Config saved: ip='%s' user='%s'\n",
-                                  host.c_str(), (res["syncUser"] | String("lebensmittel_sync")).c_str());
+                if (code > 0) {
+                    result = hc.getString();
+                    Serial.printf("[SetupWizard] Response: %s\n", result.substring(0, 200).c_str());
+                    Serial.flush();
+                    // If server returned ok, persist config
+                    JsonDocument res;
+                    if (deserializeJson(res, result) == DeserializationError::Ok && res["ok"].as<bool>()) {
+                        JsonDocument cfg;
+                        loadJson("/server_sync_config.json", cfg, "{}");
+                        cfg["ip"]   = p->host;
+                        cfg["user"] = res["syncUser"] | String("lebensmittel_sync");
+                        cfg["pass"] = p->syncPass;
+                        saveJson("/server_sync_config.json", cfg);
+                        sync_manager.loadConfig();
+                        Serial.printf("[SetupWizard] Config saved OK\n");
+                        Serial.flush();
+                    }
+                } else {
+                    Serial.printf("[SetupWizard] HTTP POST error code=%d\n", code);
                     Serial.flush();
                 }
+                hc.end();
             } else {
-                Serial.printf("[SetupWizard] Failed to parse response JSON\n");
+                Serial.println("[SetupWizard] hc.begin() failed");
                 Serial.flush();
             }
-        }
-        req->send(200, "application/json", result);
+            p->req->send(200, "application/json", result);
+            delete p;
+            vTaskDelete(nullptr);
+        }, "setup_wiz", 8192, p, 1, nullptr);
+
     }, nullptr, bodyCollect);
 
     _server.on("/api/server-sync", HTTP_GET, [](AsyncWebServerRequest *req) {
