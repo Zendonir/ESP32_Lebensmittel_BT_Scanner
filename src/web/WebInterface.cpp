@@ -252,8 +252,24 @@ void WebInterface::registerStaticRoutes() {
     _server.on("/success.txt",                   HTTP_GET, captive); // Firefox
     _server.on("/kindle-wifi/wifistub.html",     HTTP_GET, captive); // Kindle
 
+    _server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *req) {
+        static const char svg[] =
+            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+            "<rect width='32' height='32' rx='6' fill='#0d1117'/>"
+            "<rect x='4'  y='6' width='2' height='20' fill='#4fc3f7'/>"
+            "<rect x='7'  y='6' width='4' height='20' fill='#4fc3f7'/>"
+            "<rect x='12' y='6' width='2' height='20' fill='#4fc3f7'/>"
+            "<rect x='15' y='6' width='3' height='20' fill='#4fc3f7'/>"
+            "<rect x='19' y='6' width='2' height='20' fill='#4fc3f7'/>"
+            "<rect x='22' y='6' width='4' height='20' fill='#4fc3f7'/>"
+            "<rect x='27' y='6' width='2' height='20' fill='#4fc3f7'/>"
+            "</svg>";
+        AsyncWebServerResponse *r = req->beginResponse(200, "image/svg+xml", svg);
+        r->addHeader("Cache-Control", "max-age=86400");
+        req->send(r);
+    });
     _server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(204);
+        req->redirect("/favicon.svg");
     });
 
     _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
