@@ -685,6 +685,71 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
+    // ---- LAGERORTE (Storage Locations) ----
+    _server.on("/api/locations", HTTP_GET, [](AsyncWebServerRequest *req) {
+        sendFile(req, "/locations.json", "[]");
+    });
+    _server.on("/api/locations/delete", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, key, out;
+            out.to<JsonArray>();
+            loadJson("/locations.json", arr, "[]");
+            if (deserializeJson(key, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String name = key["name"] | "";
+                for (JsonVariant v : arr.as<JsonArray>()) {
+                    if ((String)(v["name"] | "") == name) continue;
+                    out.as<JsonArray>().add(v);
+                }
+                saveJson("/locations.json", out);
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+    _server.on("/api/locations", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, item;
+            loadJson("/locations.json", arr, "[]");
+            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
+            if (deserializeJson(item, _body) == DeserializationError::Ok) {
+                String oldName = item["oldName"] | "";
+                item.remove("oldName");
+                bool replaced = false;
+                if (oldName.length()) {
+                    for (JsonVariant v : arr.as<JsonArray>()) {
+                        if ((String)(v["name"] | "") == oldName) {
+                            v.set(item.as<JsonObject>());
+                            replaced = true;
+                            break;
+                        }
+                    }
+                }
+                if (!replaced) arr.as<JsonArray>().add(item.as<JsonObject>());
+                saveJson("/locations.json", arr);
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+    // Active location get/set
+    _server.on("/api/active-location", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["location"] = device_config.getActiveLocation();
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/active-location", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument item;
+            if (deserializeJson(item, _body) == DeserializationError::Ok) {
+                String loc = item["location"] | "";
+                device_config.setActiveLocation(loc);
+                display_obj.setActiveLocation(loc);
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+
     // ---- SHOPPING LIST ----
     _server.on("/api/shopping-list", HTTP_GET, [](AsyncWebServerRequest *req) {
         sendFile(req, "/shopping_list.json", "[]");
@@ -969,8 +1034,12 @@ void WebInterface::registerApiRoutes() {
             "`category` VARCHAR(100),`expiry_date` VARCHAR(20),"
             "`added_date` VARCHAR(20),`quantity` INT DEFAULT 1,"
             "`household` VARCHAR(100),`device_name` VARCHAR(100),"
+            "`location` VARCHAR(100) DEFAULT NULL,"
             "`synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Migration for existing installations without the location column
+        execSQL("ALTER TABLE `Lebensmittel_Scanner`.`inventar` "
+                "ADD COLUMN IF NOT EXISTS `location` VARCHAR(100) DEFAULT NULL");
 
         ok = ok && execSQL(
             "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`sync_log` ("
@@ -979,6 +1048,15 @@ void WebInterface::registerApiRoutes() {
             "`name` VARCHAR(200),`household` VARCHAR(100),"
             "`device_name` VARCHAR(100),"
             "`event_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        ok = ok && execSQL(
+            "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`removed_items` ("
+            "`label_barcode` VARCHAR(60) NOT NULL,"
+            "`household` VARCHAR(100),"
+            "`removed_by` VARCHAR(100),"
+            "`removed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+            "PRIMARY KEY (`label_barcode`,`household`)"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
         ok = ok && execSQL(

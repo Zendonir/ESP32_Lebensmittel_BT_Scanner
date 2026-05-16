@@ -23,6 +23,7 @@
     <li><a href="#inventory"     class="nav-link" data-page="inventory"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>Inventar</a></li>
     <li><a href="#templates"     class="nav-link" data-page="templates"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Vorlagen</a></li>
     <li><a href="#categories"    class="nav-link" data-page="categories"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72m2.54-15.38c-3.72 4.35-8.94 5.66-16.88 5.85m19.5 1.9c-3.5-.93-6.63-.82-8.94 0-2.58.92-5.01 2.86-7.44 6.32"/></svg>Kategorien</a></li>
+    <li><a href="#locations"     class="nav-link" data-page="locations"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Lagerorte</a></li>
     <li><a href="#shopping"      class="nav-link" data-page="shopping"><svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>Einkauf</a></li>
     <li class="nav-section">Einstellungen</li>
     <li><a href="#design"        class="nav-link" data-page="design"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 105 19.07M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>Design</a></li>
@@ -168,6 +169,19 @@
     <div class="empty-state" id="catEmpty" hidden>
       <svg viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="10"/></svg>
       <p>Keine Kategorien vorhanden</p>
+    </div>
+  </section>
+
+  <!-- LAGERORTE -->
+  <section id="page-locations" class="page">
+    <div class="page-header">
+      <h1>Lagerorte</h1>
+      <button class="btn btn-ok" onclick="Pages.locations.openAdd()">+ Neuer Lagerort</button>
+    </div>
+    <div id="locList" class="cat-grid"></div>
+    <div class="empty-state" id="locEmpty" hidden>
+      <svg viewBox="0 0 24 24" width="48" height="48"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <p>Keine Lagerorte vorhanden</p>
     </div>
   </section>
 

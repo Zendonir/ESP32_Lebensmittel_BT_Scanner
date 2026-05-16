@@ -11,4 +11,5 @@ struct InventoryItem {
     String addedDate;
     int quantity = 0;
     String labelBarcode;
+    String location;   // storage location when item was added
 };

@@ -4,6 +4,7 @@
 #include <vector>
 #include <time.h>
 #include "../models/ProductInfo.h"
+#include "../models/InventoryItem.h"
 #include "../storage/LittleFSManager.h"
 
 struct SyncEvent {
@@ -30,9 +31,14 @@ public:
     // Product cache — MySQL product_cache table
     bool pushProduct(const ProductInfo &product);
     bool fetchProductFromMySQL(const String &barcode, ProductInfo &out);
-    // Pull all rows from MySQL product_cache into local off_cache.json.
-    // Call once at boot when WiFi is available. Returns row count or -1 on error.
     int  pullProductsToCache(LittleFSManager &fs);
+
+    // Multi-device inventory sync
+    // Pull items added by other devices (different device_name, same household).
+    // Returns items not currently in our local inventory.
+    std::vector<InventoryItem> pullInventory(const String &household, const String &ourDevice);
+    // Pull label_barcodes that other devices removed (tombstones from removed_items table).
+    std::vector<String> pullRemovals(const String &household, const String &ourDevice);
 
 private:
     String _ip, _user, _pass;

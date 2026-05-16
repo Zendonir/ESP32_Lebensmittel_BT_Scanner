@@ -79,6 +79,12 @@ const std::vector<InventoryItem> &InventoryManager::items() const {
     return inventory;
 }
 
+bool InventoryManager::hasLabel(const String &labelBarcode) const {
+    for (const auto &it : inventory)
+        if (it.labelBarcode == labelBarcode) return true;
+    return false;
+}
+
 const InventoryItem *InventoryManager::findRecent(const String &barcode) const {
     time_t now = time(nullptr);
     for (const RemovedItem &ri : _recentlyRemoved) {

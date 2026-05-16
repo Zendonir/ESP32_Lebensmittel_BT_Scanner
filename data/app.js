@@ -176,6 +176,7 @@ const Router = (() => {
     inventory:  'Inventar',
     templates:  'Vorlagen',
     categories: 'Kategorien',
+    locations:  'Lagerorte',
     shopping:   'Einkaufsliste',
     design:     'Design',
     system:     'System',
@@ -825,6 +826,92 @@ Pages.categories = {
       try {
         await API.post('/api/categories/delete', { name: c.name });
         Toast.success('Kategorie gelöscht');
+        this.load();
+      } catch(e) {
+        Toast.error('Fehler: ' + e.message);
+      }
+    });
+  },
+};
+
+/* ---- LAGERORTE ---- */
+Pages.locations = {
+  _displayed: [],
+
+  async load() {
+    try {
+      const locs = await API.get('/api/locations');
+      this._displayed = locs;
+      this.render(locs);
+    } catch(e) {
+      Toast.error('Lagerorte: ' + e.message);
+    }
+  },
+
+  render(items) {
+    const grid  = document.getElementById('locList');
+    const empty = document.getElementById('locEmpty');
+    if (!items.length) { grid.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    grid.innerHTML = items.map((loc, i) => `
+      <div class="cat-card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px">
+        <div>
+          <div class="cat-name" style="font-size:1rem;font-weight:600">${esc(loc.name)}</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-sm" onclick="Pages.locations.setActive('${esc(loc.name)}')">Aktivieren</button>
+          <button class="btn btn-sm" onclick="Pages.locations.edit(${i})">Bearb.</button>
+          <button class="btn btn-sm btn-danger" onclick="Pages.locations.remove(${i})">Löschen</button>
+        </div>
+      </div>`).join('');
+  },
+
+  openAdd() { this._openForm(null); },
+  edit(i)   { this._openForm(this._displayed[i]); },
+
+  _openForm(loc) {
+    Modal.show({
+      title: loc ? 'Lagerort bearbeiten' : 'Neuer Lagerort',
+      body: `
+        <form class="form-stack" id="locForm">
+          <div class="form-field"><label>Name *</label><input class="input" id="lfName" value="${esc(loc?.name||'')}" required></div>
+        </form>`,
+      actions: [
+        { label: 'Abbrechen', cls: '', onclick: Modal.hide },
+        { label: loc ? 'Speichern' : 'Erstellen', cls: 'btn-ok', onclick: () => this._submit(loc) },
+      ],
+    });
+  },
+
+  async _submit(original) {
+    const name = document.getElementById('lfName').value.trim();
+    if (!name) { Toast.warn('Name erforderlich'); return; }
+    const data = original ? { oldName: original.name, name } : { name };
+    try {
+      await API.post('/api/locations', data);
+      Toast.success('Lagerort gespeichert');
+      Modal.hide();
+      this.load();
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async setActive(name) {
+    try {
+      await API.post('/api/active-location', { location: name });
+      Toast.success('Aktiver Lagerort: ' + name);
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  remove(i) {
+    const loc = this._displayed[i];
+    Modal.confirm('Lagerort löschen', `"${esc(loc.name)}" löschen?`, async () => {
+      try {
+        await API.post('/api/locations/delete', { name: loc.name });
+        Toast.success('Lagerort gelöscht');
         this.load();
       } catch(e) {
         Toast.error('Fehler: ' + e.message);

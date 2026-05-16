@@ -78,13 +78,18 @@ void App::begin() {
     // Wire MySQL-backed product cache into the OpenFoodFacts lookup chain
     openFoodFacts.setSyncManager(&sync_manager);
 
-    // Boot sync: pull product cache from MySQL → local off_cache.json
+    // Boot sync: pull product cache + inventory from MySQL
     if (wifi_manager.isConnected() && sync_manager.hasConfig()) {
         Logger::info("Sync", "Boot: pulling product cache from MySQL...");
         int n = sync_manager.pullProductsToCache(fs);
         if (n >= 0)
             Logger::info("Sync", String("Boot: ") + n + " products pulled from MySQL");
+        doInventoryPull();
+        _lastInventorySyncMs = millis();
     }
+
+    // Restore active location badge on display
+    display_obj.setActiveLocation(device_config.getActiveLocation());
 
     Serial.flush();
     Logger::info("Scanner", "Initializing BLE barcode scanner");
@@ -144,6 +149,15 @@ void App::loop() {
     time_manager.loop();
     sync_manager.loop();
     barcode_manager.loop();
+
+    // Periodic inventory pull from MySQL (every 2 minutes, background merge)
+    if (sync_manager.hasConfig() && wifi_manager.isConnected()) {
+        uint32_t now = millis();
+        if (now - _lastInventorySyncMs > INVENTORY_SYNC_INTERVAL_MS) {
+            _lastInventorySyncMs = now;
+            doInventoryPull();
+        }
+    }
     handleTouch();
     processWorkflow();
 
@@ -410,6 +424,23 @@ void App::processOnscreenAction(OnscreenAction action) {
                     display_obj.showTemplateMHD(tmpl.name, mhd, _pendingQuantity);
                 }
             }
+        } else if (workflow == WorkflowMode::LOCATION_SELECT) {
+            auto locs = loadLocationNames();
+            // idx 0 = "Kein Lagerort" (clear), then actual locations
+            if (idx == 0) {
+                device_config.setActiveLocation("");
+                display_obj.setActiveLocation("");
+            } else {
+                int locIdx = idx - 1;
+                if (locIdx < (int)locs.size()) {
+                    device_config.setActiveLocation(locs[locIdx]);
+                    display_obj.setActiveLocation(locs[locIdx]);
+                }
+            }
+            audio_obj.playClickTone();
+            workflow = WorkflowMode::HOME;
+            renderActiveTab(String("Lagerort: ") + device_config.getActiveLocation());
+            return;
         }
         return;
     }
@@ -580,6 +611,11 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::PRINTER_FEED_5:
             printer.feed(5);
+            break;
+        case OnscreenAction::LOCATION_BADGE:
+            audio_obj.playClickTone();
+            workflow = WorkflowMode::LOCATION_SELECT;
+            showLocationSelect();
             break;
 
         // ── Template MHD confirm ───────────────────────────────────────────
@@ -793,6 +829,7 @@ bool App::finishStorageWorkflow() {
     item.addedDate = time_manager.today();
     item.quantity = _pendingQuantity;
     item.labelBarcode = labelCounter.nextLabel();
+    item.location = device_config.getActiveLocation();
 
     bool stored = inventory.addItem(item);
     if (stored) {
@@ -808,6 +845,7 @@ bool App::finishStorageWorkflow() {
         sdoc["labelBarcode"] = item.labelBarcode;
         sdoc["household"]    = device_config.getHousehold();
         sdoc["deviceName"]   = device_config.getDeviceName();
+        sdoc["location"]     = item.location;
         sdoc["timestamp"]    = (long)time(nullptr);
         String sp; serializeJson(sdoc, sp);
         sync_manager.enqueue("ADD", sp);
@@ -833,6 +871,7 @@ void App::initFilesystem() {
         Logger::info("LittleFS", "Mounted OK");
         fs.ensureJsonFile("/inventory.json", "[]");
         fs.ensureJsonFile("/off_cache.json", "[]");
+        fs.ensureJsonFile("/locations.json", "[]");
     }
     loadTemplates();
 }
@@ -936,6 +975,55 @@ void App::startTmplMHD() {
         String mhd = calcMHD(tmpl.shelfDays, 0);
         display_obj.showTemplateMHD(tmpl.name, mhd, _pendingQuantity);
     }
+}
+
+std::vector<String> App::loadLocationNames() const {
+    std::vector<String> names;
+    File f = LittleFS.open("/locations.json", "r");
+    if (!f) return names;
+    JsonDocument doc;
+    if (deserializeJson(doc, f) == DeserializationError::Ok && doc.is<JsonArray>()) {
+        for (JsonObject obj : doc.as<JsonArray>()) {
+            String n = obj["name"] | "";
+            if (!n.isEmpty()) names.push_back(n);
+        }
+    }
+    f.close();
+    return names;
+}
+
+void App::showLocationSelect() {
+    auto locs = loadLocationNames();
+    display_obj.showLocationSelect(device_config.getActiveLocation(), locs);
+}
+
+void App::doInventoryPull() {
+    if (!sync_manager.hasConfig() || !wifi_manager.isConnected()) return;
+    const String &hh  = device_config.getHousehold();
+    const String &dev = device_config.getDeviceName();
+
+    // 1. Apply tombstones — remove items other devices deleted
+    auto removals = sync_manager.pullRemovals(hh, dev);
+    int removed = 0;
+    for (const String &lb : removals) {
+        if (inventory.hasLabel(lb)) {
+            inventory.removeByLabelPermanent(lb);
+            removed++;
+        }
+    }
+
+    // 2. Merge new items from other devices
+    auto pulled = sync_manager.pullInventory(hh, dev);
+    int added = 0;
+    for (const InventoryItem &item : pulled) {
+        if (!inventory.hasLabel(item.labelBarcode)) {
+            inventory.addItem(item);
+            added++;
+        }
+    }
+
+    if (removed || added)
+        Logger::info("Sync", String("Pull: +") + added + " items, -" + removed + " removals");
 }
 
 void App::initWebServer() {

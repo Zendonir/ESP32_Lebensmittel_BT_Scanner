@@ -20,6 +20,7 @@ public:
     bool removeByLabelPermanent(const String &labelBarcode);
     bool removeByBarcode(const String &barcode);
     const std::vector<InventoryItem> &items() const;
+    bool hasLabel(const String &labelBarcode) const;
 
     // 48 h recently-removed buffer
     const InventoryItem *findRecent(const String &barcode) const;

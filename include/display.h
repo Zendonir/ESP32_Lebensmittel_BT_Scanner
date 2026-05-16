@@ -65,6 +65,8 @@ enum class OnscreenAction {
     KB_BACKSPACE,
     KB_CAPS,       // toggle caps-lock
     KB_CONFIRM,
+    // Location badge (tapping the top-right location pill opens location select)
+    LOCATION_BADGE,
 };
 
 enum class UiTab {
@@ -110,6 +112,10 @@ public:
     void showCategoryTiles(const std::vector<String> &categories);
     void showListScreen(const char *title, const std::vector<String> &items, bool showBack);
     void showTemplateMHD(const String &productName, const String &mhd, int qty);
+
+    // Location
+    void setActiveLocation(const String &loc);
+    void showLocationSelect(const String &current, const std::vector<String> &locations);
 
     // Keyboard entry
     void showKeyboardEntry(const String &title, const String &current);

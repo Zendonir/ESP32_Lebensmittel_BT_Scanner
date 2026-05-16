@@ -5,8 +5,9 @@ DeviceConfig device_config;
 void DeviceConfig::begin() {
     Preferences p;
     if (!p.begin("device", true)) return;
-    _household  = p.getString("household", "Standard");
-    _deviceName = p.getString("devName",   "");
+    _household      = p.getString("household", "Standard");
+    _deviceName     = p.getString("devName",   "");
+    _activeLocation = p.getString("location",  "");
     p.end();
 }
 
@@ -23,5 +24,13 @@ void DeviceConfig::setDeviceName(const String &n) {
     Preferences p;
     p.begin("device", false);
     p.putString("devName", _deviceName);
+    p.end();
+}
+
+void DeviceConfig::setActiveLocation(const String &loc) {
+    _activeLocation = loc;
+    Preferences p;
+    p.begin("device", false);
+    p.putString("location", _activeLocation);
     p.end();
 }

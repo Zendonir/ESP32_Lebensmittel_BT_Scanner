@@ -45,7 +45,7 @@ static constexpr uint16_t C_YELLOW   = RGB(0xCC,0x92,0x18);
 static constexpr uint16_t C_RED      = RGB(0xF0,0x46,0x40);
 
 // ─────────────────── hit region table ────────────────────
-static constexpr int MAX_REGIONS = 40;
+static constexpr int MAX_REGIONS = 48;
 
 struct HitRegion {
     int16_t x, y, w, h;
@@ -68,6 +68,23 @@ static void add_region(int16_t x, int16_t y, int16_t w, int16_t h, OnscreenActio
     if (_region_count < MAX_REGIONS)
         _regions[_region_count++] = {x, y, w, h, a, extra};
     portEXIT_CRITICAL(&_regions_mux);
+}
+
+// ─────────────────── active location (shared across all screens) ─────────
+static String _s_active_location;
+
+// Draw location pill in top-right of header; registers LOCATION_BADGE hit region.
+// Call after filling the header rect. x_right is where the pill ends (e.g. SCR_W - 8).
+static void draw_location_badge(int x_right) {
+    if (_s_active_location.isEmpty()) return;
+    String label = _s_active_location;
+    if (label.length() > 14) label = label.substring(0, 14);
+    _spr.setTextFont(1);
+    _spr.setTextDatum(MR_DATUM);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.drawString(label.c_str(), x_right, HDR_H / 2);
+    // Hit region covers right portion of header for LOCATION_BADGE action
+    add_region(x_right - 100, 0, 100, HDR_H, OnscreenAction::LOCATION_BADGE);
 }
 
 // ─────────────────── touch debounce state ────────────────
@@ -166,14 +183,16 @@ static void draw_header(UiTab activeTab, bool wifiConnected) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(_tab_labels[static_cast<int>(activeTab)], 12, HDR_H / 2);
-    // WiFi indicator top-right
+    // WiFi dot top-right
     uint16_t wc = wifiConnected ? C_GREEN : C_RED;
-    _spr.fillCircle(SCR_W - 24, HDR_H / 2, 7, wc);
-    _spr.drawCircle(SCR_W - 24, HDR_H / 2, 7, C_BORDER);
+    _spr.fillCircle(SCR_W - 12, HDR_H / 2, 7, wc);
+    _spr.drawCircle(SCR_W - 12, HDR_H / 2, 7, C_BORDER);
     _spr.setTextColor(C_SURFACE, wc);
     _spr.setTextFont(1);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString("W", SCR_W - 24, HDR_H / 2);
+    _spr.drawString("W", SCR_W - 12, HDR_H / 2);
+    // Location badge left of WiFi dot
+    draw_location_badge(SCR_W - 26);
 }
 
 
@@ -621,6 +640,7 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
     _spr.drawString("MHD eingeben", SCR_W - 8, HDR_H / 2);
+    draw_location_badge(SCR_W - 90);
 
     _spr.fillRect(0, HDR_H, SCR_W, 72, C_SURFACE2);
     _spr.drawFastHLine(0, HDR_H + 72 - 1, SCR_W, C_BORDER);
@@ -779,6 +799,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
     _spr.setTextFont(2);
     _spr.setTextDatum(MR_DATUM);
     _spr.drawString(count_str.c_str(), SCR_W - 8, HDR_H / 2);
+    draw_location_badge(SCR_W - 8 - 70); // left of count text
 
     _spr.fillRect(0, HDR_H, SCR_W, 28, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
@@ -849,6 +870,7 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("Kategorie w\xE4hlen", 12, HDR_H / 2);
+    draw_location_badge(SCR_W - 8);
 
     // 2 columns × 4 rows, content area 480×276
     static constexpr int COLS     = 2;
@@ -914,12 +936,13 @@ void Display::showListScreen(const char *title,
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 12, HDR_H / 2);
+    draw_location_badge(SCR_W - 8);
 
     if (showBack) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
         _spr.setTextFont(2);
         _spr.setTextDatum(MR_DATUM);
-        _spr.drawString("< wischen = zur\xFC" "ck", SCR_W - 8, HDR_H / 2);
+        _spr.drawString("< wischen = zur\xFC" "ck", SCR_W - 8 - (int)(_s_active_location.isEmpty() ? 0 : 115), HDR_H / 2);
     }
 
     // Taller rows for comfortable finger tapping and larger text
@@ -976,9 +999,7 @@ void Display::showTemplateMHD(const String &productName,
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(trunc(productName, 22).c_str(), 8, HDR_H / 2);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextDatum(MR_DATUM);
-    _spr.drawString("< wischen = zur\xFC" "ck", SCR_W - 8, HDR_H / 2);
+    draw_location_badge(SCR_W - 8);
 
     // MHD display (no day-adjust buttons)
     int mhd_y = HDR_H + 6;
@@ -1149,5 +1170,73 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     add_region(288, row4_y, 192, key_h, OnscreenAction::KB_CONFIRM);
 
     _spr.drawFastHLine(0, row4_y + key_h, SCR_W, C_BORDER);
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
+//   Location selection
+// ─────────────────────────────────────────────────────────
+
+void Display::setActiveLocation(const String &loc) {
+    _s_active_location = loc;
+}
+
+void Display::showLocationSelect(const String &current, const std::vector<String> &locations) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    // Header
+    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
+    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString("Lagerort w\xE4hlen", 12, HDR_H / 2);
+    if (!current.isEmpty()) {
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MR_DATUM);
+        _spr.drawString(("Aktiv: " + current).c_str(), SCR_W - 8, HDR_H / 2);
+    }
+
+    // Build list: "Kein Lagerort" first, then actual locations
+    std::vector<String> rows;
+    rows.push_back("-- Kein Lagerort --");
+    for (const String &l : locations) rows.push_back(l);
+
+    static constexpr int ITEM_H   = 55;
+    static constexpr int MAX_SHOW = 5;
+    int shown = (int)rows.size() < MAX_SHOW ? (int)rows.size() : MAX_SHOW;
+    int list_y = HDR_H;
+
+    for (int i = 0; i < shown; i++) {
+        int iy = list_y + i * ITEM_H;
+        bool isActive = (i == 0 && current.isEmpty()) ||
+                        (i > 0 && rows[i] == current);
+        uint16_t bg = isActive ? C_ACCENT : (i % 2 == 0 ? C_SURFACE : C_SURFACE2);
+        uint16_t fg = isActive ? C_BG     : C_TEXT;
+        _spr.fillRect(0, iy, SCR_W, ITEM_H, bg);
+        _spr.fillRect(0, iy, 3, ITEM_H, isActive ? C_BG : C_ACCENT);
+        _spr.setTextColor(fg, bg);
+        _spr.setTextFont(4);
+        _spr.setTextDatum(ML_DATUM);
+        _spr.drawString(trunc(rows[i], 36).c_str(), 12, iy + ITEM_H / 2);
+        if (isActive) {
+            _spr.setTextColor(C_BG, bg);
+            _spr.setTextDatum(MR_DATUM);
+            _spr.drawString("*", SCR_W - 12, iy + ITEM_H / 2);
+        }
+        _spr.drawFastHLine(0, iy + ITEM_H - 1, SCR_W, C_BORDER);
+        add_region(0, iy, SCR_W, ITEM_H, LIST_ACTIONS[i]);
+    }
+
+    if (rows.size() == 1) {
+        _spr.setTextColor(C_SUBTEXT, C_BG);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString("Keine Lagerorte – im Web-UI anlegen", SCR_W / 2, HDR_H + 100);
+    }
+
     commit();
 }

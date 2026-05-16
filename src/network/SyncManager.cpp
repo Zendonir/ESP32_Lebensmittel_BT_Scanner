@@ -60,10 +60,11 @@ void SyncManager::loop() {
         int    qty          = doc["quantity"]             | 1;
         String household    = sqlEsc(doc["household"]    | "");
         String deviceName   = sqlEsc(doc["deviceName"]   | "");
+        String location     = sqlEsc(doc["location"]     | "");
 
         sql  = "INSERT INTO `Lebensmittel_Scanner`.`inventar`";
         sql += " (`label_barcode`,`barcode`,`name`,`brand`,`category`,";
-        sql += "`expiry_date`,`added_date`,`quantity`,`household`,`device_name`)";
+        sql += "`expiry_date`,`added_date`,`quantity`,`household`,`device_name`,`location`)";
         sql += " VALUES ('";
         sql += labelBarcode; sql += "','";
         sql += barcode;      sql += "','";
@@ -74,19 +75,31 @@ void SyncManager::loop() {
         sql += addedDate;    sql += "',";
         sql += qty;          sql += ",'";
         sql += household;    sql += "','";
-        sql += deviceName;   sql += "')";
+        sql += deviceName;   sql += "','";
+        sql += location;     sql += "')";
         sql += " ON DUPLICATE KEY UPDATE";
         sql += " `barcode`=VALUES(`barcode`),`name`=VALUES(`name`),";
         sql += "`brand`=VALUES(`brand`),`category`=VALUES(`category`),";
         sql += "`expiry_date`=VALUES(`expiry_date`),`added_date`=VALUES(`added_date`),";
         sql += "`quantity`=VALUES(`quantity`),`household`=VALUES(`household`),";
-        sql += "`device_name`=VALUES(`device_name`)";
+        sql += "`device_name`=VALUES(`device_name`),`location`=VALUES(`location`)";
 
     } else if (ev.type == "REMOVE_LABEL") {
-        String lb = sqlEsc(doc["labelBarcode"] | "");
+        String lb        = sqlEsc(doc["labelBarcode"] | "");
+        String household = sqlEsc(doc["household"]    | "");
+        String devName   = sqlEsc(doc["deviceName"]   | "");
+        // Delete from inventar
         sql  = "DELETE FROM `Lebensmittel_Scanner`.`inventar` WHERE `label_barcode`='";
         sql += lb;
         sql += "'";
+        // Also write tombstone so other devices know about the removal
+        String tomb  = "INSERT INTO `Lebensmittel_Scanner`.`removed_items`";
+        tomb += " (`label_barcode`,`household`,`removed_by`)";
+        tomb += " VALUES ('"; tomb += lb; tomb += "','";
+        tomb += household;   tomb += "','";
+        tomb += devName;     tomb += "')";
+        tomb += " ON DUPLICATE KEY UPDATE `removed_by`=VALUES(`removed_by`),`removed_at`=NOW()";
+        execDirectMySQL(tomb);   // best-effort; main result is the DELETE below
 
     } else {
         Logger::warn("Sync", String("unknown event type=") + ev.type + ", dropping");
@@ -350,4 +363,86 @@ int SyncManager::pullProductsToCache(LittleFSManager &fs) {
     fs.writeFileAtomic("/off_cache.json", serialized);
     Logger::info("Sync", String("Boot sync: ") + (int)rows.size() + " products pulled from MySQL");
     return (int)rows.size();
+}
+
+// ---------- multi-device inventory sync -------------------------------------
+
+std::vector<InventoryItem> SyncManager::pullInventory(const String &household, const String &ourDevice) {
+    std::vector<InventoryItem> out;
+    if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return out;
+
+    MySQLDirect db;
+    if (!db.connect(_ip, 3306, _user, _pass, 5000)) {
+        Logger::warn("Sync", String("pullInventory connect failed: ") + db.lastError());
+        return out;
+    }
+
+    String sql =
+        "SELECT `label_barcode`,`barcode`,`name`,`brand`,`category`,"
+        "`expiry_date`,`added_date`,`quantity`,`location`,`device_name`"
+        " FROM `Lebensmittel_Scanner`.`inventar`"
+        " WHERE `household`='";
+    sql += sqlEsc(household);
+    sql += "' ORDER BY `synced_at` DESC LIMIT 300";
+
+    std::vector<std::vector<String>> rows;
+    bool ok = db.queryRows(sql, rows, 300);
+    db.close();
+
+    if (!ok) {
+        Logger::warn("Sync", String("pullInventory query failed: ") + db.lastError());
+        return out;
+    }
+
+    for (const auto &row : rows) {
+        if (row.size() < 9) continue;
+        InventoryItem item;
+        item.labelBarcode = row[0];
+        item.barcode      = row[1];
+        item.name         = row[2];
+        item.brand        = row[3];
+        item.category     = row[4];
+        item.expiryDate   = row[5];
+        item.addedDate    = row[6];
+        item.quantity     = row[7].toInt();
+        item.location     = row[8];
+        // device_name = row[9] (not stored in InventoryItem)
+        out.push_back(item);
+    }
+    Logger::info("Sync", String("pullInventory: ") + out.size() + " items from MySQL");
+    return out;
+}
+
+std::vector<String> SyncManager::pullRemovals(const String &household, const String &ourDevice) {
+    std::vector<String> out;
+    if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return out;
+
+    MySQLDirect db;
+    if (!db.connect(_ip, 3306, _user, _pass, 5000)) {
+        Logger::warn("Sync", String("pullRemovals connect failed: ") + db.lastError());
+        return out;
+    }
+
+    String sql =
+        "SELECT `label_barcode` FROM `Lebensmittel_Scanner`.`removed_items`"
+        " WHERE `household`='";
+    sql += sqlEsc(household);
+    sql += "' AND `removed_by`!='";
+    sql += sqlEsc(ourDevice);
+    sql += "' ORDER BY `removed_at` DESC LIMIT 500";
+
+    std::vector<std::vector<String>> rows;
+    bool ok = db.queryRows(sql, rows, 500);
+    db.close();
+
+    if (!ok) {
+        Logger::warn("Sync", String("pullRemovals query failed: ") + db.lastError());
+        return out;
+    }
+
+    for (const auto &row : rows) {
+        if (!row.empty() && !row[0].isEmpty()) out.push_back(row[0]);
+    }
+    Logger::info("Sync", String("pullRemovals: ") + out.size() + " tombstones from MySQL");
+    return out;
 }

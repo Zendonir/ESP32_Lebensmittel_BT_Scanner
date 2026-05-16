@@ -44,6 +44,8 @@ private:
         TMPL_MHD,            // MHD + qty confirm before saving
         // Fully manual keyboard entry
         KB_ENTRY,            // keyboard input for product name
+        // Location selection
+        LOCATION_SELECT,     // showing location list to activate
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -75,6 +77,11 @@ private:
     void showTmplBrands();
     void startTmplMHD();
     String calcMHD(int shelfDays, int offset) const;
+
+    // Location helpers
+    std::vector<String> loadLocationNames() const;
+    void showLocationSelect();
+    void doInventoryPull();
 
     TwoWire         i2c_bus;
     AppStateManager state;
@@ -122,6 +129,10 @@ private:
 
     // Keyboard entry state
     String   _kbText;                    // current keyboard input text
+
+    // Inventory pull sync timer
+    uint32_t _lastInventorySyncMs = 0;
+    static constexpr uint32_t INVENTORY_SYNC_INTERVAL_MS = 120000; // 2 minutes
 };
 
 extern App app;
