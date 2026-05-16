@@ -186,6 +186,31 @@ bool MySQLDirect::connect(const String &ip, uint16_t port,
     _client.stop(); return false;
 }
 
+// ---------- length-encoded integer -------------------------------------------
+
+uint64_t MySQLDirect::lenencInt(const uint8_t *buf, size_t bufLen, size_t &pos) {
+    if (pos >= bufLen) return 0;
+    uint8_t first = buf[pos++];
+    if (first < 0xFB) return first;
+    if (first == 0xFB) return 0;  // NULL
+    if (first == 0xFC) {
+        if (pos + 2 > bufLen) return 0;
+        uint64_t v = (uint64_t)buf[pos] | ((uint64_t)buf[pos + 1] << 8);
+        pos += 2; return v;
+    }
+    if (first == 0xFD) {
+        if (pos + 3 > bufLen) return 0;
+        uint64_t v = (uint64_t)buf[pos] | ((uint64_t)buf[pos + 1] << 8)
+                   | ((uint64_t)buf[pos + 2] << 16);
+        pos += 3; return v;
+    }
+    // 0xFE: 8-byte LE (or EOF marker when packet len < 9)
+    if (pos + 8 > bufLen) return 0;
+    uint64_t v = 0;
+    for (int i = 0; i < 8; i++) v |= ((uint64_t)buf[pos + i] << (8 * i));
+    pos += 8; return v;
+}
+
 // ---------- execute ----------------------------------------------------------
 
 bool MySQLDirect::execute(const String &sql) {
@@ -197,6 +222,94 @@ bool MySQLDirect::execute(const String &sql) {
     sendPacket(pkt, 1 + sLen);
     delete[] pkt;
     return readOkOrErr();
+}
+
+// ---------- queryRows --------------------------------------------------------
+
+bool MySQLDirect::queryRows(const String &sql,
+                             std::vector<std::vector<String>> &out,
+                             size_t maxRows) {
+    out.clear();
+    _lastError = ""; _seq = 0;
+
+    // Send COM_QUERY
+    size_t sLen = sql.length();
+    uint8_t *pkt = new uint8_t[1 + sLen];
+    pkt[0] = 0x03;
+    memcpy(pkt + 1, sql.c_str(), sLen);
+    sendPacket(pkt, 1 + sLen);
+    delete[] pkt;
+
+    // First packet: OK / ERR / column-count
+    uint8_t hdr[512]; size_t hdrLen = 0;
+    if (!readPacket(hdr, hdrLen, sizeof(hdr))) return false;
+    if (hdrLen == 0) { _lastError = "empty response"; return false; }
+    if (hdr[0] == 0xFF) {
+        uint16_t code = (hdrLen >= 3)
+            ? ((uint16_t)hdr[1] | ((uint16_t)hdr[2] << 8)) : 0;
+        String msg;
+        size_t start = (hdrLen > 3 && hdr[3] == '#') ? 9 : 3;
+        for (size_t i = start; i < hdrLen; i++) msg += (char)hdr[i];
+        _lastError = "MySQL " + String(code) + ": " + msg;
+        return false;
+    }
+    if (hdr[0] == 0x00) return true;  // OK packet (no result set)
+
+    // Parse column count
+    size_t pos = 0;
+    uint64_t numCols = lenencInt(hdr, hdrLen, pos);
+    if (numCols == 0 || numCols > 64) { _lastError = "bad column count"; return false; }
+
+    // Skip column definition packets (one per column)
+    for (uint64_t c = 0; c < numCols; c++) {
+        uint8_t colBuf[512]; size_t colLen = 0;
+        if (!readPacket(colBuf, colLen, sizeof(colBuf))) return false;
+    }
+
+    // Read EOF packet after column definitions
+    {
+        uint8_t eofBuf[16]; size_t eofLen = 0;
+        if (!readPacket(eofBuf, eofLen, sizeof(eofBuf))) return false;
+        if (eofBuf[0] != 0xFE) { _lastError = "expected EOF after columns"; return false; }
+    }
+
+    // Read row packets until EOF (first byte 0xFE, length < 9)
+    constexpr size_t ROW_BUF_SIZE = 2048;
+    uint8_t *rowBuf = new uint8_t[ROW_BUF_SIZE];
+
+    while (out.size() < maxRows) {
+        size_t rowLen = 0;
+        if (!readPacket(rowBuf, rowLen, ROW_BUF_SIZE)) { delete[] rowBuf; return false; }
+        if (rowBuf[0] == 0xFE && rowLen < 9) break;  // EOF
+        if (rowBuf[0] == 0xFF) {                       // ERR
+            uint16_t code = (rowLen >= 3)
+                ? ((uint16_t)rowBuf[1] | ((uint16_t)rowBuf[2] << 8)) : 0;
+            _lastError = "Row ERR " + String(code);
+            delete[] rowBuf; return false;
+        }
+
+        std::vector<String> row;
+        size_t rpos = 0;
+        for (uint64_t c = 0; c < numCols; c++) {
+            if (rpos >= rowLen) { row.push_back(""); continue; }
+            if (rowBuf[rpos] == 0xFB) {  // NULL
+                rpos++;
+                row.push_back("");
+            } else {
+                uint64_t strLen = lenencInt(rowBuf, rowLen, rpos);
+                if (rpos + strLen > rowLen) strLen = rowLen - rpos;
+                String s;
+                s.reserve((unsigned)strLen);
+                for (uint64_t i = 0; i < strLen; i++) s += (char)rowBuf[rpos + i];
+                rpos += (size_t)strLen;
+                row.push_back(s);
+            }
+        }
+        out.push_back(std::move(row));
+    }
+
+    delete[] rowBuf;
+    return true;
 }
 
 // ---------- close ------------------------------------------------------------

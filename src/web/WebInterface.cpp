@@ -971,6 +971,15 @@ void WebInterface::registerApiRoutes() {
             "`event_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+        ok = ok && execSQL(
+            "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`product_cache` ("
+            "`barcode` VARCHAR(60) NOT NULL PRIMARY KEY,"
+            "`name` VARCHAR(200),`brand` VARCHAR(100),`quantity` VARCHAR(60),"
+            "`category` VARCHAR(100),`nutriscore` VARCHAR(10),`labels` TEXT,"
+            "`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP "
+            "ON UPDATE CURRENT_TIMESTAMP"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
         // Use IDENTIFIED BY (MariaDB / MySQL ≤5.7 syntax; our MySQLDirect client
         // only supports mysql_native_password which is the default on MariaDB).
         // CREATE USER IF NOT EXISTS skips if the user already exists;

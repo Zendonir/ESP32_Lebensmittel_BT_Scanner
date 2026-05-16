@@ -75,6 +75,17 @@ void App::begin() {
     printer.begin();
     sync_manager.begin();
 
+    // Wire MySQL-backed product cache into the OpenFoodFacts lookup chain
+    openFoodFacts.setSyncManager(&sync_manager);
+
+    // Boot sync: pull product cache from MySQL → local off_cache.json
+    if (wifi_manager.isConnected() && sync_manager.hasConfig()) {
+        Logger::info("Sync", "Boot: pulling product cache from MySQL...");
+        int n = sync_manager.pullProductsToCache(fs);
+        if (n >= 0)
+            Logger::info("Sync", String("Boot: ") + n + " products pulled from MySQL");
+    }
+
     Serial.flush();
     Logger::info("Scanner", "Initializing BLE barcode scanner");
     Serial.flush();

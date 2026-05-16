@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <vector>
 #include <time.h>
+#include "../models/ProductInfo.h"
+#include "../storage/LittleFSManager.h"
 
 struct SyncEvent {
     String   type;       // "ADD", "REMOVE_LABEL", "REMOVE_BARCODE"
@@ -23,6 +25,14 @@ public:
     bool   testConnection(String &outMsg);
     time_t getLastSync()   const { return _lastSyncTime; }
     bool   wasLastSyncOk() const { return _lastSyncOk; }
+    bool   hasConfig()     const { return !_ip.isEmpty(); }
+
+    // Product cache — MySQL product_cache table
+    bool pushProduct(const ProductInfo &product);
+    bool fetchProductFromMySQL(const String &barcode, ProductInfo &out);
+    // Pull all rows from MySQL product_cache into local off_cache.json.
+    // Call once at boot when WiFi is available. Returns row count or -1 on error.
+    int  pullProductsToCache(LittleFSManager &fs);
 
 private:
     String _ip, _user, _pass;
@@ -37,6 +47,9 @@ private:
     void saveQueue();
     void loadQueue();
     bool execDirectMySQL(const String &sql);
+
+    static String labelsToString(const std::vector<String> &labels);
+    static void   labelsFromString(const String &s, std::vector<String> &out);
 };
 
 extern SyncManager sync_manager;

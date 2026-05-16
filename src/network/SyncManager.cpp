@@ -219,3 +219,135 @@ bool SyncManager::execDirectMySQL(const String &sql) {
     db.close();
     return ok;
 }
+
+// ---------- product cache helpers -------------------------------------------
+
+String SyncManager::labelsToString(const std::vector<String> &labels) {
+    String s;
+    for (size_t i = 0; i < labels.size(); i++) {
+        if (i) s += ',';
+        s += labels[i];
+    }
+    return s;
+}
+
+void SyncManager::labelsFromString(const String &s, std::vector<String> &out) {
+    out.clear();
+    if (s.isEmpty()) return;
+    int start = 0;
+    for (int i = 0; i <= (int)s.length(); i++) {
+        if (i == (int)s.length() || s[i] == ',') {
+            String label = s.substring(start, i);
+            if (!label.isEmpty()) out.push_back(label);
+            start = i + 1;
+        }
+    }
+}
+
+// ---------- product cache operations ----------------------------------------
+
+bool SyncManager::pushProduct(const ProductInfo &product) {
+    if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return false;
+    if (product.barcode.isEmpty() || product.name.isEmpty()) return false;
+
+    String sql =
+        "INSERT INTO `Lebensmittel_Scanner`.`product_cache` "
+        "(`barcode`,`name`,`brand`,`quantity`,`category`,`nutriscore`,`labels`) VALUES ('";
+    sql += sqlEsc(product.barcode);   sql += "','";
+    sql += sqlEsc(product.name);      sql += "','";
+    sql += sqlEsc(product.brand);     sql += "','";
+    sql += sqlEsc(product.quantity);  sql += "','";
+    sql += sqlEsc(product.category);  sql += "','";
+    sql += sqlEsc(product.nutriscore);sql += "','";
+    sql += sqlEsc(labelsToString(product.labels)); sql += "') ";
+    sql += "ON DUPLICATE KEY UPDATE "
+           "`name`=VALUES(`name`),`brand`=VALUES(`brand`),"
+           "`quantity`=VALUES(`quantity`),`category`=VALUES(`category`),"
+           "`nutriscore`=VALUES(`nutriscore`),`labels`=VALUES(`labels`)";
+
+    bool ok = execDirectMySQL(sql);
+    if (ok)
+        Logger::info("Sync", String("Product pushed to MySQL: ") + product.barcode);
+    return ok;
+}
+
+bool SyncManager::fetchProductFromMySQL(const String &barcode, ProductInfo &out) {
+    if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return false;
+
+    MySQLDirect db;
+    if (!db.connect(_ip, 3306, _user, _pass, 3000)) return false;
+
+    String sql =
+        "SELECT `name`,`brand`,`quantity`,`category`,`nutriscore`,`labels` "
+        "FROM `Lebensmittel_Scanner`.`product_cache` WHERE `barcode`='";
+    sql += sqlEsc(barcode);
+    sql += "' LIMIT 1";
+
+    std::vector<std::vector<String>> rows;
+    bool ok = db.queryRows(sql, rows, 1);
+    db.close();
+
+    if (!ok || rows.empty() || rows[0].size() < 6) return false;
+
+    const auto &row = rows[0];
+    out.barcode    = barcode;
+    out.name       = row[0];
+    out.brand      = row[1];
+    out.quantity   = row[2];
+    out.category   = row[3];
+    out.nutriscore = row[4];
+    labelsFromString(row[5], out.labels);
+
+    return !out.name.isEmpty();
+}
+
+int SyncManager::pullProductsToCache(LittleFSManager &fs) {
+    if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return -1;
+
+    MySQLDirect db;
+    if (!db.connect(_ip, 3306, _user, _pass, 6000)) {
+        Logger::warn("Sync", String("pullProductsToCache connect failed: ") + db.lastError());
+        return -1;
+    }
+
+    std::vector<std::vector<String>> rows;
+    bool ok = db.queryRows(
+        "SELECT `barcode`,`name`,`brand`,`quantity`,`category`,`nutriscore`,`labels` "
+        "FROM `Lebensmittel_Scanner`.`product_cache` "
+        "ORDER BY `updated_at` DESC LIMIT 50",
+        rows, 50);
+    db.close();
+
+    if (!ok) {
+        Logger::warn("Sync", String("pullProductsToCache query failed: ") + db.lastError());
+        return -1;
+    }
+    if (rows.empty()) {
+        Logger::info("Sync", "pullProductsToCache: product_cache empty");
+        return 0;
+    }
+
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (const auto &row : rows) {
+        if (row.size() < 7) continue;
+        JsonObject obj = arr.add<JsonObject>();
+        obj["barcode"]    = row[0];
+        obj["name"]       = row[1];
+        obj["brand"]      = row[2];
+        obj["quantity"]   = row[3];
+        obj["category"]   = row[4];
+        obj["nutriscore"] = row[5];
+        JsonArray labels  = obj["labels"].to<JsonArray>();
+        std::vector<String> lblVec;
+        labelsFromString(row[6], lblVec);
+        for (const String &l : lblVec) labels.add(l);
+        obj["cachedAt"]   = (uint32_t)millis();
+    }
+
+    String serialized;
+    serializeJson(doc, serialized);
+    fs.writeFileAtomic("/off_cache.json", serialized);
+    Logger::info("Sync", String("Boot sync: ") + (int)rows.size() + " products pulled from MySQL");
+    return (int)rows.size();
+}

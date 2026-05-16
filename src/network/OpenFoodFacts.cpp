@@ -34,11 +34,22 @@ void productToJson(JsonObject obj, const ProductInfo &product) {
 OpenFoodFacts::OpenFoodFacts(ApiClient &client, LittleFSManager *cacheFs) : api(client), filesystem(cacheFs) {}
 
 bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
+    // 1. Local LittleFS cache
     if (loadCachedProduct(barcode, product)) {
-        Logger::info("OpenFoodFacts", String("Cache hit: ") + barcode);
+        Logger::info("OpenFoodFacts", String("Local cache hit: ") + barcode);
         return true;
     }
 
+    // 2. MySQL product_cache (fast lookup without OpenFoodFacts API call)
+    if (_sync && _sync->hasConfig()) {
+        if (_sync->fetchProductFromMySQL(barcode, product)) {
+            Logger::info("OpenFoodFacts", String("MySQL cache hit: ") + barcode);
+            cacheProduct(product);  // persist to local cache for next time
+            return true;
+        }
+    }
+
+    // 3. OpenFoodFacts API
     // Request only the fields we actually use – drops response from ~200 KB
     // down to ~1-2 KB, making the fetch 5-10× faster on slow connections.
     String url = "https://world.openfoodfacts.org/api/v2/product/" + barcode
@@ -98,8 +109,11 @@ bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
         product.labels.push_back(lbl.as<String>());
 
     bool ok = !product.name.isEmpty();
-    if (ok) cacheProduct(product);
-    Logger::info("OpenFoodFacts", String("Fetched: ") + product.name + " (" + product.brand + ")");
+    if (ok) {
+        cacheProduct(product);           // local LittleFS cache
+        if (_sync) _sync->pushProduct(product);  // MySQL product_cache
+    }
+    Logger::info("OpenFoodFacts", String("API fetch: ") + product.name + " (" + product.brand + ")");
     return ok;
 }
 
