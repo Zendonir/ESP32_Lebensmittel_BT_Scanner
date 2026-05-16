@@ -839,7 +839,6 @@ void WebInterface::registerApiRoutes() {
     });
     // Setup wizard: connect directly to MySQL as root, create DB/tables/user, then store
     // the sync credentials. Root credentials are NEVER stored on this device.
-    // Runs in a dedicated FreeRTOS task so the async server is not blocked.
     _server.on("/api/server-sync/setup", HTTP_POST, [](AsyncWebServerRequest *req) {
         Serial.println("[SetupWizard] *** HANDLER ENTERED ***");
         Serial.printf("[SetupWizard] POST /api/server-sync/setup called, bodyLen=%u\n",
@@ -881,113 +880,100 @@ void WebInterface::registerApiRoutes() {
             return;
         }
 
-        Serial.printf("[SetupWizard] Spawning direct-MySQL task for host: %s\n", host.c_str());
+        Serial.printf("[SetupWizard] Connecting to MySQL at %s:3306\n", host.c_str());
         Serial.flush();
 
-        // Offload the blocking MySQL operations to a FreeRTOS task.
-        struct Payload {
-            AsyncWebServerRequest *req;
-            String host;
-            String rootUser;
-            String rootPass;
-            String syncPass;
+        // Run MySQL setup synchronously — direct TCP to MariaDB/MySQL takes ~2s,
+        // well within the watchdog limit, and ESPAsyncWebServer requires req->send()
+        // to be called before onRequest() returns (calling it from another task
+        // causes a "Handler did not handle the request" auto-response from the server).
+        MySQLDirect db;
+        bool connected = db.connect(host, 3306, rootUser, rootPass, 4000);
+        Serial.printf("[SetupWizard] MySQL connect: %s\n",
+                      connected ? "OK" : db.lastError().c_str());
+        Serial.flush();
+
+        if (!connected) {
+            String err = String("{\"ok\":false,\"error\":\"MySQL-Verbindung fehlgeschlagen: ")
+                         + db.lastError() + "\"}";
+            req->send(200, "application/json", err);
+            return;
+        }
+
+        String lastErr;
+        auto execSQL = [&](const String &sql) -> bool {
+            Serial.printf("[SetupWizard] SQL: %.120s\n", sql.c_str());
+            Serial.flush();
+            bool ok = db.execute(sql);
+            Serial.printf("[SetupWizard] result: %s\n", ok ? "OK" : db.lastError().c_str());
+            Serial.flush();
+            if (!ok && lastErr.isEmpty()) lastErr = db.lastError();
+            return ok;
         };
-        auto *p = new Payload{req, host, rootUser, rootPass, syncPass};
 
-        xTaskCreate([](void *param) {
-            auto *p = static_cast<Payload *>(param);
-            Serial.printf("[SetupWizard] Task running, connecting to MySQL at %s:3306\n", p->host.c_str());
+        bool ok = true;
+
+        ok = ok && execSQL(
+            "CREATE DATABASE IF NOT EXISTS `Lebensmittel_Scanner` "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+        ok = ok && execSQL(
+            "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`inventar` ("
+            "`id` INT AUTO_INCREMENT PRIMARY KEY,"
+            "`label_barcode` VARCHAR(60) NOT NULL UNIQUE,"
+            "`barcode` VARCHAR(60),`name` VARCHAR(200),`brand` VARCHAR(100),"
+            "`category` VARCHAR(100),`expiry_date` VARCHAR(20),"
+            "`added_date` VARCHAR(20),`quantity` INT DEFAULT 1,"
+            "`household` VARCHAR(100),`device_name` VARCHAR(100),"
+            "`synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        ok = ok && execSQL(
+            "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`sync_log` ("
+            "`id` INT AUTO_INCREMENT PRIMARY KEY,`event_type` VARCHAR(30),"
+            "`label_barcode` VARCHAR(60),`barcode` VARCHAR(60),"
+            "`name` VARCHAR(200),`household` VARCHAR(100),"
+            "`device_name` VARCHAR(100),"
+            "`event_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Use IDENTIFIED BY (MariaDB / MySQL ≤5.7 syntax; our MySQLDirect client
+        // only supports mysql_native_password which is the default on MariaDB).
+        // CREATE USER IF NOT EXISTS skips if the user already exists;
+        // ALTER USER then updates/confirms the password in both cases.
+        ok = ok && execSQL(
+            String("CREATE USER IF NOT EXISTS 'lebensmittel_sync'@'%' IDENTIFIED BY '")
+            + syncPass + "'");
+
+        ok = ok && execSQL(
+            String("ALTER USER 'lebensmittel_sync'@'%' IDENTIFIED BY '") + syncPass + "'");
+
+        ok = ok && execSQL(
+            "GRANT SELECT,INSERT,UPDATE,DELETE ON `Lebensmittel_Scanner`.* "
+            "TO 'lebensmittel_sync'@'%'");
+
+        ok = ok && execSQL("FLUSH PRIVILEGES");
+
+        db.close();
+        Serial.printf("[SetupWizard] All SQL steps ok=%d\n", (int)ok);
+        Serial.flush();
+
+        if (ok) {
+            // Save sync credentials (root credentials are NOT stored)
+            JsonDocument cfg;
+            cfg["ip"]   = host;
+            cfg["user"] = "lebensmittel_sync";
+            cfg["pass"] = syncPass;
+            saveJson("/server_sync_config.json", cfg);
+            sync_manager.loadConfig();
+            Serial.println("[SetupWizard] Config saved OK");
             Serial.flush();
-
-            MySQLDirect db;
-            bool connected = db.connect(p->host, 3306, p->rootUser, p->rootPass);
-            Serial.printf("[SetupWizard] MySQL connect: %s\n",
-                          connected ? "OK" : db.lastError().c_str());
-            Serial.flush();
-
-            if (!connected) {
-                String err = "{\"ok\":false,\"error\":\"MySQL-Verbindung fehlgeschlagen: "
-                             + db.lastError() + "\"}";
-                p->req->send(200, "application/json", err);
-                delete p;
-                vTaskDelete(nullptr);
-                return;
-            }
-
-            String syncPass = p->syncPass;
-
-            auto execSQL = [&](const String &sql) -> bool {
-                Serial.printf("[SetupWizard] SQL: %.120s\n", sql.c_str());
-                Serial.flush();
-                bool ok = db.execute(sql);
-                Serial.printf("[SetupWizard] result: %s\n",
-                              ok ? "OK" : db.lastError().c_str());
-                Serial.flush();
-                return ok;
-            };
-
-            bool ok = true;
-
-            ok = ok && execSQL(
-                "CREATE DATABASE IF NOT EXISTS `Lebensmittel_Scanner` "
-                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-            ok = ok && execSQL(
-                "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`inventar` ("
-                "`id` INT AUTO_INCREMENT PRIMARY KEY,"
-                "`label_barcode` VARCHAR(60) NOT NULL UNIQUE,"
-                "`barcode` VARCHAR(60),`name` VARCHAR(200),`brand` VARCHAR(100),"
-                "`category` VARCHAR(100),`expiry_date` VARCHAR(20),"
-                "`added_date` VARCHAR(20),`quantity` INT DEFAULT 1,"
-                "`household` VARCHAR(100),`device_name` VARCHAR(100),"
-                "`synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-            ok = ok && execSQL(
-                "CREATE TABLE IF NOT EXISTS `Lebensmittel_Scanner`.`sync_log` ("
-                "`id` INT AUTO_INCREMENT PRIMARY KEY,`event_type` VARCHAR(30),"
-                "`label_barcode` VARCHAR(60),`barcode` VARCHAR(60),"
-                "`name` VARCHAR(200),`household` VARCHAR(100),"
-                "`device_name` VARCHAR(100),"
-                "`event_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-            ok = ok && execSQL(
-                String("CREATE USER IF NOT EXISTS 'lebensmittel_sync'@'%' "
-                       "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'");
-
-            ok = ok && execSQL(
-                String("ALTER USER 'lebensmittel_sync'@'%' "
-                       "IDENTIFIED WITH mysql_native_password BY '") + syncPass + "'");
-
-            ok = ok && execSQL(
-                "GRANT SELECT,INSERT,UPDATE,DELETE ON `Lebensmittel_Scanner`.* "
-                "TO 'lebensmittel_sync'@'%'");
-
-            ok = ok && execSQL("FLUSH PRIVILEGES");
-
-            db.close();
-            Serial.printf("[SetupWizard] All SQL steps ok=%d\n", (int)ok);
-            Serial.flush();
-
-            if (ok) {
-                // Save config (root credentials are NOT stored)
-                JsonDocument cfg;
-                cfg["ip"]   = p->host;
-                cfg["user"] = "lebensmittel_sync";
-                cfg["pass"] = syncPass;
-                saveJson("/server_sync_config.json", cfg);
-                sync_manager.loadConfig();
-                Serial.printf("[SetupWizard] Config saved OK\n");
-                Serial.flush();
-                p->req->send(200, "application/json", "{\"ok\":true}");
-            } else {
-                p->req->send(200, "application/json", "{\"ok\":false,\"error\":\"MySQL-Setup fehlgeschlagen\"}");
-            }
-
-            delete p;
-            vTaskDelete(nullptr);
-        }, "setup_wiz", 8192, p, 1, nullptr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        } else {
+            String err = String("{\"ok\":false,\"error\":\"MySQL-Setup fehlgeschlagen: ")
+                         + lastErr + "\"}";
+            req->send(200, "application/json", err);
+        }
 
     }, nullptr, bodyCollect);
 
