@@ -524,6 +524,26 @@ void WebInterface::registerApiRoutes() {
         sendJson(req, doc);
     });
 
+    // ---- INVENTORY DELETE (register BEFORE /api/inventory POST — ESPAsyncWebServer prefix matching) ----
+    _server.on("/api/inventory/delete", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            if (!_invMgr) { sendError(req, "Inventory nicht verfügbar"); return; }
+            JsonDocument key;
+            if (deserializeJson(key, _body) != DeserializationError::Ok) {
+                sendError(req, "Ungültiges JSON", 400); return;
+            }
+            String lb = key["labelBarcode"] | "";
+            String bc = key["barcode"]      | "";
+            Serial.printf("[Web] DELETE inventory lb='%s' bc='%s'\n", lb.c_str(), bc.c_str());
+            if (!lb.isEmpty())
+                // Permanent delete: skip 48h buffer so the item is not re-created on next scan
+                _invMgr->removeByLabelPermanent(lb);
+            else if (!bc.isEmpty())
+                _invMgr->removeByBarcode(bc);
+            sendOk(req);
+        },
+        nullptr, bodyCollect);
+
     // ---- INVENTORY (POST – add or update) ----
     _server.on("/api/inventory", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
@@ -561,41 +581,11 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
-    // ---- INVENTORY DELETE ----
-    _server.on("/api/inventory/delete", HTTP_POST,
-        [this](AsyncWebServerRequest *req) {
-            if (!_invMgr) { sendError(req, "Inventory nicht verfügbar"); return; }
-            JsonDocument key;
-            if (deserializeJson(key, _body) != DeserializationError::Ok) {
-                sendError(req, "Ungültiges JSON", 400); return;
-            }
-            String lb = key["labelBarcode"] | "";
-            String bc = key["barcode"]      | "";
-            Serial.printf("[Web] DELETE inventory lb='%s' bc='%s'\n", lb.c_str(), bc.c_str());
-            if (!lb.isEmpty())
-                // Permanent delete: skip 48h buffer so the item is not re-created on next scan
-                _invMgr->removeByLabelPermanent(lb);
-            else if (!bc.isEmpty())
-                _invMgr->removeByBarcode(bc);
-            sendOk(req);
-        },
-        nullptr, bodyCollect);
-
     // ---- CUSTOM PRODUCTS ----
     _server.on("/api/custom-products", HTTP_GET, [](AsyncWebServerRequest *req) {
         sendFile(req, "/custom_products.json", "[]");
     });
-    _server.on("/api/custom-products", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            JsonDocument arr, item;
-            loadJson("/custom_products.json", arr, "[]");
-            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            if (deserializeJson(item, _body) == DeserializationError::Ok)
-                arr.as<JsonArray>().add(item.as<JsonObject>());
-            saveJson("/custom_products.json", arr);
-            req->send(200, "application/json", "{\"ok\":true}");
-        },
-        nullptr, bodyCollect);
+    // Sub-routes registered BEFORE /api/custom-products POST (prefix matching)
     _server.on("/api/custom-products/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument arr, item;
@@ -636,11 +626,40 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
+    _server.on("/api/custom-products", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, item;
+            loadJson("/custom_products.json", arr, "[]");
+            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
+            if (deserializeJson(item, _body) == DeserializationError::Ok)
+                arr.as<JsonArray>().add(item.as<JsonObject>());
+            saveJson("/custom_products.json", arr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
 
     // ---- CATEGORIES ----
     _server.on("/api/categories", HTTP_GET, [](AsyncWebServerRequest *req) {
         sendFile(req, "/categories.json", "[]");
     });
+    // Sub-route registered BEFORE /api/categories POST (prefix matching)
+    _server.on("/api/categories/delete", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, key, out;
+            out.to<JsonArray>();
+            loadJson("/categories.json", arr, "[]");
+            if (deserializeJson(key, _body) == DeserializationError::Ok
+                && arr.is<JsonArray>()) {
+                String name = key["name"] | "";
+                for (JsonVariant v : arr.as<JsonArray>()) {
+                    if ((String)(v["name"] | "") == name) continue;
+                    out.as<JsonArray>().add(v);
+                }
+                saveJson("/categories.json", out);
+            }
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
     _server.on("/api/categories", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument arr, item;
@@ -665,39 +684,12 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
-    _server.on("/api/categories/delete", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            JsonDocument arr, key, out;
-            out.to<JsonArray>();
-            loadJson("/categories.json", arr, "[]");
-            if (deserializeJson(key, _body) == DeserializationError::Ok
-                && arr.is<JsonArray>()) {
-                String name = key["name"] | "";
-                for (JsonVariant v : arr.as<JsonArray>()) {
-                    if ((String)(v["name"] | "") == name) continue;
-                    out.as<JsonArray>().add(v);
-                }
-                saveJson("/categories.json", out);
-            }
-            req->send(200, "application/json", "{\"ok\":true}");
-        },
-        nullptr, bodyCollect);
 
     // ---- SHOPPING LIST ----
     _server.on("/api/shopping-list", HTTP_GET, [](AsyncWebServerRequest *req) {
         sendFile(req, "/shopping_list.json", "[]");
     });
-    _server.on("/api/shopping-list", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            JsonDocument arr, item;
-            loadJson("/shopping_list.json", arr, "[]");
-            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            if (deserializeJson(item, _body) == DeserializationError::Ok)
-                arr.as<JsonArray>().add(item.as<JsonObject>());
-            saveJson("/shopping_list.json", arr);
-            req->send(200, "application/json", "{\"ok\":true}");
-        },
-        nullptr, bodyCollect);
+    // Sub-routes registered BEFORE /api/shopping-list POST (prefix matching)
     _server.on("/api/shopping-list/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument arr, item;
@@ -733,6 +725,17 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
+    _server.on("/api/shopping-list", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, item;
+            loadJson("/shopping_list.json", arr, "[]");
+            if (!arr.is<JsonArray>()) arr.to<JsonArray>();
+            if (deserializeJson(item, _body) == DeserializationError::Ok)
+                arr.as<JsonArray>().add(item.as<JsonObject>());
+            saveJson("/shopping_list.json", arr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
 
     // ---- CONFIG FILES (simple GET/POST) ----
     auto cfgGet = [](const char *file) {
@@ -743,12 +746,13 @@ void WebInterface::registerApiRoutes() {
     };
 
     _server.on("/api/ui-config",     HTTP_GET,  cfgGet("/ui_config.json"));
-    _server.on("/api/ui-config",     HTTP_POST, cfgPost("/ui_config.json"), nullptr, bodyCollect);
+    // /reset before /api/ui-config POST (prefix matching)
     _server.on("/api/ui-config/reset", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             AppFS::fs().remove("/ui_config.json");
             req->send(200, "application/json", "{\"ok\":true}");
         });
+    _server.on("/api/ui-config",     HTTP_POST, cfgPost("/ui_config.json"), nullptr, bodyCollect);
 
     _server.on("/api/font-config",   HTTP_GET,  cfgGet("/font_config.json"));
     _server.on("/api/font-config",   HTTP_POST, cfgPost("/font_config.json"), nullptr, bodyCollect);
@@ -847,9 +851,15 @@ void WebInterface::registerApiRoutes() {
         nullptr, bodyCollect);
 
     _server.on("/api/mqtt",          HTTP_GET,  cfgGet("/mqtt_config.json"));
+    // /mqtt/test before /api/mqtt POST (prefix matching)
+    _server.on("/api/mqtt/test",     HTTP_POST,
+        [](AsyncWebServerRequest *req) { req->send(200, "application/json", "{\"ok\":false,\"message\":\"MQTT nicht konfiguriert\"}"); });
     _server.on("/api/mqtt",          HTTP_POST, cfgPost("/mqtt_config.json"), nullptr, bodyCollect);
 
     _server.on("/api/telegram",      HTTP_GET,  cfgGet("/telegram_config.json"));
+    // /telegram/test before /api/telegram POST (prefix matching)
+    _server.on("/api/telegram/test", HTTP_POST,
+        [](AsyncWebServerRequest *req) { req->send(200, "application/json", "{\"ok\":false,\"message\":\"Telegram nicht konfiguriert\"}"); });
     _server.on("/api/telegram",      HTTP_POST, cfgPost("/telegram_config.json"), nullptr, bodyCollect);
 
     // Sub-routes MUST be registered before the base "/api/server-sync" route because
@@ -1038,36 +1048,7 @@ void WebInterface::registerApiRoutes() {
     }, nullptr, bodyCollect);
 
     // ---- WIFI ----
-    _server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest *req) {
-        Serial.printf("[API] GET /api/wifi host=%s connected=%d\n", req->host().c_str(), WiFi.status() == WL_CONNECTED);
-        Serial.flush();
-        JsonDocument doc;
-        loadJson("/wifi_config.json", doc, "{}");
-        doc["connected"] = (WiFi.status() == WL_CONNECTED);
-        doc["ssid"]      = wifi_manager.getSavedSSID();
-        doc["ip"]        = WiFi.localIP().toString();
-        doc["rssi"]      = WiFi.RSSI();
-        appendScanCache(doc);
-        Serial.printf("[API] /api/wifi includes scan cache ready=%d count=%d source=%s\n",
-                      _scanReady, _scanCount, _scanSource.c_str());
-        Serial.flush();
-        String body;
-        serializeJson(doc, body);
-        req->send(200, "application/json", body);
-    });
-    _server.on("/api/wifi", HTTP_POST,
-        [](AsyncWebServerRequest *req) {
-            JsonDocument probe;
-            if (deserializeJson(probe, _body) == DeserializationError::Ok
-                && !probe["ssid"].isNull()) {
-                handleWiFiConnectRequest(req, "/api/wifi");
-                return;
-            }
-            Serial.printf("[API] POST /api/wifi config bodyLen=%u\n", static_cast<unsigned>(_body.length()));
-            Serial.flush();
-            mergePost(req, "/wifi_config.json", "{}");
-        },
-        nullptr, bodyCollect);
+    // All /api/wifi/* sub-routes registered BEFORE /api/wifi GET+POST (prefix matching)
     _server.on("/api/wifi/ap", HTTP_POST, cfgPost("/wifi_config.json"), nullptr, bodyCollect);
 
     // WiFi scan — start. Run synchronously and cache a frontend-ready result.
@@ -1125,14 +1106,44 @@ void WebInterface::registerApiRoutes() {
         req->send(200, "application/json", body);
     });
 
+    // Parent /api/wifi routes (after all sub-routes)
+    _server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.printf("[API] GET /api/wifi host=%s connected=%d\n", req->host().c_str(), WiFi.status() == WL_CONNECTED);
+        Serial.flush();
+        JsonDocument doc;
+        loadJson("/wifi_config.json", doc, "{}");
+        doc["connected"] = (WiFi.status() == WL_CONNECTED);
+        doc["ssid"]      = wifi_manager.getSavedSSID();
+        doc["ip"]        = WiFi.localIP().toString();
+        doc["rssi"]      = WiFi.RSSI();
+        appendScanCache(doc);
+        Serial.printf("[API] /api/wifi includes scan cache ready=%d count=%d source=%s\n",
+                      _scanReady, _scanCount, _scanSource.c_str());
+        Serial.flush();
+        String body;
+        serializeJson(doc, body);
+        req->send(200, "application/json", body);
+    });
+    _server.on("/api/wifi", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument probe;
+            if (deserializeJson(probe, _body) == DeserializationError::Ok
+                && !probe["ssid"].isNull()) {
+                handleWiFiConnectRequest(req, "/api/wifi");
+                return;
+            }
+            Serial.printf("[API] POST /api/wifi config bodyLen=%u\n", static_cast<unsigned>(_body.length()));
+            Serial.flush();
+            mergePost(req, "/wifi_config.json", "{}");
+        },
+        nullptr, bodyCollect);
+
     // ---- SIMPLE STUBS ----
     auto stub = [](const char *msg) {
         return [msg](AsyncWebServerRequest *req) {
             req->send(200, "application/json", msg);
         };
     };
-    _server.on("/api/mqtt/test",            HTTP_POST, stub("{\"ok\":false,\"message\":\"MQTT nicht konfiguriert\"}"));
-    _server.on("/api/telegram/test",        HTTP_POST, stub("{\"ok\":false,\"message\":\"Telegram nicht konfiguriert\"}"));
     _server.on("/api/test-print", HTTP_POST,
         [this](AsyncWebServerRequest *req) {
             if (!_printer) {
