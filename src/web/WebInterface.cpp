@@ -198,7 +198,7 @@ static void sendNoCacheFile(AsyncWebServerRequest *req, const char *path, const 
 static const char *BUILD_ETAG = "\"" __DATE__ "-" __TIME__ "\"";
 
 static void sendCachedFile(AsyncWebServerRequest *req, const char *path, const char *contentType) {
-    AsyncWebHeader *etag = req->getHeader("If-None-Match");
+    const AsyncWebHeader *etag = req->getHeader("If-None-Match");
     if (etag && etag->value() == BUILD_ETAG) {
         req->send(304);
         return;
