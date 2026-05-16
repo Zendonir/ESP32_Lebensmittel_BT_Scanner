@@ -18,6 +18,7 @@ private:
     WiFiClient _client;
     String     _lastError;
     uint8_t    _seq = 0;
+    uint32_t   _readTimeoutMs = 5000;
 
     bool readN(uint8_t *buf, size_t n);
     bool readPacket(uint8_t *buf, size_t &len, size_t maxLen);

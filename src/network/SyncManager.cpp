@@ -151,8 +151,11 @@ String SyncManager::getQueueJson() const {
 bool SyncManager::testConnection(String &outMsg) {
     if (_ip.isEmpty()) { outMsg = "Keine Server-IP konfiguriert"; return false; }
     if (WiFi.status() != WL_CONNECTED) { outMsg = "Kein WLAN"; return false; }
+    // 3-second timeout: this runs synchronously in the ESPAsyncWebServer handler,
+    // blocking ALL other HTTP requests. Keeping it tight ensures other requests
+    // (like GET /api/server-sync) can still complete within the 10s JS timeout.
     MySQLDirect db;
-    bool ok = db.connect(_ip, 3306, _user, _pass);
+    bool ok = db.connect(_ip, 3306, _user, _pass, 3000);
     outMsg = ok ? "MySQL-Verbindung erfolgreich"
                 : ("Verbindung fehlgeschlagen: " + db.lastError());
     if (ok) db.close();

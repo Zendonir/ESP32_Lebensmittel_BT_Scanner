@@ -978,6 +978,8 @@ void WebInterface::registerApiRoutes() {
     }, nullptr, bodyCollect);
 
     _server.on("/api/server-sync", HTTP_GET, [](AsyncWebServerRequest *req) {
+        Serial.println("[Sync] GET /api/server-sync");
+        Serial.flush();
         JsonDocument doc;
         loadJson("/server_sync_config.json", doc, "{}");
         doc["connected"] = sync_manager.wasLastSyncOk();

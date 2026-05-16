@@ -32,7 +32,7 @@ bool MySQLDirect::readN(uint8_t *buf, size_t n) {
     size_t got = 0;
     uint32_t t0 = millis();
     while (got < n) {
-        if (millis() - t0 > 5000) { _lastError = "read timeout"; return false; }
+        if (millis() - t0 > _readTimeoutMs) { _lastError = "read timeout"; return false; }
         int a = _client.available();
         if (a > 0) {
             size_t chunk = (size_t)a < (n - got) ? (size_t)a : (n - got);
@@ -88,6 +88,7 @@ bool MySQLDirect::connect(const String &ip, uint16_t port,
                            const String &user, const String &pass,
                            uint32_t timeoutMs) {
     _seq = 0; _lastError = "";
+    _readTimeoutMs = timeoutMs;  // readN uses the same limit as the TCP connect
     IPAddress serverIP;
     if (!serverIP.fromString(ip)) { _lastError = "Invalid IP: " + ip; return false; }
     _client.setTimeout(timeoutMs / 1000);
