@@ -252,6 +252,10 @@ void WebInterface::registerStaticRoutes() {
     _server.on("/success.txt",                   HTTP_GET, captive); // Firefox
     _server.on("/kindle-wifi/wifistub.html",     HTTP_GET, captive); // Kindle
 
+    _server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *req) {
+        req->send(204);
+    });
+
     _server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/style.css"))
             sendNoCacheFile(req, "/style.css", "text/css");
