@@ -357,8 +357,23 @@ char App::digitForAction(OnscreenAction action) const {
 void App::processOnscreenAction(OnscreenAction action) {
     char digit = digitForAction(action);
     if (digit && workflow == WorkflowMode::ENTER_DATE) {
-        if (_pendingDateDraft.length() < 6) _pendingDateDraft += digit;
-        display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+        if (_pendingDateDraft.length() < 6) {
+            _pendingDateDraft += digit;
+            audio_obj.playClickTone();
+        }
+        if (_pendingDateDraft.length() == 6) {
+            // Auto-confirm once all 6 digits are entered
+            if (formatDateDraft(_pendingExpiryDate)) {
+                workflow = WorkflowMode::ENTER_QTY;
+                state.setState(AppState::ENTER_QTY);
+                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+            } else {
+                audio_obj.playTone(250, 160);
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            }
+        } else {
+            display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+        }
         return;
     }
 

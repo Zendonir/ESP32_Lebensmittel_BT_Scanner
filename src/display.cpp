@@ -652,51 +652,113 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     _spr.fillSprite(C_BG);
     clear_regions();
 
+    // ── Header ────────────────────────────────────────────────
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
-    _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString(trunc(product.name, 28).c_str(), 8, HDR_H / 2);
+    _spr.setTextFont(2);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextDatum(MR_DATUM);
-    _spr.drawString("MHD eingeben", SCR_W - 8, HDR_H / 2);
+    _spr.drawString("MHD eingeben", 10, HDR_H / 2);
     draw_location_badge(SCR_W - 90);
 
-    _spr.fillRect(0, HDR_H, SCR_W, 72, C_SURFACE2);
-    _spr.drawFastHLine(0, HDR_H + 72 - 1, SCR_W, C_BORDER);
+    // ── Vertical divider between info panel and numpad ────────
+    static constexpr int DIV_X = 240;
+    _spr.drawFastVLine(DIV_X, HDR_H, CNT_H, C_BORDER);
+
+    // ── Left panel: product info + date display ───────────────
+    static constexpr int LP_PAD = 10;
+    static constexpr int LP_W   = DIV_X - 1;
+
+    // Product name
+    _spr.setTextFont(2);
+    _spr.setTextColor(C_TEXT, C_BG);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString(trunc(product.name,   24).c_str(), LP_PAD, HDR_H + 18);
+    _spr.setTextColor(RGB(0x80,0x90,0xA0), C_BG);
+    _spr.drawString(trunc(product.brand,  24).c_str(), LP_PAD, HDR_H + 38);
+
+    // Separator
+    _spr.drawFastHLine(LP_PAD, HDR_H + 54, LP_W - LP_PAD * 2, C_BORDER);
+
+    // "MHD Eingabe:" label
+    _spr.setTextFont(2);
+    _spr.setTextColor(RGB(0x80,0x90,0xA0), C_BG);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString("MHD Eingabe:", LP_PAD, HDR_H + 70);
+
+    // Date display card
+    static constexpr int BOX_X = LP_PAD;
+    static constexpr int BOX_Y = HDR_H + 84;
+    static constexpr int BOX_W = LP_W - LP_PAD * 2;
+    static constexpr int BOX_H = 96;
+    draw_card(BOX_X, BOX_Y, BOX_W, BOX_H, C_SURFACE, C_ACCENT);
+
     String d = dateDraft;
     while ((int)d.length() < 6) d += '_';
-    String fmt = d.substring(0, 2) + "." + d.substring(2, 4) + "." + d.substring(4, 6);
-    _spr.setTextColor(C_ACCENT, C_SURFACE2);
+    String fmt = d.substring(0,2) + "." + d.substring(2,4) + "." + d.substring(4,6);
     _spr.setTextFont(6);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(fmt.c_str(), SCR_W / 2, HDR_H + 36);
+    _spr.drawString(fmt.c_str(), BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
 
-    static const char *keys[12] = { "1","2","3","4","5","6","7","8","9","<","0","OK" };
-    static const OnscreenAction key_actions[12] = {
+    // Cancel button pinned to bottom of left panel
+    draw_button(LP_PAD, SCR_H - 48, LP_W - LP_PAD * 2, 42,
+                "Abbrechen", C_YELLOW, C_BG, 4, OnscreenAction::CANCEL);
+
+    // ── Right panel: numpad ───────────────────────────────────
+    static constexpr int NP_X   = DIV_X + 1;
+    static constexpr int NP_W   = SCR_W - NP_X;          // 239
+    static constexpr int NP_Y   = HDR_H;
+    static constexpr int NP_H   = CNT_H;                  // 276
+    static constexpr int COLS   = 3;
+    static constexpr int ROWS   = 4;
+    static constexpr int BTN_W  = NP_W / COLS;            // 79
+    static constexpr int BTN_H  = NP_H / ROWS;            // 69
+
+    static const char *NUM_LABELS[9] = {"1","2","3","4","5","6","7","8","9"};
+    static const OnscreenAction NUM_ACT[9] = {
         OnscreenAction::DATE_DIGIT_1, OnscreenAction::DATE_DIGIT_2, OnscreenAction::DATE_DIGIT_3,
         OnscreenAction::DATE_DIGIT_4, OnscreenAction::DATE_DIGIT_5, OnscreenAction::DATE_DIGIT_6,
         OnscreenAction::DATE_DIGIT_7, OnscreenAction::DATE_DIGIT_8, OnscreenAction::DATE_DIGIT_9,
-        OnscreenAction::DATE_BACKSPACE, OnscreenAction::DATE_DIGIT_0, OnscreenAction::DATE_CONFIRM
     };
-    int numpad_y = HDR_H + 72;
-    int btn_w = 160, btn_h = 51;
-    for (int i = 0; i < 12; i++) {
-        int row = i / 3, col = i % 3;
-        int bx = col * btn_w, by = numpad_y + row * btn_h;
-        uint16_t bg = (i == 11) ? C_GREEN : (i == 9) ? C_YELLOW : C_SURFACE2;
-        uint16_t fg = (i == 11 || i == 9) ? C_BG : C_TEXT;
-        _spr.fillRect(bx, by, btn_w, btn_h, bg);
-        _spr.drawFastHLine(bx, by, btn_w, C_BORDER);
-        _spr.drawFastVLine(bx, by, btn_h, C_BORDER);
-        _spr.setTextColor(fg, bg);
-        _spr.setTextFont((i == 9) ? 4 : 6);
+
+    // Rows 0–2: digits 1–9
+    for (int i = 0; i < 9; i++) {
+        int row = i / COLS, col = i % COLS;
+        int bx = NP_X + col * BTN_W;
+        int by = NP_Y + row * BTN_H;
+        _spr.fillRect(bx, by, BTN_W, BTN_H, C_SURFACE2);
+        _spr.drawFastHLine(bx, by, BTN_W, C_BORDER);
+        _spr.drawFastVLine(bx, by, BTN_H, C_BORDER);
+        _spr.setTextFont(6);
+        _spr.setTextColor(C_TEXT, C_SURFACE2);
         _spr.setTextDatum(MC_DATUM);
-        _spr.drawString((i == 9) ? "<--" : keys[i], bx + btn_w / 2, by + btn_h / 2);
-        add_region(bx, by, btn_w, btn_h, key_actions[i]);
+        _spr.drawString(NUM_LABELS[i], bx + BTN_W / 2, by + BTN_H / 2);
+        add_region(bx, by, BTN_W, BTN_H, NUM_ACT[i]);
     }
-    _spr.drawFastHLine(0, numpad_y + 4 * btn_h, SCR_W, C_BORDER);
+
+    // Row 3: [0 — double width] [← — red]
+    int row3_y = NP_Y + 3 * BTN_H;
+    int zero_w = BTN_W * 2;
+
+    _spr.fillRect(NP_X,          row3_y, zero_w, BTN_H, C_SURFACE2);
+    _spr.fillRect(NP_X + zero_w, row3_y, BTN_W,  BTN_H, C_RED);
+    _spr.drawFastHLine(NP_X, row3_y, NP_W, C_BORDER);
+    _spr.drawFastVLine(NP_X,          row3_y, BTN_H, C_BORDER);
+    _spr.drawFastVLine(NP_X + zero_w, row3_y, BTN_H, C_BORDER);
+
+    _spr.setTextFont(6);
+    _spr.setTextColor(C_TEXT, C_SURFACE2);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString("0", NP_X + zero_w / 2, row3_y + BTN_H / 2);
+
+    _spr.setTextFont(4);
+    _spr.setTextColor(C_TEXT, C_RED);
+    _spr.drawString("<--", NP_X + zero_w + BTN_W / 2, row3_y + BTN_H / 2);
+
+    add_region(NP_X,          row3_y, zero_w, BTN_H, OnscreenAction::DATE_DIGIT_0);
+    add_region(NP_X + zero_w, row3_y, BTN_W,  BTN_H, OnscreenAction::DATE_BACKSPACE);
+
     commit();
 }
 
