@@ -1057,10 +1057,12 @@ void Display::showTemplateMHD(const String &productName,
 // Rows 0-2: 10 keys × 48px wide × 58px tall
 // Row 3: CAPS(96) + SPACE(192) + OK(192) = 480px
 
+static const char KB_NUM_NORM[10]  = {'1','2','3','4','5','6','7','8','9','0'};
+static const char KB_NUM_SHIFT[10] = {'!','@','#','$','%','&','*','(',')','?' };
 static const char KB_KEYS[3][10] = {
     {'Q','W','E','R','T','Z','U','I','O','P'},
     {'A','S','D','F','G','H','J','K','L','.'},
-    {'Y','X','C','V','B','N','M',',','-', 0 },  // 0 = backspace slot
+    {'Y','X','C','V','B','N','M','-','_', 0 },  // 0 = backspace slot
 };
 
 void Display::kbReset() {
@@ -1084,110 +1086,96 @@ void Display::kbToggleCaps() {
 void Display::showKeyboardEntry(const String &title, const String &current) {
     if (!_initialized) return;
 
-    // Auto-uppercase when text is empty (start of input)
-    if (current.isEmpty()) _kbShift = _kbCaps ? true : true;
-
     _spr.fillSprite(C_BG);
     clear_regions();
 
-    // Header (44px)
+    // ── Layout: 480×320 ──────────────────────────────────────────
+    // Header     44 px  (y=0)
+    // Input bar  36 px  (y=44)
+    // Num row    48 px  (y=80)   – digits / symbols via shift
+    // Letter×3   48 px each      (y=128/176/224)
+    // Bottom row 48 px  (y=272)  – CAPS | SPACE | OK
+    static constexpr int KEY_W  = 48;
+    static constexpr int KEY_H  = 48;
+    static constexpr int INP_H  = 36;
+    static constexpr int NUM_Y  = HDR_H + INP_H;       // 80
+    static constexpr int KB_Y   = NUM_Y + KEY_H;       // 128
+    static constexpr int BOT_Y  = KB_Y + 3 * KEY_H;   // 272
+
+    // ── Header ───────────────────────────────────────────────────
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextFont(4);
+    _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 8, HDR_H / 2);
 
-    // Input display (44px, y=44)
-    int inp_y = HDR_H;
-    _spr.fillRect(0, inp_y, SCR_W, 44, C_SURFACE2);
-    _spr.drawFastHLine(0, inp_y + 43, SCR_W, C_BORDER);
-    String disp = current.isEmpty() ? "_ _ _" : (trunc(current, 36) + "_");
+    // ── Input bar ────────────────────────────────────────────────
+    _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
+    _spr.drawFastHLine(0, HDR_H + INP_H - 1, SCR_W, C_BORDER);
+    String disp = current.isEmpty() ? "_ _ _" : (trunc(current, 38) + "_");
     _spr.setTextColor(C_TEXT, C_SURFACE2);
-    _spr.setTextFont(4);
+    _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString(disp.c_str(), 8, inp_y + 22);
+    _spr.drawString(disp.c_str(), 8, HDR_H + INP_H / 2);
 
-    // Keyboard rows 0-2 (3 × 10 keys, 48×58 each, y=88)
-    int kb_y = inp_y + 44;
-    int key_w = 48, key_h = 58;
+    // ── Helper lambda: draw one key ───────────────────────────────
+    auto draw_key = [&](int bx, int by, int w, int h,
+                        const char *label, uint16_t bg, uint16_t fg,
+                        OnscreenAction act, char reg = 0) {
+        _spr.fillRect(bx, by, w, h, bg);
+        _spr.drawFastVLine(bx, by, h, C_BORDER);
+        _spr.drawFastHLine(bx, by, w, C_BORDER);
+        _spr.setTextColor(fg, bg);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(label, bx + w / 2, by + h / 2);
+        add_region(bx, by, w, h, act, reg);
+    };
 
+    // ── Number / symbol row (shift toggles 123 ↔ !@#) ───────────
+    for (int col = 0; col < 10; col++) {
+        char c = _kbShift ? KB_NUM_SHIFT[col] : KB_NUM_NORM[col];
+        char lbuf[3] = {c, 0, 0};
+        draw_key(col * KEY_W, NUM_Y, KEY_W, KEY_H,
+                 lbuf, C_SURFACE, C_SUBTEXT, OnscreenAction::KB_CHAR, c);
+    }
+
+    // ── Letter rows 0-2 ──────────────────────────────────────────
     for (int row = 0; row < 3; row++) {
         for (int col = 0; col < 10; col++) {
-            int bx = col * key_w;
-            int by = kb_y + row * key_h;
-            char upper_c = KB_KEYS[row][col];
-
-            OnscreenAction act;
-            uint16_t bg, fg;
-            char lbuf[3] = {0};
-            const char *label;
+            int bx = col * KEY_W;
+            int by = KB_Y + row * KEY_H;
+            char uc = KB_KEYS[row][col];
 
             if (row == 2 && col == 9) {
-                act   = OnscreenAction::KB_BACKSPACE;
-                label = "<";
-                bg    = C_YELLOW; fg = C_BG;
+                draw_key(bx, by, KEY_W, KEY_H, "<",
+                         C_YELLOW, C_BG, OnscreenAction::KB_BACKSPACE);
             } else {
-                char disp_c = _kbShift ? upper_c : (char)tolower(upper_c);
-                lbuf[0] = disp_c;
-                label   = lbuf;
-                act     = OnscreenAction::KB_CHAR;
-                bg      = C_SURFACE2; fg = C_TEXT;
+                char dc = _kbShift ? uc : (char)tolower(uc);
+                char lbuf[3] = {dc, 0, 0};
+                draw_key(bx, by, KEY_W, KEY_H, lbuf,
+                         C_SURFACE2, C_TEXT, OnscreenAction::KB_CHAR, dc);
             }
-
-            _spr.fillRect(bx, by, key_w, key_h, bg);
-            _spr.drawFastVLine(bx, by, key_h, C_BORDER);
-            _spr.drawFastHLine(bx, by, key_w, C_BORDER);
-            _spr.setTextColor(fg, bg);
-            _spr.setTextFont(4);
-            _spr.setTextDatum(MC_DATUM);
-            _spr.drawString(label, bx + key_w / 2, by + key_h / 2);
-
-            char reg_char = (act == OnscreenAction::KB_CHAR)
-                ? (_kbShift ? upper_c : (char)tolower(upper_c))
-                : 0;
-            add_region(bx, by, key_w, key_h, act, reg_char);
         }
     }
 
-    // Row 3: CAPS (96px) | SPACE (192px) | OK (192px)
-    int row4_y = kb_y + 3 * key_h;
-
-    // CAPS key: highlighted when shift active
+    // ── Bottom row: CAPS(96) | SPACE(192) | OK(192) ──────────────
     uint16_t caps_bg = _kbCaps  ? C_ACCENT
-                     : _kbShift ? C_SURFACE  // temporary shift after space/start
+                     : _kbShift ? C_SURFACE
                      : C_SURFACE2;
     uint16_t caps_fg = _kbCaps ? C_BG : C_TEXT;
-    _spr.fillRect(0, row4_y, 96, key_h, caps_bg);
-    _spr.drawFastVLine(0,  row4_y, key_h, C_BORDER);
-    _spr.drawFastHLine(0,  row4_y, 96,   C_BORDER);
-    _spr.setTextColor(caps_fg, caps_bg);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(_kbCaps ? "CAPS" : "abc", 48, row4_y + key_h / 2);
-    add_region(0, row4_y, 96, key_h, OnscreenAction::KB_CAPS);
+    draw_key(0, BOT_Y, 96, KEY_H,
+             _kbCaps ? "CAPS" : (_kbShift ? "ABC" : "abc"),
+             caps_bg, caps_fg, OnscreenAction::KB_CAPS);
 
-    // SPACE key
-    _spr.fillRect(96, row4_y, 192, key_h, C_SURFACE2);
-    _spr.drawFastVLine(96,  row4_y, key_h, C_BORDER);
-    _spr.drawFastHLine(96,  row4_y, 192,  C_BORDER);
-    _spr.setTextColor(C_TEXT, C_SURFACE2);
-    _spr.setTextFont(4);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString("SPACE", 96 + 96, row4_y + key_h / 2);
-    add_region(96, row4_y, 192, key_h, OnscreenAction::KB_CHAR, ' ');
+    draw_key(96, BOT_Y, 192, KEY_H,
+             "SPACE", C_SURFACE2, C_TEXT, OnscreenAction::KB_CHAR, ' ');
 
-    // OK key
-    _spr.fillRect(288, row4_y, 192, key_h, C_GREEN);
-    _spr.drawFastVLine(288, row4_y, key_h, C_BORDER);
-    _spr.drawFastHLine(288, row4_y, 192,  C_BORDER);
-    _spr.setTextColor(C_BG, C_GREEN);
-    _spr.setTextFont(4);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString("OK", 288 + 96, row4_y + key_h / 2);
-    add_region(288, row4_y, 192, key_h, OnscreenAction::KB_CONFIRM);
+    draw_key(288, BOT_Y, 192, KEY_H,
+             "OK", C_GREEN, C_BG, OnscreenAction::KB_CONFIRM);
 
-    _spr.drawFastHLine(0, row4_y + key_h, SCR_W, C_BORDER);
+    _spr.drawFastHLine(0, BOT_Y + KEY_H, SCR_W, C_BORDER);
     commit();
 }
 

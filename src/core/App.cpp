@@ -118,9 +118,12 @@ void App::loop() {
         int n = WiFi.scanComplete();
         if (n >= 0) {
             _wifiNets.clear();
-            for (int i = 0; i < n && i < 20; i++) {
+            for (int i = 0; i < n && _wifiNets.size() < 20; i++) {
                 String s = WiFi.SSID(i);
-                if (!s.isEmpty()) _wifiNets.push_back(s);
+                if (s.isEmpty()) continue;
+                bool dup = false;
+                for (const auto &e : _wifiNets) if (e == s) { dup = true; break; }
+                if (!dup) _wifiNets.push_back(s);
             }
             WiFi.scanDelete();
             display_obj.showListScreen("WLAN auswählen", _wifiNets, false);
