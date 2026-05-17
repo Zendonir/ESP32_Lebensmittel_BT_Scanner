@@ -726,19 +726,25 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     static constexpr int BOX_H = 96;
     draw_card(BOX_X, BOX_Y, BOX_W, BOX_H, C_SURFACE, C_ACCENT);
 
-    String d = dateDraft;
-    while ((int)d.length() < 6) d += '_';
-    String fmt = d.substring(0,2) + "." + d.substring(2,4) + "." + d.substring(4,6);
-    _spr.setTextFont(6);
-    _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(fmt.c_str(), BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
+    // Date display with TT.MM.JJ placeholder
+    {
+        static const char PLACEHOLDER[6] = {'T','T','M','M','J','J'};
+        String fmt;
+        for (int i = 0; i < 6; i++) {
+            fmt += (i < (int)dateDraft.length()) ? dateDraft[i] : PLACEHOLDER[i];
+            if (i == 1 || i == 3) fmt += '.';
+        }
+        _spr.setTextFont(6);
+        _spr.setTextColor(C_ACCENT, C_SURFACE);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(fmt.c_str(), BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
+    }
 
     // Cancel button pinned to bottom of left panel
     draw_button(LP_PAD, SCR_H - 48, LP_W - LP_PAD * 2, 42,
                 "Abbrechen", C_YELLOW, C_BG, 4, OnscreenAction::CANCEL);
 
-    // ── Right panel: numpad ───────────────────────────────────
+    // ── Right panel: numpad with smart key dimming ────────────
     static constexpr int NP_X   = DIV_X + 1;
     static constexpr int NP_W   = SCR_W - NP_X;          // 239
     static constexpr int NP_Y   = HDR_H;
@@ -747,6 +753,25 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     static constexpr int ROWS   = 4;
     static constexpr int BTN_W  = NP_W / COLS;            // 79
     static constexpr int BTN_H  = NP_H / ROWS;            // 69
+
+    // Compute bitmask of valid digits for current position (bit N = digit N allowed)
+    uint16_t valid = 0x3FF;  // all digits 0-9 by default
+    int pos = (int)dateDraft.length();
+    if (pos == 0) {                          // day tens: 0-3
+        valid = 0x000F;
+    } else if (pos == 1) {                   // day units
+        char d0 = dateDraft[0];
+        if      (d0 == '0') valid = 0x01FE;  // 1-9  (no 00)
+        else if (d0 == '3') valid = 0x0003;  // 0,1  (30,31)
+        else                valid = 0x03FF;  // 0-9
+    } else if (pos == 2) {                   // month tens: 0-1
+        valid = 0x0003;
+    } else if (pos == 3) {                   // month units
+        char d2 = dateDraft[2];
+        if (d2 == '0') valid = 0x01FE;       // 1-9  (no month 00)
+        else           valid = 0x0007;       // 0,1,2 (10,11,12)
+    }
+    // positions 4,5 (year): all digits valid
 
     static const char *NUM_LABELS[9] = {"1","2","3","4","5","6","7","8","9"};
     static const OnscreenAction NUM_ACT[9] = {
@@ -757,31 +782,38 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
 
     // Rows 0–2: digits 1–9
     for (int i = 0; i < 9; i++) {
+        int digit = i + 1;
+        bool enabled = (valid >> digit) & 1;
         int row = i / COLS, col = i % COLS;
         int bx = NP_X + col * BTN_W;
         int by = NP_Y + row * BTN_H;
-        _spr.fillRect(bx, by, BTN_W, BTN_H, C_SURFACE2);
+        uint16_t bg = enabled ? C_SURFACE2 : C_SURFACE;
+        uint16_t fg = enabled ? C_TEXT     : C_SUBTEXT;
+        _spr.fillRect(bx, by, BTN_W, BTN_H, bg);
         _spr.drawFastHLine(bx, by, BTN_W, C_BORDER);
         _spr.drawFastVLine(bx, by, BTN_H, C_BORDER);
         _spr.setTextFont(6);
-        _spr.setTextColor(C_TEXT, C_SURFACE2);
+        _spr.setTextColor(fg, bg);
         _spr.setTextDatum(MC_DATUM);
         _spr.drawString(NUM_LABELS[i], bx + BTN_W / 2, by + BTN_H / 2);
-        add_region(bx, by, BTN_W, BTN_H, NUM_ACT[i]);
+        if (enabled) add_region(bx, by, BTN_W, BTN_H, NUM_ACT[i]);
     }
 
     // Row 3: [0 — double width] [← — red]
     int row3_y = NP_Y + 3 * BTN_H;
     int zero_w = BTN_W * 2;
+    bool zero_ok = (valid >> 0) & 1;
 
-    _spr.fillRect(NP_X,          row3_y, zero_w, BTN_H, C_SURFACE2);
+    uint16_t zero_bg = zero_ok ? C_SURFACE2 : C_SURFACE;
+    uint16_t zero_fg = zero_ok ? C_TEXT     : C_SUBTEXT;
+    _spr.fillRect(NP_X,          row3_y, zero_w, BTN_H, zero_bg);
     _spr.fillRect(NP_X + zero_w, row3_y, BTN_W,  BTN_H, C_RED);
     _spr.drawFastHLine(NP_X, row3_y, NP_W, C_BORDER);
     _spr.drawFastVLine(NP_X,          row3_y, BTN_H, C_BORDER);
     _spr.drawFastVLine(NP_X + zero_w, row3_y, BTN_H, C_BORDER);
 
     _spr.setTextFont(6);
-    _spr.setTextColor(C_TEXT, C_SURFACE2);
+    _spr.setTextColor(zero_fg, zero_bg);
     _spr.setTextDatum(MC_DATUM);
     _spr.drawString("0", NP_X + zero_w / 2, row3_y + BTN_H / 2);
 
@@ -789,8 +821,8 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     _spr.setTextColor(C_TEXT, C_RED);
     _spr.drawString("<--", NP_X + zero_w + BTN_W / 2, row3_y + BTN_H / 2);
 
-    add_region(NP_X,          row3_y, zero_w, BTN_H, OnscreenAction::DATE_DIGIT_0);
-    add_region(NP_X + zero_w, row3_y, BTN_W,  BTN_H, OnscreenAction::DATE_BACKSPACE);
+    if (zero_ok) add_region(NP_X, row3_y, zero_w, BTN_H, OnscreenAction::DATE_DIGIT_0);
+    add_region(NP_X + zero_w, row3_y, BTN_W, BTN_H, OnscreenAction::DATE_BACKSPACE);
 
     commit();
 }
