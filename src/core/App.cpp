@@ -632,11 +632,21 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
 
         case OnscreenAction::INV_SEARCH:
-            workflow = WorkflowMode::INV_SEARCH;
-            _activeTab = UiTab::INVENTORY;
-            _kbText = _invFilter;
-            display_obj.kbReset();
-            display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
+            if (workflow == WorkflowMode::INV_SEARCH) {
+                // Already in search: tap on input bar = accept suggestion
+                String suggestion = bestMatchForSearch(_kbText);
+                if (!suggestion.isEmpty()) {
+                    audio_obj.playClickTone();
+                    _kbText = suggestion;
+                    display_obj.showSearchEntry(_kbText, "");
+                }
+            } else {
+                workflow = WorkflowMode::INV_SEARCH;
+                _activeTab = UiTab::INVENTORY;
+                _kbText = _invFilter;
+                display_obj.kbReset();
+                display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
+            }
             break;
         case OnscreenAction::TAB_SCANNER:
             workflow = WorkflowMode::HOME;

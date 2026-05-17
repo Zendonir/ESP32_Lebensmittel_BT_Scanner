@@ -1360,6 +1360,8 @@ void Display::showSearchEntry(const String &current, const String &suggestion) {
     // ── Input bar ────────────────────────────────────────────────
     _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
     _spr.drawFastHLine(0, HDR_H + INP_H - 1, SCR_W, C_BORDER);
+    // Tapping the bar accepts the suggestion
+    add_region(0, HDR_H, SCR_W, INP_H, OnscreenAction::INV_SEARCH);
 
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
