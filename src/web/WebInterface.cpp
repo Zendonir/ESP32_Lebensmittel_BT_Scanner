@@ -309,6 +309,13 @@ void WebInterface::registerStaticRoutes() {
             req->send(404, "text/plain", "app.js not found – run uploadfs");
     });
 
+    _server.on("/m", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (LittleFS.exists("/mobile.html"))
+            sendCachedFile(req, "/mobile.html", "text/html");
+        else
+            req->send(404, "text/plain", "mobile.html not found – run uploadfs");
+    });
+
     _server.onNotFound([](AsyncWebServerRequest *req) {
         const String &path = req->url();
         Serial.printf("[Web] 404/onNotFound %s host=%s\n", path.c_str(), req->host().c_str());
