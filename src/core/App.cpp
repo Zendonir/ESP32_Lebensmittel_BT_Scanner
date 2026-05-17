@@ -1103,7 +1103,7 @@ void App::loadTemplates() {
         }
         if (!t.name.isEmpty()) { _templates.push_back(t); idx++; }
     }
-    Logger::info("Templates", String(_templates.size()) + " Vorlagen geladen");
+    Logger::debug("Templates", String(_templates.size()) + " Vorlagen geladen");
 }
 
 std::vector<String> App::templateCategories() const {

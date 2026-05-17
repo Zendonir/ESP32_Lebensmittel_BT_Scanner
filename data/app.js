@@ -2074,9 +2074,11 @@ Pages.statistics = {
 
 /* ---- OTA ---- */
 Pages.ota = {
-  _ws: null,
+  _pollTimer: null,
 
-  load() {},
+  load() {
+    document.getElementById('otaGithub').value = 'Zendonir/ESP32_Lebensmittel_BT_Scanner';
+  },
 
   async uploadFile(e) {
     e.preventDefault();
@@ -2124,9 +2126,9 @@ Pages.ota = {
     card.hidden = false;
     document.getElementById('otaProgress').style.width = '0%';
     document.getElementById('otaProgressText').textContent = 'Starte Update…';
+    document.getElementById('otaLog').innerHTML = '';
     try {
       await API.post('/api/ota-url', { url });
-      Toast.info('Update gestartet. Fortschritt über WebSocket…');
       this._pollProgress();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
@@ -2134,13 +2136,24 @@ Pages.ota = {
   },
 
   _pollProgress() {
-    let pct = 0;
-    const iv = setInterval(() => {
-      pct = Math.min(pct + 5, 95);
-      document.getElementById('otaProgress').style.width = `${pct}%`;
-      document.getElementById('otaProgressText').textContent = `${pct}%`;
-    }, 2000);
-    setTimeout(() => clearInterval(iv), 40000);
+    if (this._pollTimer) clearInterval(this._pollTimer);
+    this._pollTimer = setInterval(async () => {
+      try {
+        const p = await API.get('/api/ota-progress');
+        document.getElementById('otaProgress').style.width = `${p.pct}%`;
+        document.getElementById('otaProgressText').textContent = `${p.pct}%`;
+        if (p.done) {
+          clearInterval(this._pollTimer); this._pollTimer = null;
+          if (p.ok) {
+            document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
+            Toast.success('Update erfolgreich – Neustart');
+          } else {
+            document.getElementById('otaProgressText').textContent = 'Fehler!';
+            Toast.error('OTA fehlgeschlagen');
+          }
+        }
+      } catch {}
+    }, 1500);
   },
 
   async fetchGithubRelease() {
@@ -2189,7 +2202,7 @@ Pages.logs = {
     const filtered = this._all.filter(l => checked.includes(l.level || 'INFO'));
     const out = document.getElementById('logOutput');
     out.innerHTML = filtered.map(l =>
-      `<div class="log-line log-${l.level || 'INFO'}">[${esc(l.time||'')}] [${esc(l.level||'INFO')}] [${esc(l.module||'')}] ${esc(l.message||'')}</div>`
+      `<div class="log-line log-${l.level||'INFO'}">[${Math.floor((l.time||0)/1000)}s] [${esc(l.level||'INFO')}] [${esc(l.module||'')}] ${esc(l.message||'')}</div>`
     ).join('');
     if (document.getElementById('logAutoScroll')?.checked) {
       out.scrollTop = out.scrollHeight;

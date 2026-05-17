@@ -19,6 +19,58 @@
 #include <WiFiClient.h>
 #include "../network/MySQLDirect.h"
 #include <esp_system.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+
+/* ── OTA from URL ─────────────────────────────────────────────── */
+static volatile int  _otaUrlPct  = 0;
+static volatile bool _otaUrlDone = true;   // true = idle (not running)
+static volatile bool _otaUrlOk   = false;
+
+static void otaUrlTask(void *param) {
+    char *url = static_cast<char *>(param);
+    Logger::info("OTA", String("URL download start: ") + url);
+    _otaUrlPct = 0; _otaUrlDone = false; _otaUrlOk = false;
+
+    WiFiClientSecure client;
+    client.setInsecure();   // allow any HTTPS cert for OTA
+    HTTPClient http;
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setTimeout(15000);
+    if (!http.begin(client, url)) {
+        Logger::error("OTA", "http.begin failed");
+        free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
+    }
+    int code = http.GET();
+    if (code != 200) {
+        Logger::error("OTA", String("HTTP ") + code);
+        http.end(); free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
+    }
+    int total = http.getSize();
+    if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN)) {
+        Logger::error("OTA", "Update.begin failed");
+        http.end(); free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
+    }
+    WiFiClient *stream = http.getStreamPtr();
+    uint8_t buf[512];
+    int received = 0;
+    while (http.connected() && (total < 0 || received < total)) {
+        int avail = stream->available();
+        if (!avail) { delay(5); continue; }
+        int n = stream->readBytes(buf, min(avail, (int)sizeof(buf)));
+        if (n > 0) {
+            Update.write(buf, n);
+            received += n;
+            if (total > 0) _otaUrlPct = received * 100 / total;
+        }
+    }
+    bool ok = Update.end(true) && Update.isFinished();
+    Logger::info("OTA", ok ? "URL OTA OK" : "URL OTA FAILED");
+    http.end(); free(url);
+    _otaUrlOk = ok; _otaUrlDone = true;
+    if (ok) { delay(500); esp_restart(); }
+    vTaskDelete(nullptr);
+}
 
 /* ── WiFi scan cache ──────────────────────────────────────────── */
 static constexpr int WIFI_SCAN_CACHE_MAX = 30;
@@ -1282,8 +1334,15 @@ void WebInterface::registerApiRoutes() {
         }, nullptr, bodyCollect);
 
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
-    _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
-    _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));
+    _server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *req) {
+        String json;
+        Logger::getLogJson(json);
+        req->send(200, "application/json", json);
+    });
+    _server.on("/api/logs/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
+        Logger::clearLog();
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
     _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
         portENTER_CRITICAL(&_bleScanMux);
         int state = _bleScanState;
@@ -1355,7 +1414,32 @@ void WebInterface::registerApiRoutes() {
         ble_scanner.disconnect();
         req->send(200, "application/json", "{\"ok\":true}");
     });
-    _server.on("/api/ota-url",              HTTP_POST, stub("{\"ok\":true,\"message\":\"OTA gestartet\"}"), nullptr, bodyCollect);
+    _server.on("/api/ota-url", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            if (!_otaUrlDone) {
+                req->send(409, "application/json", "{\"ok\":false,\"error\":\"OTA laeuft bereits\"}");
+                return;
+            }
+            JsonDocument doc;
+            if (deserializeJson(doc, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
+                return;
+            }
+            String url = doc["url"] | "";
+            if (url.isEmpty()) { req->send(400, "application/json", "{\"ok\":false,\"error\":\"url missing\"}"); return; }
+            char *urlBuf = strdup(url.c_str());
+            xTaskCreate(otaUrlTask, "ota_url", 16384, urlBuf, 3, nullptr);
+            req->send(202, "application/json", "{\"ok\":true}");
+        }, nullptr, bodyCollect);
+
+    _server.on("/api/ota-progress", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["pct"]  = (int)_otaUrlPct;
+        doc["done"] = (bool)_otaUrlDone;
+        doc["ok"]   = (bool)_otaUrlOk;
+        String out; serializeJson(doc, out);
+        req->send(200, "application/json", out);
+    });
 
     // ---- STATS ----
     _server.on("/api/stats", HTTP_GET, [this](AsyncWebServerRequest *req) {

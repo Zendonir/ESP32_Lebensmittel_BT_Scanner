@@ -240,7 +240,7 @@ void Audio::toneTask(void *param) {
             continue;
         }
 
-        Logger::info("Audio", String("Tone: ") + cmd.freq + " Hz  " + cmd.ms + " ms");
+        Logger::debug("Audio", String("Tone: ") + cmd.freq + " Hz  " + cmd.ms + " ms");
 
         uint32_t total  = (uint32_t)SR * cmd.ms / 1000;
         float    step   = 2.0f * M_PI * (float)cmd.freq / (float)SR;
