@@ -99,23 +99,28 @@ static volatile char           _pending_kb_char = 0;
 static TFT_eSPI    _tft;
 static TFT_eSprite _spr(&_tft);
 
-// Draw location badge in top-right of header; registers LOCATION_BADGE hit region.
-static void draw_location_badge(int x_right) {
+// Draw location badge right-aligned in header.
+// x_right = rightmost pixel the badge may use (default: SCR_W - 8).
+// Dot position is computed dynamically from text width so nothing overlaps.
+static void draw_location_badge(int x_right = SCR_W - 8) {
     if (_s_active_location.isEmpty()) return;
     String label = _s_active_location;
-    if (label.length() > 12) label = label.substring(0, 12);
+    if (label.length() > 18) label = label.substring(0, 18);
     uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
 
-    // Colored dot
-    _spr.fillCircle(x_right - 120, HDR_H / 2, 5, col);
-
-    // Location name in font 2 (clearly readable)
     _spr.setTextFont(2);
     _spr.setTextDatum(MR_DATUM);
     _spr.setTextColor(col, C_SURFACE);
-    _spr.drawString(label.c_str(), x_right - 12, HDR_H / 2);
+    _spr.drawString(label.c_str(), x_right, HDR_H / 2);
 
-    add_region(x_right - 140, 0, 140, HDR_H, OnscreenAction::LOCATION_BADGE);
+    // Place dot just left of the text with a small gap
+    int tw      = (int)_spr.textWidth(label.c_str());
+    int dot_x   = x_right - tw - 10;
+    _spr.fillCircle(dot_x, HDR_H / 2, 5, col);
+
+    int badge_left = dot_x - 8;
+    if (badge_left < 0) badge_left = 0;
+    add_region(badge_left, 0, x_right - badge_left, HDR_H, OnscreenAction::LOCATION_BADGE);
 }
 
 // ─────────────────── home screen cache ───────────────────
@@ -207,7 +212,7 @@ static void draw_header(UiTab activeTab, bool wifiConnected) {
     _spr.setTextDatum(MC_DATUM);
     _spr.drawString("W", SCR_W - 12, HDR_H / 2);
     // Location badge left of WiFi dot
-    draw_location_badge(SCR_W - 26);
+    draw_location_badge(SCR_W - 22); // leave room for WiFi dot (r=7 at SCR_W-12)
 }
 
 
@@ -675,7 +680,7 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     _spr.setTextFont(2);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.drawString("MHD eingeben", 10, HDR_H / 2);
-    draw_location_badge(SCR_W - 90);
+    draw_location_badge();
 
     // ── Vertical divider between info panel and numpad ────────
     static constexpr int DIV_X = 240;
@@ -893,12 +898,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("Inventar", 12, HDR_H / 2);
-    String count_str = String(items.size()) + " Eintraege";
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(MR_DATUM);
-    _spr.drawString(count_str.c_str(), SCR_W - 8, HDR_H / 2);
-    draw_location_badge(SCR_W - 8 - 70); // left of count text
+    draw_location_badge();
 
     _spr.fillRect(0, HDR_H, SCR_W, 28, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
@@ -969,7 +969,7 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("Kategorie w\xE4hlen", 12, HDR_H / 2);
-    draw_location_badge(SCR_W - 8);
+    draw_location_badge();
 
     // 2 columns × 4 rows, content area 480×276
     static constexpr int COLS     = 2;
@@ -1035,7 +1035,7 @@ void Display::showListScreen(const char *title,
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 12, HDR_H / 2);
-    draw_location_badge(SCR_W - 8);
+    draw_location_badge();
 
     if (showBack) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
@@ -1098,7 +1098,7 @@ void Display::showTemplateMHD(const String &productName,
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(trunc(productName, 22).c_str(), 8, HDR_H / 2);
-    draw_location_badge(SCR_W - 8);
+    draw_location_badge();
 
     // MHD display (no day-adjust buttons)
     int mhd_y = HDR_H + 6;
