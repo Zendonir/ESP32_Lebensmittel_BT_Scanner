@@ -250,7 +250,7 @@ void App::resetLCDViaTCA9554() {
         return i2c_bus.available() ? i2c_bus.read() : 0xFF;
     };
 
-    uint8_t e1 = tca_write(REG_CONFIG, ~OUT_BITS);   // EXIO1 + EXIO7 = outputs
+    uint8_t e1 = tca_write(REG_CONFIG, (uint8_t)(~OUT_BITS));   // EXIO1 + EXIO7 = outputs
     uint8_t e2 = tca_write(REG_OUTPUT, 0xFF);         // both high
     delay(10);
     tca_write(REG_OUTPUT, PA_BIT);        // LCD low (assert reset), PA still high
