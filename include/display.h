@@ -20,6 +20,7 @@ enum class OnscreenAction {
     // Swipe gestures
     SWIPE_LEFT,   // next tab
     SWIPE_RIGHT,  // prev tab
+    SWIPE_DOWN,   // open location select
     // General
     REFRESH,
     WIFI_SETUP,

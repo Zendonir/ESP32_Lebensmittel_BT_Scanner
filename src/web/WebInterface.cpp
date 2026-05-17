@@ -1259,19 +1259,26 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
     _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
-        auto devices = ble_scanner.scanDevices(5);
-        JsonDocument doc;
-        JsonArray arr = doc.to<JsonArray>();
-        for (const auto &dev : devices) {
-            JsonObject o = arr.add<JsonObject>();
-            o["address"] = dev.address;
-            o["name"] = dev.name;
-            o["rssi"] = dev.rssi;
-            o["hid"] = dev.hid;
-        }
-        String body;
-        serializeJson(doc, body);
-        req->send(200, "application/json", body);
+        struct ScanArg { AsyncWebServerRequest *req; };
+        ScanArg *arg = new ScanArg{req};
+        xTaskCreate([](void *p) {
+            ScanArg *a = static_cast<ScanArg *>(p);
+            auto devices = ble_scanner.scanDevices(5);
+            JsonDocument doc;
+            JsonArray arr = doc.to<JsonArray>();
+            for (const auto &dev : devices) {
+                JsonObject o = arr.add<JsonObject>();
+                o["address"] = dev.address;
+                o["name"]    = dev.name;
+                o["rssi"]    = dev.rssi;
+                o["hid"]     = dev.hid;
+            }
+            String body;
+            serializeJson(doc, body);
+            a->req->send(200, "application/json", body);
+            delete a;
+            vTaskDelete(nullptr);
+        }, "bleScan", 8192, arg, 1, nullptr);
     });
     _server.on("/api/scanner/ble-connect", HTTP_POST,
         [](AsyncWebServerRequest *req) {

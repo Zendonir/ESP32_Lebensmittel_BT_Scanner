@@ -466,14 +466,17 @@ void Display::tick() {
                 memcpy(snap, _regions, count * sizeof(HitRegion));
                 portEXIT_CRITICAL(&_regions_mux);
 
-                // Swipe: horizontal move > 80px and more horizontal than vertical
-                bool is_swipe = (abs(dx) > 80) && (abs(dx) > abs(dy) * 2);
+                // Swipe detection
+                bool is_h_swipe = (abs(dx) > 80) && (abs(dx) > abs(dy) * 2);
+                bool is_v_swipe_down = (dy > 80) && (dy > abs(dx) * 2);
 
                 OnscreenAction hit = OnscreenAction::NONE;
                 char           hit_char = 0;
 
-                if (is_swipe && py > HDR_H && py < SCR_H - TAB_H) {
+                if (is_h_swipe && py > HDR_H && py < SCR_H - TAB_H) {
                     hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
+                } else if (is_v_swipe_down && py < HDR_H + 60) {
+                    hit = OnscreenAction::SWIPE_DOWN;
                 } else {
                     // Hit-test using press start coordinates
                     for (int i = 0; i < count; i++) {

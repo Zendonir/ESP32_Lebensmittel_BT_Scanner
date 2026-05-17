@@ -522,6 +522,10 @@ void App::processOnscreenAction(OnscreenAction action) {
             processOnscreenAction(action);
             return;
         }
+        case OnscreenAction::SWIPE_DOWN:
+            workflow = WorkflowMode::LOCATION_SELECT;
+            showLocationSelect();
+            return;
         case OnscreenAction::TAB_STORE:
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::STORE;

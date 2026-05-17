@@ -397,7 +397,7 @@ String BLEScanner::getStatus() const {
 
 void BLEScanner::loadSettings() {
     Preferences p;
-    if (!p.begin("scanner", true)) return;
+    if (!p.begin("scanner", false)) return;  // false = read-write, creates namespace on first boot
     autoReconnect  = p.getBool("autoReconnect", true);
     deviceAddress  = p.getString("addr", "");
     deviceName     = p.getString("name", "");
