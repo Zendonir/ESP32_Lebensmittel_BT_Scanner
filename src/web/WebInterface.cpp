@@ -30,6 +30,11 @@ struct WiFiScanEntry {
     bool open = false;
 };
 
+/* ── BLE scan state ───────────────────────────────────────────── */
+static volatile int  _bleScanState = 0; // 0=idle, 1=scanning, 2=done
+static String        _bleScanJson;
+static portMUX_TYPE  _bleScanMux = portMUX_INITIALIZER_UNLOCKED;
+
 static bool _scanRunning = false;
 static bool _scanReady = false;
 static int _scanCount = 0;
@@ -1259,10 +1264,28 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/logs",                 HTTP_GET,  stub("[]"));
     _server.on("/api/logs/clear",           HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
-        struct ScanArg { AsyncWebServerRequest *req; };
-        ScanArg *arg = new ScanArg{req};
-        xTaskCreate([](void *p) {
-            ScanArg *a = static_cast<ScanArg *>(p);
+        portENTER_CRITICAL(&_bleScanMux);
+        int state = _bleScanState;
+        portEXIT_CRITICAL(&_bleScanMux);
+
+        if (state == 2) {
+            // Results ready — return and reset to idle
+            portENTER_CRITICAL(&_bleScanMux);
+            String json = _bleScanJson;
+            _bleScanState = 0;
+            portEXIT_CRITICAL(&_bleScanMux);
+            req->send(200, "application/json", json);
+            return;
+        }
+        if (state == 1) {
+            req->send(202, "application/json", "{\"scanning\":true}");
+            return;
+        }
+        // state == 0: start a new scan
+        portENTER_CRITICAL(&_bleScanMux);
+        _bleScanState = 1;
+        portEXIT_CRITICAL(&_bleScanMux);
+        xTaskCreate([](void *) {
             auto devices = ble_scanner.scanDevices(5);
             JsonDocument doc;
             JsonArray arr = doc.to<JsonArray>();
@@ -1273,12 +1296,13 @@ void WebInterface::registerApiRoutes() {
                 o["rssi"]    = dev.rssi;
                 o["hid"]     = dev.hid;
             }
-            String body;
-            serializeJson(doc, body);
-            a->req->send(200, "application/json", body);
-            delete a;
+            portENTER_CRITICAL(&_bleScanMux);
+            serializeJson(doc, _bleScanJson);
+            _bleScanState = 2;
+            portEXIT_CRITICAL(&_bleScanMux);
             vTaskDelete(nullptr);
-        }, "bleScan", 8192, arg, 1, nullptr);
+        }, "bleScan", 8192, nullptr, 1, nullptr);
+        req->send(202, "application/json", "{\"scanning\":true}");
     });
     _server.on("/api/scanner/ble-connect", HTTP_POST,
         [](AsyncWebServerRequest *req) {

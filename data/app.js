@@ -1619,7 +1619,18 @@ Pages.scanner = {
     box.hidden = false;
     box.innerHTML = '<div class="muted" style="padding:8px">Suche Bluetooth-HID-Scanner…</div>';
     try {
-      const res = await API.get('/api/scanner/ble-scan');
+      // Poll until scan finishes (202 = still scanning, 200 = results ready)
+      let res = null;
+      for (let i = 0; i < 15; i++) {
+        const raw = await fetch('/api/scanner/ble-scan');
+        if (raw.status === 202) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        if (!raw.ok) throw new Error('HTTP ' + raw.status);
+        res = await raw.json();
+        break;
+      }
       this._bleDevices = Array.isArray(res) ? res : [];
       box.innerHTML = this._bleDevices.length
         ? this._bleDevices.map((d, idx) => `
