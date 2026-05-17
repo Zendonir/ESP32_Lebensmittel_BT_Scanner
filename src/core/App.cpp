@@ -388,15 +388,19 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Keyboard entry: char input (KB_ENTRY and WIFI_SETUP_PASS share the keyboard)
+    // Keyboard entry: char input (KB_ENTRY, WIFI_SETUP_PASS, INV_SEARCH share the keyboard)
     if (action == OnscreenAction::KB_CHAR &&
-            (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS)) {
+            (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS
+             || workflow == WorkflowMode::INV_SEARCH)) {
         char c = display_obj.drainKbChar();
         if (c != 0) {
             audio_obj.playClickTone();
             _kbText += c;
             if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
                 display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+            } else if (workflow == WorkflowMode::INV_SEARCH) {
+                display_obj.kbAutoShift(c);
+                display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
             } else {
                 display_obj.kbAutoShift(c);
                 display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
@@ -406,11 +410,14 @@ void App::processOnscreenAction(OnscreenAction action) {
     }
 
     if (action == OnscreenAction::KB_CAPS &&
-            (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS)) {
+            (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS
+             || workflow == WorkflowMode::INV_SEARCH)) {
         audio_obj.playClickTone();
         display_obj.kbToggleCaps();
         if (workflow == WorkflowMode::WIFI_SETUP_PASS)
             display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+        else if (workflow == WorkflowMode::INV_SEARCH)
+            display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
         else
             display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
         return;
@@ -422,8 +429,31 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Swipe-right = back inside WiFi setup or template workflow
+    if (action == OnscreenAction::KB_BACKSPACE && workflow == WorkflowMode::INV_SEARCH) {
+        audio_obj.playClickTone();
+        if (!_kbText.isEmpty()) _kbText.remove(_kbText.length() - 1);
+        display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
+        return;
+    }
+
+    // Swipe-right = back inside WiFi setup, template workflow, inventory search, or qty entry
     if (action == OnscreenAction::SWIPE_RIGHT) {
+        if (workflow == WorkflowMode::ENTER_QTY) {
+            audio_obj.playSwipeTone();
+            workflow = WorkflowMode::ENTER_DATE;
+            state.setState(AppState::ENTER_DATE);
+            display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            return;
+        }
+        if (workflow == WorkflowMode::INV_SEARCH) {
+            audio_obj.playSwipeTone();
+            _invFilter = "";
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::INVENTORY;
+            display_obj.showInventoryList(inventory.items(), "",
+                                          device_config.getHouseholdAbbr());
+            return;
+        }
         if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
             display_obj.showListScreen("WLAN auswählen", _wifiNets, false);
             workflow = WorkflowMode::WIFI_SETUP_LIST;
@@ -566,8 +596,18 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::TAB_INVENTORY:
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::INVENTORY;
-            display_obj.showInventoryList(inventory.items());
+            _invFilter = "";
+            display_obj.showInventoryList(inventory.items(), "",
+                                          device_config.getHouseholdAbbr());
             _lastUiRefreshMs = millis();
+            break;
+
+        case OnscreenAction::INV_SEARCH:
+            workflow = WorkflowMode::INV_SEARCH;
+            _activeTab = UiTab::INVENTORY;
+            _kbText = _invFilter;
+            display_obj.kbReset();
+            display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
             break;
         case OnscreenAction::TAB_SCANNER:
             workflow = WorkflowMode::HOME;
@@ -640,9 +680,12 @@ void App::processOnscreenAction(OnscreenAction action) {
             int qty = static_cast<int>(action) - static_cast<int>(OnscreenAction::QTY_1) + 1;
             audio_obj.playClickTone();
             _pendingQuantity = qty;
-            if (workflow == WorkflowMode::ENTER_QTY)
-                display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
-            else if (workflow == WorkflowMode::TMPL_MHD) {
+            if (workflow == WorkflowMode::ENTER_QTY) {
+                // Tap = direct confirm: set quantity and save immediately
+                workflow = WorkflowMode::SAVING;
+                state.setState(AppState::SAVING);
+                finishStorageWorkflow();
+            } else if (workflow == WorkflowMode::TMPL_MHD) {
                 auto products = templatesForCategory(_selectedCategory);
                 if (_selectedTemplateIdx < (int)products.size()) {
                     String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
@@ -739,6 +782,26 @@ void App::processOnscreenAction(OnscreenAction action) {
                 _wifiConnectStartMs = millis();
                 workflow = WorkflowMode::WIFI_SETUP_CONN;
                 display_obj.showResult("Verbinde…", _selectedSsid, false);
+                break;
+            }
+            if (workflow == WorkflowMode::INV_SEARCH) {
+                _invFilter = _kbText;
+                workflow = WorkflowMode::HOME;
+                _activeTab = UiTab::INVENTORY;
+                {
+                    // Build filtered list
+                    String filterLower = _invFilter;
+                    filterLower.toLowerCase();
+                    std::vector<InventoryItem> filtered;
+                    for (const auto &it : inventory.items()) {
+                        String nl = it.name; nl.toLowerCase();
+                        String ll = it.location; ll.toLowerCase();
+                        if (nl.indexOf(filterLower) >= 0 || ll.indexOf(filterLower) >= 0)
+                            filtered.push_back(it);
+                    }
+                    display_obj.showInventoryList(filtered, _invFilter,
+                                                  device_config.getHouseholdAbbr());
+                }
                 break;
             }
             if (workflow == WorkflowMode::KB_ENTRY) {

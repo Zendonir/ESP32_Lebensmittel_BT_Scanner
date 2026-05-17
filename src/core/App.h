@@ -50,6 +50,8 @@ private:
         WIFI_SETUP_LIST,     // showing SSID list
         WIFI_SETUP_PASS,     // showing keyboard for password entry
         WIFI_SETUP_CONN,     // connecting, polling for result
+        // Inventory text search
+        INV_SEARCH,          // on-screen keyboard for filtering inventory list
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -132,6 +134,7 @@ private:
 
     // Keyboard entry state
     String   _kbText;                    // current keyboard input text
+    String   _invFilter;                 // inventory list text filter
 
     // WiFi setup state
     std::vector<String> _wifiNets;

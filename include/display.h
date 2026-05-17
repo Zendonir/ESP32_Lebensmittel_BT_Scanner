@@ -46,6 +46,8 @@ enum class OnscreenAction {
     // Legacy (kept so old references compile; no longer drawn)
     QTY_MINUS,
     QTY_PLUS,
+    // Inventory search bar tap
+    INV_SEARCH,
     // Printer
     PRINTER_FEED_1,
     PRINTER_FEED_5,
@@ -108,7 +110,9 @@ public:
     void showDateEntry(const ProductInfo &product, const String &dateDraft);
     void showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity);
     void showResult(const String &title, const String &message, bool success);
-    void showInventoryList(const std::vector<InventoryItem> &items);
+    void showInventoryList(const std::vector<InventoryItem> &items,
+                           const String &filter = "",
+                           const String &hhAbbr = "");
 
     // Template workflow
     void showCategoryTiles(const std::vector<String> &categories);

@@ -801,8 +801,8 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
 
 // ── Quantity grid helper (shared by showQuantityEntry and showTemplateMHD) ──
 // Draws a 4-column × 3-row grid of quantity buttons (1–12).
-// Highlighted button = current quantity. Returns nothing.
-static void draw_qty_grid(int top_y, int selected) {
+// Highlighted button = current quantity. btn_h controls button height.
+static void draw_qty_grid(int top_y, int selected, int btn_h = 52) {
     static const OnscreenAction QTY_ACTIONS[12] = {
         OnscreenAction::QTY_1,  OnscreenAction::QTY_2,  OnscreenAction::QTY_3,
         OnscreenAction::QTY_4,  OnscreenAction::QTY_5,  OnscreenAction::QTY_6,
@@ -810,7 +810,7 @@ static void draw_qty_grid(int top_y, int selected) {
         OnscreenAction::QTY_10, OnscreenAction::QTY_11, OnscreenAction::QTY_12,
     };
     const int COLS = 4, ROWS = 3;
-    const int BTN_W = 108, BTN_H = 52, GAP = 6;
+    const int BTN_W = 108, GAP = 6;
     const int grid_w = COLS * BTN_W + (COLS - 1) * GAP;
     const int x0 = (SCR_W - grid_w) / 2;
 
@@ -818,13 +818,11 @@ static void draw_qty_grid(int top_y, int selected) {
         for (int c = 0; c < COLS; c++) {
             int n = r * COLS + c + 1;  // 1..12
             int bx = x0 + c * (BTN_W + GAP);
-            int by = top_y + r * (BTN_H + GAP);
+            int by = top_y + r * (btn_h + GAP);
             bool sel = (n == selected);
             uint16_t bg = sel ? C_ACCENT : C_SURFACE2;
             uint16_t fg = sel ? C_BG     : C_TEXT;
-            // Always font 4 — previously `rad` (8 or 6) was mistakenly
-            // passed as the font, making the selected button use font-8 (giant).
-            draw_button(bx, by, BTN_W, BTN_H, String(n).c_str(), bg, fg, 4, QTY_ACTIONS[n - 1]);
+            draw_button(bx, by, BTN_W, btn_h, String(n).c_str(), bg, fg, 4, QTY_ACTIONS[n - 1]);
         }
     }
 }
@@ -846,19 +844,25 @@ void Display::showQuantityEntry(const ProductInfo &product,
     _spr.setTextDatum(MR_DATUM);
     _spr.drawString(("MHD " + expiryDate).c_str(), SCR_W - 8, HDR_H / 2);
 
-    // Subheader
-    _spr.setTextColor(C_ACCENT, C_BG);
+    // Subheader hint
+    _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge ausw\xE4hlen", SCR_W / 2, HDR_H + 8);
+    _spr.drawString("Menge antippen zum Einlagern", SCR_W / 2, HDR_H + 6);
 
-    // 4×3 quantity grid
-    draw_qty_grid(HDR_H + 28, quantity);
+    // 4×3 quantity grid — taller buttons fill the available space
+    // Available: SCR_H - HDR_H - 28(hint) = 248px for 3 rows + 2 gaps (6px)
+    // btn_h = (248 - 2*6) / 3 = 78px
+    static constexpr int GRID_TOP = HDR_H + 26;
+    static constexpr int BTN_H    = 78;
+    draw_qty_grid(GRID_TOP, quantity, BTN_H);
 
-    // Bottom buttons
-    int bot_y = SCR_H - 52;
-    draw_button(4,            bot_y, 120, 44, "Zurueck",     C_RED,   C_TEXT, 2, OnscreenAction::CANCEL);
-    draw_button(SCR_W - 174, bot_y, 170, 44, "Einlagern ->", C_GREEN, C_BG,   2, OnscreenAction::QTY_CONFIRM);
+    // Swipe-right hint at bottom
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.setTextFont(1);
+    _spr.setTextDatum(BC_DATUM);
+    _spr.drawString("< wischen zum Abbrechen", SCR_W / 2, SCR_H - 2);
+
     commit();
 }
 
@@ -899,11 +903,13 @@ void Display::showResult(const String &title, const String &message, bool succes
 //   Inventory list
 // ─────────────────────────────────────────────────────────
 
-void Display::showInventoryList(const std::vector<InventoryItem> &items) {
+void Display::showInventoryList(const std::vector<InventoryItem> &items,
+                                const String &filter, const String &hhAbbr) {
     if (!_initialized) return;
     _spr.fillSprite(C_BG);
     clear_regions();
 
+    // ── Header ──────────────────────────────────────────────
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
@@ -912,17 +918,39 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
     _spr.drawString("Inventar", 12, HDR_H / 2);
     draw_location_badge();
 
-    _spr.fillRect(0, HDR_H, SCR_W, 28, C_SURFACE2);
+    // ── Search bar ──────────────────────────────────────────
+    static constexpr int SEARCH_H = 30;
+    int sb_y = HDR_H;
+    uint16_t sb_bg = RGB(0x0E, 0x14, 0x1C);
+    _spr.fillRect(0, sb_y, SCR_W, SEARCH_H, sb_bg);
+    _spr.drawRoundRect(6, sb_y + 4, SCR_W - 12, SEARCH_H - 8, 4, C_BORDER);
+    _spr.setTextFont(2);
+    _spr.setTextDatum(ML_DATUM);
+    if (filter.isEmpty()) {
+        _spr.setTextColor(C_SUBTEXT, sb_bg);
+        _spr.drawString("[ Suchen... ]", 14, sb_y + SEARCH_H / 2);
+    } else {
+        _spr.setTextColor(C_TEXT, sb_bg);
+        _spr.drawString(("> " + filter).c_str(), 14, sb_y + SEARCH_H / 2);
+    }
+    _spr.drawFastHLine(0, sb_y + SEARCH_H - 1, SCR_W, C_BORDER);
+    add_region(0, sb_y, SCR_W, SEARCH_H, OnscreenAction::INV_SEARCH);
+
+    // ── Column headers ──────────────────────────────────────
+    static constexpr int COL_H = 24;
+    int col_y = HDR_H + SEARCH_H;
+    _spr.fillRect(0, col_y, SCR_W, COL_H, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
     _spr.setTextFont(2);
     _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("Produkt", 8,  HDR_H + 7);
-    _spr.drawString("MHD",    310, HDR_H + 7);
-    _spr.drawString("Menge",  430, HDR_H + 7);
-    _spr.drawFastHLine(0, HDR_H + 28, SCR_W, C_BORDER);
+    _spr.drawString("Produkt", 8,   col_y + 5);
+    _spr.drawString("MHD",    310,  col_y + 5);
+    _spr.drawString("Menge",  432,  col_y + 5);
+    _spr.drawFastHLine(0, col_y + COL_H - 1, SCR_W, C_BORDER);
 
-    static constexpr int ROW_H = 40, MAX_ROWS = 6;
-    int list_y = HDR_H + 28, shown = 0;
+    // ── Item rows ───────────────────────────────────────────
+    static constexpr int ROW_H = 40, MAX_ROWS = 5;
+    int list_y = HDR_H + SEARCH_H + COL_H, shown = 0;
     int start = static_cast<int>(items.size()) - 1;
     for (int i = start; i >= 0 && shown < MAX_ROWS; i--, shown++) {
         const InventoryItem &item = items[i];
@@ -930,32 +958,38 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
         uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
         _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
 
-        // Name line
+        // Name line (font 2, up to 26 chars)
         _spr.setTextColor(C_TEXT, row_bg);
         _spr.setTextFont(2);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(item.name, 20).c_str(), 8, ry + 12);
+        _spr.drawString(trunc(item.name, 26).c_str(), 8, ry + 11);
 
-        // Location sub-line
-        if (!item.location.isEmpty()) {
+        // Sub-line: household abbr + location (font 1, ASCII only)
+        String sub;
+        if (!hhAbbr.isEmpty()) sub = hhAbbr + " ";
+        if (!item.location.isEmpty()) sub += "| " + item.location;
+        if (!sub.isEmpty()) {
             _spr.setTextColor(C_SUBTEXT, row_bg);
             _spr.setTextFont(1);
-            _spr.drawString(("📍 " + trunc(item.location, 24)).c_str(), 8, ry + 27);
+            _spr.setTextDatum(ML_DATUM);
+            _spr.drawString(trunc(sub, 36).c_str(), 8, ry + 28);
         }
 
-        // MHD + Qty (vertically centered)
+        // MHD + Qty
         _spr.setTextColor(C_TEXT, row_bg);
         _spr.setTextFont(2);
+        _spr.setTextDatum(ML_DATUM);
         _spr.drawString(trunc(item.expiryDate, 10).c_str(), 310, ry + ROW_H / 2);
         _spr.setTextColor(C_ACCENT, row_bg);
-        _spr.drawString(String(item.quantity).c_str(), 430, ry + ROW_H / 2);
+        _spr.drawString(String(item.quantity).c_str(), 432, ry + ROW_H / 2);
         _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
     }
     if (items.empty()) {
         _spr.setTextColor(C_SUBTEXT, C_BG);
         _spr.setTextFont(2);
         _spr.setTextDatum(MC_DATUM);
-        _spr.drawString("Keine Eintraege", SCR_W / 2, list_y + 60);
+        _spr.drawString(filter.isEmpty() ? "Keine Eintraege" : "Keine Treffer",
+                        SCR_W / 2, list_y + 60);
     }
     _homeState.inventoryCount = items.size();
     commit();
