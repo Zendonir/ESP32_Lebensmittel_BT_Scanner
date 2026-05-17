@@ -99,7 +99,8 @@ public:
                   const String &ssid, const String &ip, bool wifiConnected,
                   const String &scannerStatus, const String &scannerName,
                   const String &lastScan, const String &lastType,
-                  size_t inventoryCount, const String &message = "",
+                  size_t inventoryCount, int expiringSoon,
+                  const String &message = "",
                   bool sdMounted = false);
 
     // Barcode workflow

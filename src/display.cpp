@@ -131,7 +131,8 @@ struct HomeState {
     String ssid, ip;
     String scannerStatus, scannerName;
     String lastScan, lastType;
-    size_t inventoryCount;
+    size_t inventoryCount = 0;
+    int    expiringSoon   = 0;
     String message;
     bool   valid = false;
 };
@@ -270,9 +271,18 @@ static void draw_panel_store(const HomeState &s) {
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextFont(2);
     _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("BALD ABLAUFEND", 250, scan_y + 6);
+    _spr.drawString("BALD ABLAUFEND (7 Tage)", 250, scan_y + 6);
     _spr.setTextColor(C_YELLOW, C_SURFACE);
-    _spr.drawString("Keine Eintraege ablaufend", 250, scan_y + 26);
+    if (s.expiringSoon > 0) {
+        _spr.setTextFont(6);
+        _spr.setTextDatum(ML_DATUM);
+        _spr.drawString(String(s.expiringSoon).c_str(), 258, scan_y + 48);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("Artikel laufen ab", 258 + 30, scan_y + 40);
+    } else {
+        _spr.drawString("Alles im gruenen Bereich", 250, scan_y + 26);
+    }
 
     int act_y = py + 178;
     draw_card(4, act_y, SCR_W - 8, 40, C_SURFACE, C_ACCENT);
@@ -603,7 +613,7 @@ void Display::showWifiScan() {
 // ─────────────────────────────────────────────────────────
 
 void Display::showWiFiStatus(const String &ssid, const String &ip, bool connected) {
-    showHome(UiTab::SYSTEM, ssid, ip, connected, "", "", "", "", 0,
+    showHome(UiTab::SYSTEM, ssid, ip, connected, "", "", "", "", 0, 0,
              connected ? "WLAN verbunden" : "Setup-AP aktiv");
 }
 
@@ -612,14 +622,15 @@ void Display::showDashboard(const String &ssid, const String &ip, bool wifiConne
                              const String &lastScan, const String &lastType,
                              const String &message) {
     showHome(UiTab::STORE, ssid, ip, wifiConnected, scannerStatus, scannerName,
-             lastScan, lastType, _homeState.inventoryCount, message);
+             lastScan, lastType, _homeState.inventoryCount, _homeState.expiringSoon, message);
 }
 
 void Display::showHome(UiTab activeTab,
                        const String &ssid, const String &ip, bool wifiConnected,
                        const String &scannerStatus, const String &scannerName,
                        const String &lastScan, const String &lastType,
-                       size_t inventoryCount, const String &message, bool sdMounted) {
+                       size_t inventoryCount, int expiringSoon,
+                       const String &message, bool sdMounted) {
     if (!_initialized) return;
     _homeState.tab            = activeTab;
     _homeState.wifiConnected  = wifiConnected;
@@ -631,6 +642,7 @@ void Display::showHome(UiTab activeTab,
     _homeState.lastScan       = lastScan;
     _homeState.lastType       = lastType;
     _homeState.inventoryCount = inventoryCount;
+    _homeState.expiringSoon   = expiringSoon;
     _homeState.message        = message;
     _homeState.valid          = true;
     render_home(_homeState);
@@ -909,7 +921,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
     _spr.drawString("Menge",  430, HDR_H + 7);
     _spr.drawFastHLine(0, HDR_H + 28, SCR_W, C_BORDER);
 
-    static constexpr int ROW_H = 28, MAX_ROWS = 8;
+    static constexpr int ROW_H = 40, MAX_ROWS = 6;
     int list_y = HDR_H + 28, shown = 0;
     int start = static_cast<int>(items.size()) - 1;
     for (int i = start; i >= 0 && shown < MAX_ROWS; i--, shown++) {
@@ -917,10 +929,23 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items) {
         int ry = list_y + shown * ROW_H;
         uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
         _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
+
+        // Name line
         _spr.setTextColor(C_TEXT, row_bg);
         _spr.setTextFont(2);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(item.name, 22).c_str(), 8, ry + ROW_H / 2);
+        _spr.drawString(trunc(item.name, 20).c_str(), 8, ry + 12);
+
+        // Location sub-line
+        if (!item.location.isEmpty()) {
+            _spr.setTextColor(C_SUBTEXT, row_bg);
+            _spr.setTextFont(1);
+            _spr.drawString(("📍 " + trunc(item.location, 24)).c_str(), 8, ry + 27);
+        }
+
+        // MHD + Qty (vertically centered)
+        _spr.setTextColor(C_TEXT, row_bg);
+        _spr.setTextFont(2);
         _spr.drawString(trunc(item.expiryDate, 10).c_str(), 310, ry + ROW_H / 2);
         _spr.setTextColor(C_ACCENT, row_bg);
         _spr.drawString(String(item.quantity).c_str(), 430, ry + ROW_H / 2);

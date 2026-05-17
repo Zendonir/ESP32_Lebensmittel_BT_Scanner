@@ -141,6 +141,12 @@ private:
     // Inventory pull sync timer
     uint32_t _lastInventorySyncMs = 0;
     static constexpr uint32_t INVENTORY_SYNC_INTERVAL_MS = 120000; // 2 minutes
+
+    // Result screen auto-dismiss
+    uint32_t _resultShownMs = 0;
+    static constexpr uint32_t RESULT_AUTO_DISMISS_MS = 5000;
+
+    int countExpiringSoon(int days = 7) const;
 };
 
 extern App app;

@@ -169,6 +169,15 @@ void App::loop() {
             doInventoryPull();
         }
     }
+    // Auto-dismiss result screen after 5 seconds
+    if (workflow == WorkflowMode::RESULT
+            && _resultShownMs != 0
+            && millis() - _resultShownMs >= RESULT_AUTO_DISMISS_MS) {
+        _resultShownMs = 0;
+        workflow = WorkflowMode::HOME;
+        renderActiveTab("");
+    }
+
     handleTouch();
     processWorkflow();
 
@@ -319,6 +328,7 @@ void App::renderActiveTab(const String &message, bool force) {
         barcode_manager.getLastScan(),
         barcode_manager.getLastType(),
         inventory.items().size(),
+        countExpiringSoon(7),
         _statusMessage,
         AppFS::usingSD());
     _lastUiSignature = signature;
@@ -789,7 +799,7 @@ void App::handleScan(const ScanResult &scan) {
         } else {
             audio_obj.playErrorTone();
         }
-        workflow = WorkflowMode::RESULT;
+        workflow = WorkflowMode::RESULT; _resultShownMs = millis();
         _resultSuccess = removed;
         _resultTitle = removed ? "Ausgelagert" : "Nicht gefunden";
         _resultMessage = removed ? scan.code : "Label ist nicht im Inventar";
@@ -822,7 +832,7 @@ void App::handleScan(const ScanResult &scan) {
             String sp; serializeJson(sdoc, sp);
             sync_manager.enqueue("ADD", sp);
         }
-        workflow = WorkflowMode::RESULT;
+        workflow = WorkflowMode::RESULT; _resultShownMs = millis();
         _resultSuccess = true;
         _resultTitle = "Wieder eingebucht";
         _resultMessage = reItem.name.isEmpty() ? scan.code : reItem.name;
@@ -1085,6 +1095,19 @@ String App::loadLocationColor(const String &name) const {
     }
     f.close();
     return color;
+}
+
+int App::countExpiringSoon(int days) const {
+    String today = time_manager.today();
+    String limit = time_manager.addDays(days);
+    int n = 0;
+    for (const auto &item : inventory.items()) {
+        if (!item.expiryDate.isEmpty()
+                && item.expiryDate >= today
+                && item.expiryDate <= limit)
+            n++;
+    }
+    return n;
 }
 
 void App::showLocationSelect() {
