@@ -679,13 +679,19 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::QTY_11: case OnscreenAction::QTY_12: {
             int qty = static_cast<int>(action) - static_cast<int>(OnscreenAction::QTY_1) + 1;
             audio_obj.playClickTone();
-            _pendingQuantity = qty;
             if (workflow == WorkflowMode::ENTER_QTY) {
-                // Tap = direct confirm: set quantity and save immediately
-                workflow = WorkflowMode::SAVING;
-                state.setState(AppState::SAVING);
-                finishStorageWorkflow();
+                if (qty == _pendingQuantity) {
+                    // Second tap on already-selected number: save
+                    workflow = WorkflowMode::SAVING;
+                    state.setState(AppState::SAVING);
+                    finishStorageWorkflow();
+                } else {
+                    // First tap: highlight selection
+                    _pendingQuantity = qty;
+                    display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
+                }
             } else if (workflow == WorkflowMode::TMPL_MHD) {
+                _pendingQuantity = qty;
                 auto products = templatesForCategory(_selectedCategory);
                 if (_selectedTemplateIdx < (int)products.size()) {
                     String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);

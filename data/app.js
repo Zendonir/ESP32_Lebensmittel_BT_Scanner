@@ -1379,6 +1379,14 @@ Pages.system = {
   async clearCache() {
     try { await API.post('/api/cache/clear', {}); Toast.success('Cache gelöscht'); } catch(e) { Toast.error(e.message); }
   },
+
+  async setVolume() {
+    const vol = parseInt(document.getElementById('audioVolume').value);
+    try {
+      const res = await API.post('/api/audio/volume', { volume: vol });
+      res.ok ? Toast.success(`Lautstärke: ${vol}%`) : Toast.error(res.message || 'Fehler');
+    } catch(e) { Toast.error('Fehler: ' + e.message); }
+  },
 };
 
 /* ---- NETWORK ---- */
@@ -1551,39 +1559,6 @@ Pages.printer = {
       const res = await API.post('/api/test-print', { type: 'label' });
       Toast.success(res.message || 'Testlabel gesendet');
     } catch(e) { Toast.error('Fehler: ' + e.message); }
-  },
-
-  async setVolume() {
-    const vol = parseInt(document.getElementById('audioVolume').value);
-    try {
-      const res = await API.post('/api/audio/volume', { volume: vol });
-      res.ok ? Toast.success(`Lautstärke: ${vol}%`) : Toast.error(res.message || 'Fehler');
-    } catch(e) { Toast.error('Fehler: ' + e.message); }
-  },
-
-  async audioTest() {
-    const freq = parseInt(document.getElementById('audioFreq').value) || 1000;
-    const dur  = parseInt(document.getElementById('audioDur').value)  || 300;
-    await this._playTone(freq, dur);
-  },
-
-  async audioPreset(freq, dur) {
-    document.getElementById('audioFreq').value = freq;
-    document.getElementById('audioDur').value  = dur;
-    await this._playTone(freq, dur);
-  },
-
-  async _playTone(freq, dur) {
-    const el = document.getElementById('audioTestResult');
-    if (el) el.textContent = `⏳ ${freq} Hz · ${dur} ms …`;
-    try {
-      const res = await API.post('/api/audio-test', { freq, dur });
-      if (el) el.textContent = res.ok ? `✓ ${freq} Hz · ${dur} ms` : `✗ ${res.message || 'Fehler'}`;
-      res.ok ? Toast.success(`Ton: ${freq} Hz, ${dur} ms`) : Toast.error(res.message || 'Fehler');
-    } catch(e) {
-      if (el) el.textContent = '✗ Fehler';
-      Toast.error('Fehler: ' + e.message);
-    }
   },
 
   async printManual() {

@@ -848,7 +848,7 @@ void Display::showQuantityEntry(const ProductInfo &product,
     _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge antippen zum Einlagern", SCR_W / 2, HDR_H + 6);
+    _spr.drawString("Menge 2x antippen = Einlagern", SCR_W / 2, HDR_H + 6);
 
     // 4×3 quantity grid — taller buttons fill the available space
     // Available: SCR_H - HDR_H - 28(hint) = 248px for 3 rows + 2 gaps (6px)

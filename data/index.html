@@ -289,6 +289,19 @@
     </div>
     <div class="grid-2">
       <div class="card">
+        <div class="card-title">Lautstärke</div>
+        <div class="form-field">
+          <label>Lautstärke (%)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="range" id="audioVolume" min="0" max="100" value="85" style="flex:1" oninput="document.getElementById('audioVolLabel').textContent=this.value+'%'">
+            <span id="audioVolLabel" style="min-width:38px;text-align:right">85%</span>
+            <button type="button" class="btn" style="white-space:nowrap" onclick="Pages.system.setVolume()">Setzen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
         <div class="card-title">Geräteinformationen</div>
         <dl class="info-list" id="sysInfoList"></dl>
       </div>
@@ -366,29 +379,6 @@
           <button type="button" class="btn btn-ok" onclick="Pages.printer.testLabel()">Testlabel drucken</button>
           <div class="card-title" style="margin-top:12px">Status</div>
           <div id="printerStatus" class="status-badge-row"></div>
-        </div>
-        <div class="card" style="margin-top:12px">
-          <div class="card-title">Audio Test</div>
-          <div class="form-stack">
-            <div class="form-field"><label>Lautstärke (%)</label>
-              <div style="display:flex;gap:8px;align-items:center">
-                <input type="range" id="audioVolume" min="0" max="100" value="70" style="flex:1" oninput="document.getElementById('audioVolLabel').textContent=this.value+'%'">
-                <span id="audioVolLabel" style="min-width:38px;text-align:right">70%</span>
-                <button type="button" class="btn" style="white-space:nowrap" onclick="Pages.printer.setVolume()">Setzen</button>
-              </div>
-            </div>
-            <div class="form-field"><label>Frequenz (Hz)</label><input type="number" id="audioFreq" class="input" value="1000" min="50" max="8000"></div>
-            <div class="form-field"><label>Dauer (ms)</label><input type="number" id="audioDur" class="input" value="300" min="50" max="5000"></div>
-            <div class="btn-group-v">
-              <button type="button" class="btn btn-ok" onclick="Pages.printer.audioTest()">Ton spielen</button>
-              <button type="button" class="btn" onclick="Pages.printer.audioPreset(440,500)">440 Hz (A4)</button>
-              <button type="button" class="btn" onclick="Pages.printer.audioPreset(1000,200)">1 kHz</button>
-              <button type="button" class="btn" onclick="Pages.printer.audioPreset(1800,100)">1.8 kHz (OK)</button>
-              <button type="button" class="btn" onclick="Pages.printer.audioPreset(250,400)">250 Hz (Fehler)</button>
-              <button type="button" class="btn" onclick="Pages.printer.audioPreset(2800,80)">2.8 kHz (hoch)</button>
-            </div>
-            <div id="audioTestResult" class="value-display mono" style="margin-top:6px"></div>
-          </div>
         </div>
       </div>
     </div>
