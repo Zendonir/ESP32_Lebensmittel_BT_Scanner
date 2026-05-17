@@ -6,6 +6,7 @@ void DeviceConfig::begin() {
     Preferences p;
     if (!p.begin("device", false)) return;  // false = read-write, creates namespace on first boot
     _household            = p.getString("household", "Standard");
+    _householdAbbr        = p.getString("hhAbbr",    "");
     _deviceName           = p.getString("devName",   "");
     _activeLocation       = p.getString("location",  "");
     _activeLocationColor  = p.getString("locColor",  "");
@@ -17,6 +18,14 @@ void DeviceConfig::setHousehold(const String &h) {
     Preferences p;
     p.begin("device", false);
     p.putString("household", _household);
+    p.end();
+}
+
+void DeviceConfig::setHouseholdAbbr(const String &abbr) {
+    _householdAbbr = abbr;
+    Preferences p;
+    p.begin("device", false);
+    p.putString("hhAbbr", _householdAbbr);
     p.end();
 }
 

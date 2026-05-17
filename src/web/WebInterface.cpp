@@ -432,8 +432,9 @@ void WebInterface::registerApiRoutes() {
     // ---- DEVICE CONFIG (GET) ----
     _server.on("/api/device-config", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
-        doc["household"]  = device_config.getHousehold();
-        doc["deviceName"] = device_config.getDeviceName();
+        doc["household"]     = device_config.getHousehold();
+        doc["householdAbbr"] = device_config.getHouseholdAbbr();
+        doc["deviceName"]    = device_config.getDeviceName();
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);
@@ -446,6 +447,8 @@ void WebInterface::registerApiRoutes() {
             if (deserializeJson(doc, _body) == DeserializationError::Ok) {
                 if (!doc["household"].isNull())
                     device_config.setHousehold(doc["household"].as<String>());
+                if (!doc["householdAbbr"].isNull())
+                    device_config.setHouseholdAbbr(doc["householdAbbr"].as<String>());
                 if (!doc["deviceName"].isNull())
                     device_config.setDeviceName(doc["deviceName"].as<String>());
             }
@@ -468,6 +471,8 @@ void WebInterface::registerApiRoutes() {
                 obj["addedDate"]    = it.addedDate;
                 obj["quantity"]     = it.quantity;
                 obj["labelBarcode"] = it.labelBarcode;
+                obj["location"]     = it.location;
+                obj["household"]    = device_config.getHousehold();
             }
         }
         sendJson(req, doc);

@@ -108,6 +108,7 @@
     <div class="toolbar">
       <input type="search" id="invSearch" class="search-input" placeholder="Suchen…" oninput="Pages.inventory.filter()">
       <select id="invCatFilter" class="select" onchange="Pages.inventory.filter()"><option value="">Alle Kategorien</option></select>
+      <select id="invLocFilter" class="select" onchange="Pages.inventory.filter()"><option value="">Alle Lagerorte</option></select>
       <select id="invStatusFilter" class="select" onchange="Pages.inventory.filter()">
         <option value="">Alle</option>
         <option value="ok">OK</option>
@@ -118,6 +119,7 @@
         <option value="name">Name</option>
         <option value="expiry">Ablaufdatum</option>
         <option value="category">Kategorie</option>
+        <option value="location">Lagerort</option>
         <option value="added">Einlagerung</option>
       </select>
     </div>
@@ -253,6 +255,10 @@
           <div class="form-field">
             <label>Haushalt</label>
             <input type="text" id="cfgHousehold" class="input" placeholder="Standard">
+          </div>
+          <div class="form-field">
+            <label>Abkürzung <span class="muted" style="font-weight:normal;font-size:.8rem">(im Inventar, max. 5 Zeichen)</span></label>
+            <input type="text" id="cfgHouseholdAbbr" class="input" placeholder="z.B. Hm." maxlength="5" style="width:120px">
           </div>
           <div class="form-field">
             <label>Gerätename</label>

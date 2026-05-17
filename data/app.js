@@ -231,12 +231,13 @@ const Router = (() => {
    STATE
    ============================================================ */
 const State = {
-  inventory:  [],
-  templates:  [],
-  categories: [],
-  shopping:   [],
-  uiConfig:   {},
-  logs:       [],
+  inventory:      [],
+  templates:      [],
+  categories:     [],
+  shopping:       [],
+  uiConfig:       {},
+  logs:           [],
+  householdAbbr:  '',
 };
 
 /* ============================================================
@@ -430,6 +431,7 @@ Pages.inventory = {
       State.inventory  = Array.isArray(inv) ? inv : [];
       State.categories = Array.isArray(cats) ? cats : [];
       this.populateCatFilter();
+      this.populateLocFilter();
       this.filter();
     } catch(e) {
       Toast.error('Inventar: ' + e.message);
@@ -446,28 +448,47 @@ Pages.inventory = {
     sel.value = cur;
   },
 
+  populateLocFilter() {
+    const sel = document.getElementById('invLocFilter');
+    const cur = sel.value;
+    const locs = [...new Set(State.inventory.map(i => i.location).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Alle Lagerorte</option>';
+    locs.forEach(l => {
+      sel.innerHTML += `<option value="${esc(l)}">${esc(l)}</option>`;
+    });
+    if (locs.includes(cur)) sel.value = cur;
+  },
+
   filter() {
     const q      = document.getElementById('invSearch').value.toLowerCase();
     const cat    = document.getElementById('invCatFilter').value;
+    const loc    = document.getElementById('invLocFilter').value;
     const status = document.getElementById('invStatusFilter').value;
     const sort   = document.getElementById('invSort').value;
 
     let items = State.inventory.filter(i => {
-      const matchQ = !q || i.name?.toLowerCase().includes(q) || i.brand?.toLowerCase().includes(q) || i.barcode?.includes(q);
+      const matchQ = !q ||
+        i.name?.toLowerCase().includes(q) ||
+        i.brand?.toLowerCase().includes(q) ||
+        i.barcode?.includes(q) ||
+        i.location?.toLowerCase().includes(q) ||
+        i.household?.toLowerCase().includes(q);
       const matchC = !cat || i.category === cat;
+      const matchL = !loc || i.location === loc;
       const d = daysUntil(i.expiryDate);
       const matchS = !status ||
         (status === 'ok'     && d >= 7) ||
         (status === 'warn'   && d >= 0 && d < 7) ||
         (status === 'danger' && d < 0);
-      return matchQ && matchC && matchS;
+      return matchQ && matchC && matchL && matchS;
     });
 
     items = items.sort((a, b) => {
-      if (sort === 'name')    return (a.name||'').localeCompare(b.name||'');
-      if (sort === 'expiry')  return daysUntil(a.expiryDate) - daysUntil(b.expiryDate);
-      if (sort === 'category')return (a.category||'').localeCompare(b.category||'');
-      if (sort === 'added')   return (b.addedDate||'').localeCompare(a.addedDate||'');
+      if (sort === 'name')     return (a.name||'').localeCompare(b.name||'');
+      if (sort === 'expiry')   return daysUntil(a.expiryDate) - daysUntil(b.expiryDate);
+      if (sort === 'category') return (a.category||'').localeCompare(b.category||'');
+      if (sort === 'location') return (a.location||'').localeCompare(b.location||'');
+      if (sort === 'added')    return (b.addedDate||'').localeCompare(a.addedDate||'');
       return 0;
     });
 
@@ -485,12 +506,19 @@ Pages.inventory = {
     empty.hidden = true;
     tbody.innerHTML = items.map((i, idx) => {
       const days = daysUntil(i.expiryDate);
-      const cls  = expiryClass(days);
+      const locBadge = i.location
+        ? `<span class="badge" style="background:var(--surface2);color:var(--subtext);margin-right:4px">📍 ${esc(i.location)}</span>`
+        : '';
+      const hhAbbr = State.householdAbbr || '';
+      const hhBadge = hhAbbr
+        ? `<span class="badge" style="background:var(--surface2);color:var(--subtext)">🏠 ${esc(hhAbbr)}</span>`
+        : '';
       return `
         <tr>
           <td>
             <div style="font-weight:600">${esc(i.name)}</div>
             ${i.brand ? `<div style="font-size:.75rem;color:var(--subtext)">${esc(i.brand)}</div>` : ''}
+            ${locBadge || hhBadge ? `<div style="margin-top:4px">${locBadge}${hhBadge}</div>` : ''}
           </td>
           <td>${i.category ? `<span class="badge badge-info">${esc(i.category)}</span>` : '—'}</td>
           <td>${esc(i.quantity || 1)}</td>
@@ -1272,8 +1300,10 @@ Pages.system = {
         API.get('/api/device-config'),
       ]);
       this.render(sys);
-      document.getElementById('cfgHousehold').value  = cfg.household  || '';
-      document.getElementById('cfgDeviceName').value = cfg.deviceName || '';
+      document.getElementById('cfgHousehold').value      = cfg.household      || '';
+      document.getElementById('cfgHouseholdAbbr').value  = cfg.householdAbbr  || '';
+      document.getElementById('cfgDeviceName').value     = cfg.deviceName     || '';
+      State.householdAbbr = cfg.householdAbbr || '';
       try {
         const disp = await API.get('/api/display-config');
         document.getElementById('cfgStandby').value = String(disp.standby_sec ?? 0);
@@ -1289,8 +1319,11 @@ Pages.system = {
       const standbySec = parseInt(document.getElementById('cfgStandby').value, 10) || 0;
       await Promise.all([
         API.post('/api/device-config', {
-          household:  document.getElementById('cfgHousehold').value.trim(),
-          deviceName: document.getElementById('cfgDeviceName').value.trim(),
+          household:      document.getElementById('cfgHousehold').value.trim(),
+          householdAbbr:  document.getElementById('cfgHouseholdAbbr').value.trim().slice(0, 5),
+          deviceName:     document.getElementById('cfgDeviceName').value.trim(),
+        }).then(() => {
+          State.householdAbbr = document.getElementById('cfgHouseholdAbbr').value.trim().slice(0, 5);
         }),
         API.post('/api/display-config', { standby_sec: standbySec }),
       ]);
