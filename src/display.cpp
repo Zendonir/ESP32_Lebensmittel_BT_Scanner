@@ -405,7 +405,7 @@ static void draw_panel_manual_entry(const HomeState &) {
     _spr.setTextColor(C_ACCENT, C_BG);
     _spr.setTextFont(4);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Manuelle Eingabe", SCR_W / 2, py + 16);
+    _spr.drawString("MANUELL EINGEBEN", SCR_W / 2, py + 16);
     _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
     _spr.drawString("Produktname per Tastatur eingeben", SCR_W / 2, py + 54);
@@ -689,9 +689,9 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
     _spr.setTextDatum(ML_DATUM);
-    _spr.setTextFont(2);
+    _spr.setTextFont(4);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.drawString("MHD eingeben", 10, HDR_H / 2);
+    _spr.drawString("MHD EINGEBEN", 10, HDR_H / 2);
     draw_location_badge();
 
     // ── Vertical divider between info panel and numpad ────────
@@ -915,7 +915,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("Inventar", 12, HDR_H / 2);
+    _spr.drawString("INVENTAR", 12, HDR_H / 2);
     draw_location_badge();
 
     // ── Search bar ──────────────────────────────────────────
@@ -1027,7 +1027,7 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("Kategorie w\xE4hlen", 12, HDR_H / 2);
+    _spr.drawString("KATEGORIEN", 12, HDR_H / 2);
     draw_location_badge();
 
     // 2 columns × 4 rows, content area 480×276
@@ -1246,7 +1246,7 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextFont(2);
+    _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 8, HDR_H / 2);
 
@@ -1342,7 +1342,7 @@ void Display::showLocationSelect(const String &current, const std::vector<String
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("Lagerort w\xE4hlen", 12, HDR_H / 2);
+    _spr.drawString("LAGERORTE", 12, HDR_H / 2);
     if (!current.isEmpty()) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
         _spr.setTextFont(2);

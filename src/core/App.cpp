@@ -127,7 +127,7 @@ void App::loop() {
                 if (!dup) _wifiNets.push_back(s);
             }
             WiFi.scanDelete();
-            display_obj.showListScreen("WLAN auswählen", _wifiNets, false);
+            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, false);
             workflow = WorkflowMode::WIFI_SETUP_LIST;
         }
     }
@@ -147,7 +147,7 @@ void App::loop() {
             workflow = WorkflowMode::WIFI_SETUP_PASS;
             _kbText = "";
             display_obj.kbReset();
-            display_obj.showKeyboardEntry("Passwort falsch? Erneut:", "");
+            display_obj.showKeyboardEntry("PASSWORT (ERNEUT)", "");
         }
     }
 
@@ -397,13 +397,13 @@ void App::processOnscreenAction(OnscreenAction action) {
             audio_obj.playClickTone();
             _kbText += c;
             if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
-                display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+                display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
             } else if (workflow == WorkflowMode::INV_SEARCH) {
                 display_obj.kbAutoShift(c);
-                display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
+                display_obj.showKeyboardEntry("SUCHE", _kbText);
             } else {
                 display_obj.kbAutoShift(c);
-                display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+                display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
             }
         }
         return;
@@ -415,24 +415,24 @@ void App::processOnscreenAction(OnscreenAction action) {
         audio_obj.playClickTone();
         display_obj.kbToggleCaps();
         if (workflow == WorkflowMode::WIFI_SETUP_PASS)
-            display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+            display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
         else if (workflow == WorkflowMode::INV_SEARCH)
-            display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
+            display_obj.showKeyboardEntry("SUCHE", _kbText);
         else
-            display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+            display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
         return;
     }
 
     if (action == OnscreenAction::KB_BACKSPACE && workflow == WorkflowMode::WIFI_SETUP_PASS) {
         if (!_kbText.isEmpty()) _kbText.remove(_kbText.length() - 1);
-        display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+        display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
         return;
     }
 
     if (action == OnscreenAction::KB_BACKSPACE && workflow == WorkflowMode::INV_SEARCH) {
         audio_obj.playClickTone();
         if (!_kbText.isEmpty()) _kbText.remove(_kbText.length() - 1);
-        display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
+        display_obj.showKeyboardEntry("SUCHE", _kbText);
         return;
     }
 
@@ -455,7 +455,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             return;
         }
         if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
-            display_obj.showListScreen("WLAN auswählen", _wifiNets, false);
+            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, false);
             workflow = WorkflowMode::WIFI_SETUP_LIST;
             return;
         }
@@ -500,7 +500,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                 _selectedSsid = _wifiNets[idx];
                 _kbText = "";
                 display_obj.kbReset();
-                display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", "");
+                display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, "");
                 workflow = WorkflowMode::WIFI_SETUP_PASS;
             }
             return;
@@ -607,7 +607,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _activeTab = UiTab::INVENTORY;
             _kbText = _invFilter;
             display_obj.kbReset();
-            display_obj.showKeyboardEntry("Inventar durchsuchen", _kbText);
+            display_obj.showKeyboardEntry("SUCHE", _kbText);
             break;
         case OnscreenAction::TAB_SCANNER:
             workflow = WorkflowMode::HOME;
@@ -630,7 +630,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _activeTab = UiTab::MANUAL_ENTRY;
             _kbText = "";
             display_obj.kbReset();
-            display_obj.showKeyboardEntry("Manuelle Eingabe", "");
+            display_obj.showKeyboardEntry("MANUELL", "");
             break;
         case OnscreenAction::REFRESH:
             workflow = WorkflowMode::HOME;
@@ -825,7 +825,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                 audio_obj.playClickTone();
                 _kbText.remove(_kbText.length() - 1);
                 if (_kbText.isEmpty()) display_obj.kbAutoShift(' '); // treat empty as after-space
-                display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+                display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
             }
             break;
 
