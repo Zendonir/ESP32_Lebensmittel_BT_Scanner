@@ -5,9 +5,10 @@ DeviceConfig device_config;
 void DeviceConfig::begin() {
     Preferences p;
     if (!p.begin("device", false)) return;  // false = read-write, creates namespace on first boot
-    _household      = p.getString("household", "Standard");
-    _deviceName     = p.getString("devName",   "");
-    _activeLocation = p.getString("location",  "");
+    _household            = p.getString("household", "Standard");
+    _deviceName           = p.getString("devName",   "");
+    _activeLocation       = p.getString("location",  "");
+    _activeLocationColor  = p.getString("locColor",  "");
     p.end();
 }
 
@@ -32,5 +33,13 @@ void DeviceConfig::setActiveLocation(const String &loc) {
     Preferences p;
     p.begin("device", false);
     p.putString("location", _activeLocation);
+    p.end();
+}
+
+void DeviceConfig::setActiveLocationColor(const String &hexColor) {
+    _activeLocationColor = hexColor;
+    Preferences p;
+    p.begin("device", false);
+    p.putString("locColor", _activeLocationColor);
     p.end();
 }

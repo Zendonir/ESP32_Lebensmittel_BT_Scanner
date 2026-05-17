@@ -116,6 +116,7 @@ public:
 
     // Location
     void setActiveLocation(const String &loc);
+    void setActiveLocationColor(const String &hexColor);
     void showLocationSelect(const String &current, const std::vector<String> &locations);
 
     // WiFi setup scan screen

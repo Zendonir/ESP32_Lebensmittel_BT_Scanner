@@ -691,9 +691,25 @@ void WebInterface::registerApiRoutes() {
         [](AsyncWebServerRequest *req) {
             JsonDocument item;
             if (deserializeJson(item, _body) == DeserializationError::Ok) {
-                String loc = item["location"] | "";
+                String loc   = item["location"] | "";
+                String color = item["color"]    | "";
+                // If color not provided directly, look it up from locations.json
+                if (color.isEmpty() && !loc.isEmpty()) {
+                    JsonDocument arr;
+                    loadJson("/locations.json", arr, "[]");
+                    if (arr.is<JsonArray>()) {
+                        for (JsonObject obj : arr.as<JsonArray>()) {
+                            if ((String)(obj["name"] | "") == loc) {
+                                color = obj["color"] | "";
+                                break;
+                            }
+                        }
+                    }
+                }
                 device_config.setActiveLocation(loc);
+                device_config.setActiveLocationColor(color);
                 display_obj.setActiveLocation(loc);
+                display_obj.setActiveLocationColor(color);
             }
             req->send(200, "application/json", "{\"ok\":true}");
         },

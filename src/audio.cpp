@@ -274,7 +274,7 @@ void Audio::toneTask(void *param) {
 Audio audio_obj;
 Audio::Audio() : volume_level(100), is_initialized(false), _queue(nullptr) {
     _prefs.begin("audio", true);  // read-only
-    volume_level = (uint8_t)_prefs.getUInt("vol", 70);
+    volume_level = (uint8_t)_prefs.getUInt("vol", 85);
     _prefs.end();
 }
 

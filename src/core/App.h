@@ -84,6 +84,7 @@ private:
 
     // Location helpers
     std::vector<String> loadLocationNames() const;
+    String              loadLocationColor(const String &name) const;
     void showLocationSelect();
     void doInventoryPull();
 

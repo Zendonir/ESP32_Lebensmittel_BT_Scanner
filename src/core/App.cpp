@@ -87,8 +87,9 @@ void App::begin() {
         _lastInventorySyncMs = millis();
     }
 
-    // Restore active location badge on display
+    // Restore active location badge (name + color) on display
     display_obj.setActiveLocation(device_config.getActiveLocation());
+    display_obj.setActiveLocationColor(device_config.getActiveLocationColor());
 
     Serial.flush();
     Logger::info("Scanner", "Initializing BLE barcode scanner");
@@ -489,12 +490,18 @@ void App::processOnscreenAction(OnscreenAction action) {
             // idx 0 = "Kein Lagerort" (clear), then actual locations
             if (idx == 0) {
                 device_config.setActiveLocation("");
+                device_config.setActiveLocationColor("");
                 display_obj.setActiveLocation("");
+                display_obj.setActiveLocationColor("");
             } else {
                 int locIdx = idx - 1;
                 if (locIdx < (int)locs.size()) {
-                    device_config.setActiveLocation(locs[locIdx]);
-                    display_obj.setActiveLocation(locs[locIdx]);
+                    const String &locName = locs[locIdx];
+                    String color = loadLocationColor(locName);
+                    device_config.setActiveLocation(locName);
+                    device_config.setActiveLocationColor(color);
+                    display_obj.setActiveLocation(locName);
+                    display_obj.setActiveLocationColor(color);
                 }
             }
             audio_obj.playClickTone();
@@ -1061,6 +1068,23 @@ std::vector<String> App::loadLocationNames() const {
     }
     f.close();
     return names;
+}
+
+String App::loadLocationColor(const String &name) const {
+    File f = AppFS::fs().open("/locations.json", "r");
+    if (!f) return "";
+    JsonDocument doc;
+    String color;
+    if (deserializeJson(doc, f) == DeserializationError::Ok && doc.is<JsonArray>()) {
+        for (JsonObject obj : doc.as<JsonArray>()) {
+            if ((String)(obj["name"] | "") == name) {
+                color = obj["color"] | "";
+                break;
+            }
+        }
+    }
+    f.close();
+    return color;
 }
 
 void App::showLocationSelect() {

@@ -71,7 +71,17 @@ static void add_region(int16_t x, int16_t y, int16_t w, int16_t h, OnscreenActio
 }
 
 // ─────────────────── active location (shared across all screens) ─────────
-static String _s_active_location;
+static String   _s_active_location;
+static uint16_t _s_location_color = 0;  // 0 = use C_ACCENT default
+
+static uint16_t hexToRgb565(const String &hex) {
+    String h = hex.startsWith("#") ? hex.substring(1) : hex;
+    if (h.length() != 6) return 0;
+    uint8_t r = (uint8_t)strtol(h.substring(0, 2).c_str(), nullptr, 16);
+    uint8_t g = (uint8_t)strtol(h.substring(2, 4).c_str(), nullptr, 16);
+    uint8_t b = (uint8_t)strtol(h.substring(4, 6).c_str(), nullptr, 16);
+    return ((uint16_t)(r >> 3) << 11) | ((uint16_t)(g >> 2) << 5) | (b >> 3);
+}
 
 // ─────────────────── touch debounce state ────────────────
 static bool     _touch_was_pressed = false;
@@ -89,17 +99,23 @@ static volatile char           _pending_kb_char = 0;
 static TFT_eSPI    _tft;
 static TFT_eSprite _spr(&_tft);
 
-// Draw location pill in top-right of header; registers LOCATION_BADGE hit region.
-// x_right is the right edge of the pill in pixels.
+// Draw location badge in top-right of header; registers LOCATION_BADGE hit region.
 static void draw_location_badge(int x_right) {
     if (_s_active_location.isEmpty()) return;
     String label = _s_active_location;
-    if (label.length() > 14) label = label.substring(0, 14);
-    _spr.setTextFont(1);
+    if (label.length() > 12) label = label.substring(0, 12);
+    uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
+
+    // Colored dot
+    _spr.fillCircle(x_right - 120, HDR_H / 2, 5, col);
+
+    // Location name in font 2 (clearly readable)
+    _spr.setTextFont(2);
     _spr.setTextDatum(MR_DATUM);
-    _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.drawString(label.c_str(), x_right, HDR_H / 2);
-    add_region(x_right - 100, 0, 100, HDR_H, OnscreenAction::LOCATION_BADGE);
+    _spr.setTextColor(col, C_SURFACE);
+    _spr.drawString(label.c_str(), x_right - 12, HDR_H / 2);
+
+    add_region(x_right - 140, 0, 140, HDR_H, OnscreenAction::LOCATION_BADGE);
 }
 
 // ─────────────────── home screen cache ───────────────────
@@ -1250,6 +1266,10 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
 
 void Display::setActiveLocation(const String &loc) {
     _s_active_location = loc;
+}
+
+void Display::setActiveLocationColor(const String &hexColor) {
+    _s_location_color = hexToRgb565(hexColor);
 }
 
 void Display::showLocationSelect(const String &current, const std::vector<String> &locations) {

@@ -853,9 +853,14 @@ Pages.locations = {
     const empty = document.getElementById('locEmpty');
     if (!items.length) { grid.innerHTML = ''; empty.hidden = false; return; }
     empty.hidden = true;
-    grid.innerHTML = items.map((loc, i) => `
-      <div class="cat-card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px">
-        <div>
+    grid.innerHTML = items.map((loc, i) => {
+      const dot = loc.color
+        ? `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(loc.color)};margin-right:10px;flex-shrink:0"></span>`
+        : '';
+      return `
+      <div class="cat-card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-left:4px solid ${loc.color||'transparent'}">
+        <div style="display:flex;align-items:center">
+          ${dot}
           <div class="cat-name" style="font-size:1rem;font-weight:600">${esc(loc.name)}</div>
         </div>
         <div class="btn-group">
@@ -863,7 +868,8 @@ Pages.locations = {
           <button class="btn btn-sm" onclick="Pages.locations.edit(${i})">Bearb.</button>
           <button class="btn btn-sm btn-danger" onclick="Pages.locations.remove(${i})">Löschen</button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   },
 
   openAdd() { this._openForm(null); },
@@ -875,6 +881,11 @@ Pages.locations = {
       body: `
         <form class="form-stack" id="locForm">
           <div class="form-field"><label>Name *</label><input class="input" id="lfName" value="${esc(loc?.name||'')}" required></div>
+          <div class="form-field" style="display:flex;align-items:center;gap:12px">
+            <label style="margin:0">Farbe</label>
+            <input type="color" id="lfColor" value="${loc?.color||'#4C9EFF'}" style="width:48px;height:36px;padding:2px;border-radius:6px;border:1px solid var(--border);cursor:pointer">
+            <span style="font-size:.85rem;color:var(--muted)">Wird im Display-Badge angezeigt</span>
+          </div>
         </form>`,
       actions: [
         { label: 'Abbrechen', cls: '', onclick: Modal.hide },
@@ -884,9 +895,10 @@ Pages.locations = {
   },
 
   async _submit(original) {
-    const name = document.getElementById('lfName').value.trim();
+    const name  = document.getElementById('lfName').value.trim();
+    const color = document.getElementById('lfColor').value;
     if (!name) { Toast.warn('Name erforderlich'); return; }
-    const data = original ? { oldName: original.name, name } : { name };
+    const data = original ? { oldName: original.name, name, color } : { name, color };
     try {
       await API.post('/api/locations', data);
       Toast.success('Lagerort gespeichert');
