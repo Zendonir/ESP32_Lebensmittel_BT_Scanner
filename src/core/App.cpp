@@ -365,6 +365,36 @@ char App::digitForAction(OnscreenAction action) const {
     }
 }
 
+static String normalizeSearch(const String &s) {
+    String out = s;
+    out.toLowerCase();
+    out.replace("\xE4", "a");   // ä
+    out.replace("\xF6", "o");   // ö
+    out.replace("\xFC", "u");   // ü
+    out.replace("\xDF", "ss");  // ß
+    out.replace("\xC4", "a");   // Ä
+    out.replace("\xD6", "o");   // Ö
+    out.replace("\xDC", "u");   // Ü
+    return out;
+}
+
+static bool isSubseq(const String &needle, const String &hay) {
+    int ni = 0;
+    for (int hi = 0; hi < (int)hay.length() && ni < (int)needle.length(); hi++)
+        if (hay[hi] == needle[ni]) ni++;
+    return ni == (int)needle.length();
+}
+
+String App::bestMatchForSearch(const String &query) const {
+    if (query.isEmpty()) return "";
+    String q = normalizeSearch(query);
+    for (const auto &item : inventory.items())
+        if (normalizeSearch(item.name).indexOf(q) >= 0) return item.name;
+    for (const auto &item : inventory.items())
+        if (isSubseq(q, normalizeSearch(item.name))) return item.name;
+    return "";
+}
+
 void App::processOnscreenAction(OnscreenAction action) {
     char digit = digitForAction(action);
     if (digit && workflow == WorkflowMode::ENTER_DATE) {
@@ -399,8 +429,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
                 display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
             } else if (workflow == WorkflowMode::INV_SEARCH) {
-                display_obj.kbAutoShift(c);
-                display_obj.showKeyboardEntry("SUCHE", _kbText);
+                display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
             } else {
                 display_obj.kbAutoShift(c);
                 display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
@@ -417,7 +446,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         if (workflow == WorkflowMode::WIFI_SETUP_PASS)
             display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
         else if (workflow == WorkflowMode::INV_SEARCH)
-            display_obj.showKeyboardEntry("SUCHE", _kbText);
+            display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
         else
             display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
         return;
@@ -432,7 +461,7 @@ void App::processOnscreenAction(OnscreenAction action) {
     if (action == OnscreenAction::KB_BACKSPACE && workflow == WorkflowMode::INV_SEARCH) {
         audio_obj.playClickTone();
         if (!_kbText.isEmpty()) _kbText.remove(_kbText.length() - 1);
-        display_obj.showKeyboardEntry("SUCHE", _kbText);
+        display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
         return;
     }
 
@@ -607,7 +636,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _activeTab = UiTab::INVENTORY;
             _kbText = _invFilter;
             display_obj.kbReset();
-            display_obj.showKeyboardEntry("SUCHE", _kbText);
+            display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
             break;
         case OnscreenAction::TAB_SCANNER:
             workflow = WorkflowMode::HOME;
@@ -795,15 +824,18 @@ void App::processOnscreenAction(OnscreenAction action) {
                 workflow = WorkflowMode::HOME;
                 _activeTab = UiTab::INVENTORY;
                 {
-                    // Build filtered list
-                    String filterLower = _invFilter;
-                    filterLower.toLowerCase();
+                    String q = normalizeSearch(_invFilter);
                     std::vector<InventoryItem> filtered;
-                    for (const auto &it : inventory.items()) {
-                        String nl = it.name; nl.toLowerCase();
-                        String ll = it.location; ll.toLowerCase();
-                        if (nl.indexOf(filterLower) >= 0 || ll.indexOf(filterLower) >= 0)
-                            filtered.push_back(it);
+                    if (_invFilter.isEmpty()) {
+                        filtered = inventory.items();
+                    } else {
+                        for (const auto &it : inventory.items()) {
+                            String nl = normalizeSearch(it.name);
+                            String ll = normalizeSearch(it.location);
+                            if (nl.indexOf(q) >= 0 || ll.indexOf(q) >= 0 ||
+                                isSubseq(q, nl) || isSubseq(q, ll))
+                                filtered.push_back(it);
+                        }
                     }
                     display_obj.showInventoryList(filtered, _invFilter,
                                                   device_config.getHouseholdAbbr());

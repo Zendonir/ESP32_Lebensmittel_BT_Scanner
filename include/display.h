@@ -129,6 +129,7 @@ public:
 
     // Keyboard entry
     void showKeyboardEntry(const String &title, const String &current);
+    void showSearchEntry(const String &current, const String &suggestion);
     char drainKbChar();  // returns pending keyboard char, 0 if none
     void kbAutoShift(char lastChar);   // call after each typed char
     void kbReset();                    // call when opening fresh keyboard

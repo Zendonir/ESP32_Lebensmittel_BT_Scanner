@@ -1320,6 +1320,123 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
 }
 
 // ─────────────────────────────────────────────────────────
+//   Search keyboard  (no number row, taller keys, suggestion)
+// ─────────────────────────────────────────────────────────
+
+static String suggestion_suffix(const String &typed, const String &suggestion) {
+    if (typed.isEmpty() || suggestion.isEmpty()) return "";
+    String tl = typed; tl.toLowerCase();
+    String sl = suggestion; sl.toLowerCase();
+    int pos = sl.indexOf(tl);
+    if (pos >= 0) return suggestion.substring(pos + typed.length());
+    return ""; // no visual suffix if no substring match
+}
+
+void Display::showSearchEntry(const String &current, const String &suggestion) {
+    if (!_initialized) return;
+
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    // ── Layout: 480×320 ─────────────────────────────────────────
+    // Header     44 px  (y=0)
+    // Input bar  36 px  (y=44)
+    // Letter×3   60 px each  (y=80/140/200)
+    // Bottom row 60 px  (y=260)
+    static constexpr int KEY_W  = 48;   // 10 cols × 48 = 480
+    static constexpr int KEY_H  = 60;
+    static constexpr int INP_H  = 36;
+    static constexpr int KB_Y   = HDR_H + INP_H;  // 80
+    static constexpr int BOT_Y  = KB_Y + 3 * KEY_H; // 260
+
+    // ── Header ───────────────────────────────────────────────────
+    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
+    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString("SUCHE", 8, HDR_H / 2);
+
+    // ── Input bar ────────────────────────────────────────────────
+    _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
+    _spr.drawFastHLine(0, HDR_H + INP_H - 1, SCR_W, C_BORDER);
+
+    _spr.setTextFont(2);
+    _spr.setTextDatum(ML_DATUM);
+
+    if (current.isEmpty()) {
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
+        _spr.drawString("Suchen...", 8, HDR_H + INP_H / 2);
+    } else {
+        // Draw typed text + cursor
+        String typed_cur = trunc(current, 38) + "|";
+        _spr.setTextColor(C_TEXT, C_SURFACE2);
+        _spr.drawString(typed_cur.c_str(), 8, HDR_H + INP_H / 2);
+
+        // Draw suggestion suffix starting right after typed+cursor
+        String suffix = suggestion_suffix(current, suggestion);
+        if (!suffix.isEmpty()) {
+            int measured = (int)_spr.textWidth(typed_cur.c_str(), 2);
+            String suf_trunc = trunc(suffix, 22);
+            _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
+            _spr.drawString(suf_trunc.c_str(), 8 + measured, HDR_H + INP_H / 2);
+        }
+    }
+
+    // ── Helper lambda: draw one key ───────────────────────────────
+    auto draw_key = [&](int bx, int by, int w, int h,
+                        const char *label, uint16_t bg, uint16_t fg,
+                        OnscreenAction act, char reg = 0) {
+        _spr.fillRect(bx, by, w, h, bg);
+        _spr.drawFastVLine(bx, by, h, C_BORDER);
+        _spr.drawFastHLine(bx, by, w, C_BORDER);
+        _spr.setTextColor(fg, bg);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(label, bx + w / 2, by + h / 2);
+        add_region(bx, by, w, h, act, reg);
+    };
+
+    // ── Letter rows 0-2 ──────────────────────────────────────────
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 10; col++) {
+            int bx = col * KEY_W;
+            int by = KB_Y + row * KEY_H;
+            char uc = KB_KEYS[row][col];
+
+            if (row == 2 && col == 9) {
+                // Backspace slot
+                draw_key(bx, by, KEY_W, KEY_H, "<",
+                         C_YELLOW, C_BG, OnscreenAction::KB_BACKSPACE);
+            } else {
+                char dc = _kbShift ? uc : (char)tolower(uc);
+                char lbuf[3] = {dc, 0, 0};
+                draw_key(bx, by, KEY_W, KEY_H, lbuf,
+                         C_SURFACE2, C_TEXT, OnscreenAction::KB_CHAR, dc);
+            }
+        }
+    }
+
+    // ── Bottom row: CAPS(96) | SPACE(192) | OK(192) ──────────────
+    uint16_t caps_bg = _kbCaps  ? C_ACCENT
+                     : _kbShift ? C_SURFACE
+                     : C_SURFACE2;
+    uint16_t caps_fg = _kbCaps ? C_BG : C_TEXT;
+    draw_key(0, BOT_Y, 96, KEY_H,
+             _kbCaps ? "CAPS" : (_kbShift ? "ABC" : "abc"),
+             caps_bg, caps_fg, OnscreenAction::KB_CAPS);
+
+    draw_key(96, BOT_Y, 192, KEY_H,
+             "SPACE", C_SURFACE2, C_TEXT, OnscreenAction::KB_CHAR, ' ');
+
+    draw_key(288, BOT_Y, 192, KEY_H,
+             "OK", C_GREEN, C_BG, OnscreenAction::KB_CONFIRM);
+
+    _spr.drawFastHLine(0, BOT_Y + KEY_H, SCR_W, C_BORDER);
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
 //   Location selection
 // ─────────────────────────────────────────────────────────
 

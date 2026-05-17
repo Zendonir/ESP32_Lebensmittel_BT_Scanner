@@ -90,6 +90,10 @@ private:
     void showLocationSelect();
     void doInventoryPull();
 
+    // Inventory search helpers
+    static String normalizeSearch(const String &s);
+    String bestMatchForSearch(const String &query) const;
+
     TwoWire         i2c_bus;
     AppStateManager state;
     EventBus        events;
