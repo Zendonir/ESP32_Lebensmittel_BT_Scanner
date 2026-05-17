@@ -3,7 +3,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <vector>
-#include <DNSServer.h>
 #include "display.h"
 #include "AppStateManager.h"
 #include "../models/ProductTemplate.h"
@@ -46,6 +45,11 @@ private:
         KB_ENTRY,            // keyboard input for product name
         // Location selection
         LOCATION_SELECT,     // showing location list to activate
+        // WiFi setup via touchscreen
+        WIFI_SETUP_SCAN,     // showing "scanning…" screen, waiting for async scan
+        WIFI_SETUP_LIST,     // showing SSID list
+        WIFI_SETUP_PASS,     // showing keyboard for password entry
+        WIFI_SETUP_CONN,     // connecting, polling for result
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -96,8 +100,6 @@ private:
     LabelCounter    labelCounter;
     PrinterManager  printer;
     WebInterface    web;
-    DNSServer       _dns;
-    bool            _dnsRunning = false;
     uint32_t        _lastUiRefreshMs = 0;
     String          _statusMessage;
     String          _lastUiSignature;
@@ -129,6 +131,11 @@ private:
 
     // Keyboard entry state
     String   _kbText;                    // current keyboard input text
+
+    // WiFi setup state
+    std::vector<String> _wifiNets;
+    String              _selectedSsid;
+    uint32_t            _wifiConnectStartMs = 0;
 
     // Inventory pull sync timer
     uint32_t _lastInventorySyncMs = 0;

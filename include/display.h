@@ -22,7 +22,7 @@ enum class OnscreenAction {
     SWIPE_RIGHT,  // prev tab
     // General
     REFRESH,
-    START_AP,
+    WIFI_SETUP,
     SCANNER_RECONNECT,
     CANCEL,
     // Date numpad
@@ -116,6 +116,9 @@ public:
     // Location
     void setActiveLocation(const String &loc);
     void showLocationSelect(const String &current, const std::vector<String> &locations);
+
+    // WiFi setup scan screen
+    void showWifiScan();
 
     // Keyboard entry
     void showKeyboardEntry(const String &title, const String &current);

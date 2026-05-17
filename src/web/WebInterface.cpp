@@ -210,65 +210,13 @@ static void sendCachedFile(AsyncWebServerRequest *req, const char *path, const c
 }
 
 void WebInterface::registerStaticRoutes() {
-    // Root: show WiFi setup while offline/AP-only; /?app=1 opens the main SPA explicitly
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
-        bool forceApp = req->hasParam("app");
-        bool needsSetup = !wifi_manager.isConnected();
-        Serial.printf("[Web] GET / host=%s forceApp=%d needsSetup=%d\n",
-                      req->host().c_str(), forceApp, needsSetup);
-        Serial.flush();
-        if (!forceApp && needsSetup && LittleFS.exists("/wifi-setup.html")) {
-            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
-            return;
-        }
         if (LittleFS.exists("/index.html")) {
             sendCachedFile(req, "/index.html", "text/html");
-            return;
+        } else {
+            req->send(200, "text/html", FPSTR(SETUP_FALLBACK));
         }
-        // Filesystem not uploaded yet
-        req->send(200, "text/html", FPSTR(SETUP_FALLBACK));
     });
-
-    // Explicit WiFi setup page (always accessible for re-setup)
-    _server.on("/wifi-setup", HTTP_GET, [](AsyncWebServerRequest *req) {
-        Serial.printf("[Web] GET /wifi-setup host=%s\n", req->host().c_str());
-        Serial.flush();
-        if (LittleFS.exists("/wifi-setup.html"))
-            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
-        else
-            req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
-    });
-    _server.on("/wifi-setup.html", HTTP_GET, [](AsyncWebServerRequest *req) {
-        Serial.printf("[Web] GET /wifi-setup.html host=%s\n", req->host().c_str());
-        Serial.flush();
-        if (LittleFS.exists("/wifi-setup.html"))
-            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
-        else
-            req->send(404, "text/plain", "wifi-setup.html not found – run uploadfs");
-    });
-
-    // Captive portal detection endpoints — redirect to WiFi setup.
-    // Different OSes probe different URLs before showing their captive portal UI.
-    auto captive = [](AsyncWebServerRequest *req) {
-        String url = "http://";
-        url += WiFi.softAPIP().toString();
-        url += "/wifi-setup";
-        Serial.printf("[Captive] %s host=%s -> %s\n",
-                      req->url().c_str(), req->host().c_str(), url.c_str());
-        Serial.flush();
-        req->redirect(url);
-    };
-    _server.on("/generate_204",                  HTTP_GET, captive); // Android
-    _server.on("/gen_204",                       HTTP_GET, captive); // Android variant
-    _server.on("/hotspot-detect.html",           HTTP_GET, captive); // Apple
-    _server.on("/library/test/success.html",     HTTP_GET, captive); // Apple newer
-    _server.on("/ncsi.txt",                      HTTP_GET, captive); // Windows
-    _server.on("/connecttest.txt",               HTTP_GET, captive); // Windows
-    _server.on("/redirect",                      HTTP_GET, captive); // Microsoft Edge
-    _server.on("/fwlink",                        HTTP_GET, captive); // Windows legacy
-    _server.on("/canonical.html",                HTTP_GET, captive); // Ubuntu/Firefox
-    _server.on("/success.txt",                   HTTP_GET, captive); // Firefox
-    _server.on("/kindle-wifi/wifistub.html",     HTTP_GET, captive); // Kindle
 
     _server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *req) {
         static const char svg[] =
@@ -310,10 +258,6 @@ void WebInterface::registerStaticRoutes() {
         Serial.flush();
         if (path.startsWith("/api/")) {
             req->send(404, "application/json", "{\"error\":\"not found\"}");
-            return;
-        }
-        if (!wifi_manager.isConnected() && LittleFS.exists("/wifi-setup.html")) {
-            sendNoCacheFile(req, "/wifi-setup.html", "text/html");
             return;
         }
         // SPA fallback — all non-API routes load the app

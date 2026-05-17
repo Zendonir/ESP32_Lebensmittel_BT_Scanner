@@ -8,16 +8,13 @@
 
 enum WiFiMode {
     MODE_OFF,
-    MODE_STATION,
-    MODE_AP,
-    MODE_AP_STA
+    MODE_STATION
 };
 
 class WiFiManager {
 public:
     WiFiManager();
     void init();
-    void startAP(const char *ssid = AP_SSID, const char *password = AP_PASSWORD);
     void connectToWiFi(const char *ssid, const char *password);
     void saveCredentials(const char *ssid, const char *password);
     void loadCredentials(char *ssid, size_t ssidLen, char *password, size_t passLen);
@@ -25,8 +22,6 @@ public:
     bool autoConnect(uint32_t timeoutMs = 10000);
     String getSavedSSID();
     bool isConnected();
-    bool isAPActive();
-    void stopAP();
     WiFiMode getCurrentMode();
     String getIPAddress();
     int scanNetworks(bool includeHidden = true);

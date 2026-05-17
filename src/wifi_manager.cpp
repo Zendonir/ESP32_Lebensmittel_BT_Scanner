@@ -8,32 +8,17 @@ WiFiManager::WiFiManager() : current_mode(MODE_OFF) {}
 void WiFiManager::init() {
     WiFi.persistent(false);
     WiFi.setSleep(false);
-
-    // Start AP+STA so the setup page is reachable while we try to connect.
-    WiFi.mode(WIFI_MODE_APSTA);
-    delay(100);
-
-    if (WiFi.softAP(AP_SSID, AP_PASSWORD)) {
-        Serial.println("\n[WiFi] AP started: " AP_SSID);
-        Serial.printf("[WiFi] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    WiFi.mode(WIFI_MODE_STA);
+    if (hasCredentials()) {
+        if (autoConnect(15000)) {
+            Serial.printf("[WiFi] Station connected, IP: %s\n", WiFi.localIP().toString().c_str());
+        } else {
+            Serial.println("[WiFi] Auto-connect failed");
+        }
     } else {
-        Serial.println("\n[WiFi] ERROR: AP start failed");
+        Serial.println("[WiFi] No saved credentials");
     }
-    Serial.flush();
-    current_mode = MODE_AP_STA;
-
-    if (autoConnect(45000)) {
-        Serial.printf("[WiFi] Station connected, IP: %s\n", WiFi.localIP().toString().c_str());
-        // WiFi is up – shut the AP down so the hotspot is invisible and
-        // captive-portal redirects don't intercept normal browser traffic.
-        stopAP();
-    } else {
-        Serial.println("[WiFi] No saved credentials or auto-connect failed – AP-only mode");
-        // Switch to pure AP mode (saves a tiny bit of power, avoids ghost STA).
-        WiFi.mode(WIFI_MODE_AP);
-        current_mode = MODE_AP;
-    }
-    current_ssid = isConnected() ? WiFi.SSID() : String(AP_SSID);
+    current_ssid = isConnected() ? WiFi.SSID() : "";
     Serial.flush();
 }
 
@@ -73,7 +58,7 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
     loadCredentials(ssid, sizeof(ssid), pass, sizeof(pass));
     if (ssid[0] == '\0') return false;
 
-    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.mode(WIFI_MODE_STA);
     WiFi.setSleep(false);
     // Disable auto-reconnect so the ESP-IDF WiFi stack doesn't start its own
     // reconnect attempt between our retries, which would cause ESP_ERR_WIFI_STATE
@@ -156,50 +141,20 @@ bool WiFiManager::autoConnect(uint32_t timeoutMs) {
     return false;
 }
 
-void WiFiManager::stopAP() {
-    WiFi.softAPdisconnect(true);
-    // Switch to STA-only if station is up, otherwise turn radio off.
-    WiFi.mode(isConnected() ? WIFI_MODE_STA : WIFI_MODE_NULL);
-    current_mode = isConnected() ? MODE_STATION : MODE_OFF;
-    Serial.println("[WiFi] AP stopped");
-    Serial.flush();
-}
-
-bool WiFiManager::isAPActive() {
-    wifi_mode_t m = WiFi.getMode();
-    return (m == WIFI_MODE_AP || m == WIFI_MODE_APSTA);
-}
-
-void WiFiManager::startAP(const char *ssid, const char *password) {
-    // Bring up APSTA so the station connection (if any) is preserved.
-    WiFi.mode(WIFI_MODE_APSTA);
-    WiFi.setSleep(false);
-    current_ssid = ssid ? ssid : AP_SSID;
-    bool ok = WiFi.softAP(current_ssid.c_str(), password ? password : AP_PASSWORD);
-    current_mode = isConnected() ? MODE_AP_STA : MODE_AP;
-    Serial.printf("[WiFi] AP %s: %s\n", ok ? "started" : "FAILED", current_ssid.c_str());
-    Serial.printf("[WiFi] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-    Serial.flush();
-}
-
 void WiFiManager::connectToWiFi(const char *ssid, const char *password) {
     if (ssid == nullptr || ssid[0] == '\0') {
-        Serial.println("[WiFi] Missing SSID, staying in AP mode");
+        Serial.println("[WiFi] Missing SSID, aborting connect");
         Serial.flush();
         return;
     }
-    // Keep AP alive during connection attempt so the setup page stays
-    // reachable if the credentials are wrong.
-    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.mode(WIFI_MODE_STA);
     WiFi.setSleep(false);
     WiFi.scanDelete();
     current_ssid = ssid;
     WiFi.begin(ssid, password && password[0] ? password : nullptr);
-    current_mode = MODE_AP_STA;
+    current_mode = MODE_STATION;
     Serial.printf("[WiFi] Connecting to: %s\n", current_ssid.c_str());
     Serial.flush();
-    // The caller (web handler) will return 200 immediately; the AP will be
-    // stopped by App::loop() once WiFi.status() == WL_CONNECTED.
 }
 
 int WiFiManager::scanNetworks(bool includeHidden) {
@@ -249,7 +204,7 @@ String WiFiManager::getIPAddress() {
 }
 
 String WiFiManager::getSSID() {
-    return current_ssid.isEmpty() ? String(AP_SSID) : current_ssid;
+    return current_ssid;
 }
 
 bool WiFiManager::isConnected() {

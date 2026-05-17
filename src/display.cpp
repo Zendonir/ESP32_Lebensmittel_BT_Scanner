@@ -315,15 +315,15 @@ static void draw_panel_system(const HomeState &s) {
     _spr.setTextColor(wc, C_SURFACE);
     _spr.setTextFont(4);
     _spr.drawString(s.wifiConnected ? "Verbunden" : "Nicht verbunden", 12, py + 34);
-    String ssid_str = s.wifiConnected ? trunc(s.ssid, 22) : "Setup-AP: " + String(AP_SSID);
+    String ssid_str = s.wifiConnected ? trunc(s.ssid, 22) : "Kein WLAN";
     _spr.setTextColor(C_TEXT, C_SURFACE);
     _spr.setTextFont(2);
     _spr.drawString(ssid_str.c_str(), 12, py + 66);
-    String ip_str = s.ip.isEmpty() ? "192.168.4.1" : s.ip;
+    String ip_str = s.ip.isEmpty() ? "" : s.ip;
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.drawString(ip_str.c_str(), 12, py + 84);
     draw_button(12, py + 100, 210, 30,
-                "Setup-AP starten", C_YELLOW, C_BG, 2, OnscreenAction::START_AP);
+                "WLAN einrichten", C_YELLOW, C_BG, 2, OnscreenAction::WIFI_SETUP);
     draw_card(242, py + 8, 234, 120, C_SURFACE, C_ACCENT);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextFont(2);
@@ -552,6 +552,25 @@ void Display::showSplash() {
     _spr.setTextFont(2);
     _spr.setTextDatum(BC_DATUM);
     _spr.drawString("System startet...", SCR_W / 2, SCR_H - 16);
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
+//   WiFi scan / setup screen
+// ─────────────────────────────────────────────────────────
+
+void Display::showWifiScan() {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+    _spr.setTextColor(C_ACCENT, C_BG);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("WLAN-Einrichtung", SCR_W / 2, SCR_H / 2 - 36);
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.setTextFont(2);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("Netzwerke werden gesucht\x85", SCR_W / 2, SCR_H / 2 + 4);
     commit();
 }
 

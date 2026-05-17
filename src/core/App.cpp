@@ -63,7 +63,7 @@ void App::begin() {
     Logger::info("WiFi", "Initializing network manager");
     wifi_manager.init();
 
-    state.setState(wifi_manager.isConnected() ? AppState::MAIN : AppState::AP_MODE);
+    state.setState(AppState::MAIN);
 
     initFilesystem();
     loadDisplayConfig();
@@ -96,48 +96,56 @@ void App::begin() {
     barcode_manager.begin();
     renderDashboard("EAN scannen zum Einlagern");
 
-    // Prime the WiFi scan cache before the web server opens for connections.
-    // Only runs in AP mode (no station link). Uses the async scan API so the
-    // display continues to render during the wait (max 5 s).
-    if (!wifi_manager.isConnected()) {
-        Logger::info("WiFiScan", "Priming network list for setup page...");
-        WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
-        uint32_t t0 = millis();
-        while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && millis() - t0 < 5000) {
-            delay(30); // touch task handles polling independently
-        }
-        int n = WiFi.scanComplete();
-        if (n >= 0) {
-            web.primeWiFiScanCache(n);
-            Logger::info("WiFiScan", String(n) + " Netzwerke gefunden");
-        } else {
-            Logger::warn("WiFiScan", "Scan fehlgeschlagen oder Timeout");
-        }
-        WiFi.scanDelete();
-    }
-
     initWebServer();
     renderDashboard("Bereit");
 
-    Logger::info("App", "Ready. Serial commands: scan, ap, status, beep, print, printplain, printbaud, help");
+    Logger::info("App", "Ready. Serial commands: scan, status, beep, print, printplain, printbaud, help");
+
+    // If no WiFi: start async scan and show setup screen on display
+    if (!wifi_manager.isConnected()) {
+        WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
+        workflow = WorkflowMode::WIFI_SETUP_SCAN;
+        display_obj.showWifiScan();
+    }
 }
 
 void App::loop() {
     // Touch polling runs in its own FreeRTOS task (startTouchTask in begin()).
     // No tick() call needed here.
 
-    // If WiFi just connected (e.g. after web-UI credential submit) and the AP
-    // is still up, shut it down and stop the captive-portal DNS server.
-    if (wifi_manager.isConnected() && wifi_manager.isAPActive()) {
-        wifi_manager.stopAP();
-        if (_dnsRunning) {
-            _dns.stop();
-            _dnsRunning = false;
-            Logger::info("WiFi", "Connected – AP and DNS stopped");
+    // WiFi setup: check async scan result and show network list
+    if (workflow == WorkflowMode::WIFI_SETUP_SCAN) {
+        int n = WiFi.scanComplete();
+        if (n >= 0) {
+            _wifiNets.clear();
+            for (int i = 0; i < n && i < 20; i++) {
+                String s = WiFi.SSID(i);
+                if (!s.isEmpty()) _wifiNets.push_back(s);
+            }
+            WiFi.scanDelete();
+            display_obj.showListScreen("WLAN auswählen", _wifiNets, false);
+            workflow = WorkflowMode::WIFI_SETUP_LIST;
         }
     }
 
-    if (_dnsRunning) _dns.processNextRequest();
+    // WiFi setup: poll for connection result
+    if (workflow == WorkflowMode::WIFI_SETUP_CONN) {
+        if (wifi_manager.isConnected()) {
+            Logger::info("WiFi", "Connected: " + WiFi.localIP().toString());
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::STORE;
+            renderDashboard("WLAN verbunden!");
+            if (sync_manager.hasConfig()) {
+                doInventoryPull();
+                _lastInventorySyncMs = millis();
+            }
+        } else if (millis() - _wifiConnectStartMs > 15000) {
+            workflow = WorkflowMode::WIFI_SETUP_PASS;
+            _kbText = "";
+            display_obj.kbReset();
+            display_obj.showKeyboardEntry("Passwort falsch? Erneut:", "");
+        }
+    }
 
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
@@ -351,27 +359,53 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Keyboard entry: char input
-    if (action == OnscreenAction::KB_CHAR && workflow == WorkflowMode::KB_ENTRY) {
+    // Keyboard entry: char input (KB_ENTRY and WIFI_SETUP_PASS share the keyboard)
+    if (action == OnscreenAction::KB_CHAR &&
+            (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS)) {
         char c = display_obj.drainKbChar();
         if (c != 0) {
             audio_obj.playClickTone();
             _kbText += c;
-            display_obj.kbAutoShift(c);
-            display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+            if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
+                display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+            } else {
+                display_obj.kbAutoShift(c);
+                display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+            }
         }
         return;
     }
 
-    if (action == OnscreenAction::KB_CAPS && workflow == WorkflowMode::KB_ENTRY) {
+    if (action == OnscreenAction::KB_CAPS &&
+            (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS)) {
         audio_obj.playClickTone();
         display_obj.kbToggleCaps();
-        display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
+        if (workflow == WorkflowMode::WIFI_SETUP_PASS)
+            display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+        else
+            display_obj.showKeyboardEntry("Produktname eingeben", _kbText);
         return;
     }
 
-    // Swipe-right = back inside template workflow
+    if (action == OnscreenAction::KB_BACKSPACE && workflow == WorkflowMode::WIFI_SETUP_PASS) {
+        if (!_kbText.isEmpty()) _kbText.remove(_kbText.length() - 1);
+        display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", _kbText);
+        return;
+    }
+
+    // Swipe-right = back inside WiFi setup or template workflow
     if (action == OnscreenAction::SWIPE_RIGHT) {
+        if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
+            display_obj.showListScreen("WLAN auswählen", _wifiNets, false);
+            workflow = WorkflowMode::WIFI_SETUP_LIST;
+            return;
+        }
+        if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
+            WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
+            workflow = WorkflowMode::WIFI_SETUP_SCAN;
+            display_obj.showWifiScan();
+            return;
+        }
         if (workflow == WorkflowMode::TMPL_PRODUCT) {
             audio_obj.playSwipeTone();
             workflow = WorkflowMode::TMPL_CATEGORY;
@@ -402,7 +436,16 @@ void App::processOnscreenAction(OnscreenAction action) {
     // Template list selection
     if (action >= OnscreenAction::LIST_ITEM_0 && action <= OnscreenAction::LIST_ITEM_6) {
         int idx = static_cast<int>(action) - static_cast<int>(OnscreenAction::LIST_ITEM_0);
-        if (workflow == WorkflowMode::TMPL_CATEGORY) {
+        if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
+            if (idx >= 0 && idx < (int)_wifiNets.size()) {
+                _selectedSsid = _wifiNets[idx];
+                _kbText = "";
+                display_obj.kbReset();
+                display_obj.showKeyboardEntry("Passwort für " + _selectedSsid + ":", "");
+                workflow = WorkflowMode::WIFI_SETUP_PASS;
+            }
+            return;
+        } else if (workflow == WorkflowMode::TMPL_CATEGORY) {
             auto cats = templateCategories();
             if (idx < (int)cats.size()) {
                 _selectedCategory   = cats[idx];
@@ -514,12 +557,11 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::HOME;
             renderActiveTab("Anzeige aktualisiert");
             break;
-        case OnscreenAction::START_AP:
-            Logger::info("UI", "Touch action: start AP");
-            wifi_manager.startAP();
-            state.setState(AppState::AP_MODE);
-            _activeTab = UiTab::SYSTEM;
-            renderActiveTab("Setup-AP aktiv: 192.168.4.1");
+        case OnscreenAction::WIFI_SETUP:
+            Logger::info("UI", "Touch action: WiFi setup");
+            WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
+            workflow = WorkflowMode::WIFI_SETUP_SCAN;
+            display_obj.showWifiScan();
             break;
         case OnscreenAction::SCANNER_RECONNECT:
             Logger::info("UI", "Touch action: scanner reconnect/disconnect");
@@ -652,6 +694,14 @@ void App::processOnscreenAction(OnscreenAction action) {
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
         case OnscreenAction::KB_CONFIRM:
+            if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
+                wifi_manager.saveCredentials(_selectedSsid.c_str(), _kbText.c_str());
+                wifi_manager.connectToWiFi(_selectedSsid.c_str(), _kbText.c_str());
+                _wifiConnectStartMs = millis();
+                workflow = WorkflowMode::WIFI_SETUP_CONN;
+                display_obj.showResult("Verbinde…", _selectedSsid, false);
+                break;
+            }
             if (workflow == WorkflowMode::KB_ENTRY) {
                 if (_kbText.isEmpty()) {
                     audio_obj.playWarningTone();
@@ -1032,25 +1082,8 @@ void App::initWebServer() {
     web.setPrinterManager(&printer);
     web.begin();
 
-    // Only run captive-portal DNS when we are in AP mode (no station link).
-    // When WiFi is connected the AP is down, so the DNS server is useless and
-    // can interfere with normal DNS resolution on the local network.
-    if (wifi_manager.isAPActive()) {
-        _dns.setErrorReplyCode(DNSReplyCode::NoError);
-        if (_dns.start(53, "*", WiFi.softAPIP())) {
-            _dnsRunning = true;
-            Logger::info("DNS", "Captive-portal DNS started (AP mode)");
-        } else {
-            Logger::warn("DNS", "DNS server start failed");
-        }
-        Logger::info("Web", "AP: http://" + WiFi.softAPIP().toString());
-    } else {
-        Logger::info("DNS", "Skipping captive-portal DNS (station mode)");
-    }
-
-    if (wifi_manager.isConnected()) {
+    if (wifi_manager.isConnected())
         Logger::info("Web", "Station: http://" + wifi_manager.getIPAddress());
-    }
 }
 
 void App::handleSerialCommand(const String &command) {
@@ -1059,12 +1092,6 @@ void App::handleSerialCommand(const String &command) {
     if (command == "scan") {
         Logger::info("CMD", "Scanning WiFi");
         wifi_manager.scan();
-    } else if (command == "ap") {
-        Logger::info("CMD", "Starting AP mode");
-        wifi_manager.startAP();
-        state.setState(AppState::AP_MODE);
-        _activeTab = UiTab::SYSTEM;
-        renderActiveTab("Setup-AP aktiv");
     } else if (command.startsWith("ean ")) {
         String code = command.substring(4);
         code.trim();
