@@ -5,7 +5,56 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<meta name="theme-color" content="#080c10">
 <title>Lebensmittel Scanner</title>
+<script>
+// Generate app icon via canvas — no separate file needed on flash
+(function(){
+  var c = document.createElement('canvas');
+  c.width = c.height = 180;
+  var ctx = c.getContext('2d');
+  // Background
+  ctx.fillStyle = '#080c10';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 180, 180, 28);
+  ctx.fill();
+  // Box body
+  ctx.strokeStyle = '#4c9eff';
+  ctx.lineWidth = 7;
+  ctx.lineJoin = 'round';
+  ctx.strokeRect(38, 62, 104, 82);
+  // Box lid
+  ctx.beginPath();
+  ctx.moveTo(28, 62); ctx.lineTo(152, 62);
+  ctx.lineTo(138, 44); ctx.lineTo(42, 44);
+  ctx.closePath();
+  ctx.stroke();
+  // Lid flap line
+  ctx.beginPath();
+  ctx.moveTo(90, 44); ctx.lineTo(90, 62);
+  ctx.strokeStyle = '#4c9eff';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  // Barcode stripes at bottom
+  var bx = 52, by = 112, bh = 22;
+  ctx.fillStyle = '#4c9eff';
+  var bars = [0,6,10,16,20,24,30,36,40,46,50];
+  for (var i = 0; i < bars.length; i++) {
+    var w = (i % 3 === 1) ? 5 : 3;
+    ctx.fillRect(bx + bars[i], by, w, bh);
+  }
+  var url = c.toDataURL('image/png');
+  // Apple touch icon
+  var l = document.createElement('link');
+  l.rel = 'apple-touch-icon'; l.href = url;
+  document.head.appendChild(l);
+  // Favicon
+  var f = document.createElement('link');
+  f.rel = 'icon'; f.type = 'image/png'; f.href = url;
+  document.head.appendChild(f);
+})();
+</script>
 <style>
   :root {
     --bg: #080c10;
