@@ -76,6 +76,9 @@ enum class OnscreenAction {
     PRINT_LABEL_3,
     PRINT_LABEL_5,
     PRINT_LABEL_10,
+    // SD backup import prompt
+    SD_IMPORT_YES,
+    SD_IMPORT_NO,
 };
 
 enum class UiTab {
@@ -132,6 +135,9 @@ public:
 
     // WiFi setup scan screen
     void showWifiScan();
+
+    // SD backup import prompt
+    void showSdImportPrompt(const String &backupDate);
 
     // Keyboard entry
     void showKeyboardEntry(const String &title, const String &current);

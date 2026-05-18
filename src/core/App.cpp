@@ -69,6 +69,17 @@ void App::begin() {
     loadDisplayConfig();
     time_manager.begin(i2c_bus);
     device_config.begin();
+
+    // SD backup import prompt: show if SD has backup and internal storage is empty
+    if (BackupManager::hasBackupOnSD() && BackupManager::internalIsEmpty()) {
+        workflow = WorkflowMode::SD_IMPORT_PROMPT;
+        display_obj.showSdImportPrompt(BackupManager::backupDateString());
+        // Block here until user taps — touch task is already running
+        while (workflow == WorkflowMode::SD_IMPORT_PROMPT) {
+            display_obj.tick();
+            delay(20);
+        }
+    }
     labelCounter.begin();
     inventory.begin();
     printer.begin();
@@ -169,6 +180,12 @@ void App::loop() {
             doInventoryPull();
         }
     }
+    // SD backup — check once per hour, backs up if ≥24 h since last backup
+    if (millis() - _lastBackupCheckMs >= BACKUP_CHECK_INTERVAL_MS) {
+        _lastBackupCheckMs = millis();
+        BackupManager::runDailyCheck();
+    }
+
     // Ntfy push check every 6 hours
     if (device_config.getNtfyTopic().length() > 0 &&
         millis() - _lastNtfyCheckMs >= NTFY_CHECK_INTERVAL_MS) {
@@ -687,6 +704,24 @@ void App::processOnscreenAction(OnscreenAction action) {
             display_obj.kbReset();
             display_obj.showKeyboardEntry("MANUELL", "");
             break;
+        case OnscreenAction::SD_IMPORT_YES:
+            if (workflow == WorkflowMode::SD_IMPORT_PROMPT) {
+                BackupManager::doRestore();
+                // Reload in-memory state from newly restored files
+                inventory.begin();
+                loadTemplates();
+                device_config.begin();
+                display_obj.setActiveLocation(device_config.getActiveLocation());
+                display_obj.setActiveLocationColor(device_config.getActiveLocationColor());
+                workflow = WorkflowMode::HOME;
+                Logger::info("Backup", "Import abgeschlossen");
+            }
+            break;
+        case OnscreenAction::SD_IMPORT_NO:
+            if (workflow == WorkflowMode::SD_IMPORT_PROMPT)
+                workflow = WorkflowMode::HOME;
+            break;
+
         case OnscreenAction::REFRESH:
             workflow = WorkflowMode::HOME;
             renderActiveTab("Anzeige aktualisiert");

@@ -22,6 +22,7 @@
 #include "../network/SyncManager.h"
 #include "../network/NtfyNotifier.h"
 #include "../models/InventoryItem.h"
+#include "../storage/BackupManager.h"
 
 class App {
 public:
@@ -54,6 +55,8 @@ private:
         WIFI_SETUP_CONN,     // connecting, polling for result
         // Inventory text search
         INV_SEARCH,          // on-screen keyboard for filtering inventory list
+        // SD backup import prompt (shown at startup)
+        SD_IMPORT_PROMPT,
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -153,6 +156,10 @@ private:
     // Ntfy push notification timer
     uint32_t _lastNtfyCheckMs = 0;
     static constexpr uint32_t NTFY_CHECK_INTERVAL_MS = 21600000UL; // 6 hours
+
+    // SD daily backup timer
+    uint32_t _lastBackupCheckMs = 0;
+    static constexpr uint32_t BACKUP_CHECK_INTERVAL_MS = 3600000UL; // check every hour
 
     // Last saved item for batch label printing
     InventoryItem _lastSavedItem;

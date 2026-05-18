@@ -33,11 +33,13 @@ bool AppFS::beginUserData() {
     return true;
 }
 
-bool AppFS::usingSD() { return _sd; }
+bool AppFS::usingSD()      { return _sd; }
+bool AppFS::sdAvailable()  { return _sd; }
 
-fs::FS& AppFS::fs() {
-    return _sd ? (fs::FS&)SD_MMC : (fs::FS&)UserDataFS;
-}
+// Primary storage is always internal — SD is backup only
+fs::FS& AppFS::fs()         { return (fs::FS&)UserDataFS; }
+fs::FS& AppFS::internalFs() { return (fs::FS&)UserDataFS; }
+fs::FS& AppFS::sdFs()       { return (fs::FS&)SD_MMC; }
 
 fs::FS& AppFS::webFs() {
     return (fs::FS&)LittleFS;

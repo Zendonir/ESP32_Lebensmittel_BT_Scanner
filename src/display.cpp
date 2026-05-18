@@ -1001,6 +1001,36 @@ void Display::showResult(const String &title, const String &message, bool succes
 // ─────────────────────────────────────────────────────────
 //   Inventory list
 // ─────────────────────────────────────────────────────────
+//   SD Backup import prompt
+// ─────────────────────────────────────────────────────────
+
+void Display::showSdImportPrompt(const String &backupDate) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+    int dw = 420, dh = 190;
+    int dx = (SCR_W - dw) / 2, dy = (SCR_H - dh) / 2;
+    _spr.fillRoundRect(dx, dy, dw, dh, 12, C_SURFACE);
+    _spr.drawRoundRect(dx, dy, dw, dh, 12, C_YELLOW);
+    // Icon bar
+    _spr.fillRect(dx + 1, dy + 1, 6, dh - 2, C_YELLOW);
+    _spr.setTextColor(C_YELLOW, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("SD-Backup gefunden", dx + dw / 2, dy + 12);
+    _spr.setTextColor(C_TEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.drawString("Backup vom " + backupDate, dx + dw / 2, dy + 52);
+    _spr.drawString("Daten & Einstellungen importieren?", dx + dw / 2, dy + 72);
+    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+    _spr.drawString("(SD wird danach nur als Backup genutzt)", dx + dw / 2, dy + 92);
+    int btn_y = dy + dh - 50;
+    draw_button(dx + 20,       btn_y, 180, 38, "Importieren",    C_GREEN,    C_TEXT, 2, OnscreenAction::SD_IMPORT_YES);
+    draw_button(dx + dw - 200, btn_y, 180, 38, "Ignorieren",     C_SURFACE2, C_SUBTEXT, 2, OnscreenAction::SD_IMPORT_NO);
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
 
 void Display::showInventoryList(const std::vector<InventoryItem> &items,
                                 const String &filter, const String &hhAbbr) {
