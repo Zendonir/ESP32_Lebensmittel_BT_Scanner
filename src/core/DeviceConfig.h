@@ -19,6 +19,12 @@ public:
     void   setDeviceName(const String &n);
     void   setActiveLocation(const String &loc);
     void   setActiveLocationColor(const String &hexColor);
+    String getNtfyUrl()   const { return _ntfyUrl; }
+    String getNtfyTopic() const { return _ntfyTopic; }
+    int    getNtfyDays()  const { return _ntfyDays; }
+    void   setNtfyUrl(const String &u);
+    void   setNtfyTopic(const String &t);
+    void   setNtfyDays(int d);
 
 private:
     String _household            = "Standard";
@@ -26,6 +32,9 @@ private:
     String _deviceName           = "";
     String _activeLocation       = "";
     String _activeLocationColor  = "";  // "#RRGGBB", empty = accent blue default
+    String _ntfyUrl              = "https://ntfy.sh";
+    String _ntfyTopic            = "";
+    int    _ntfyDays             = 3;
 };
 
 extern DeviceConfig device_config;

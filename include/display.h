@@ -70,6 +70,12 @@ enum class OnscreenAction {
     KB_CONFIRM,
     // Location badge (tapping the top-right location pill opens location select)
     LOCATION_BADGE,
+    // Result screen — label print count
+    PRINT_LABEL_1,
+    PRINT_LABEL_2,
+    PRINT_LABEL_3,
+    PRINT_LABEL_5,
+    PRINT_LABEL_10,
 };
 
 enum class UiTab {
@@ -109,7 +115,7 @@ public:
     void showFetchingProduct(const String &barcode);
     void showDateEntry(const ProductInfo &product, const String &dateDraft);
     void showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity);
-    void showResult(const String &title, const String &message, bool success);
+    void showResult(const String &title, const String &message, bool success, bool showPrintButtons = false);
     void showInventoryList(const std::vector<InventoryItem> &items,
                            const String &filter = "",
                            const String &hhAbbr = "");

@@ -289,6 +289,27 @@
     </div>
     <div class="grid-2">
       <div class="card">
+        <div class="card-title">Push-Benachrichtigungen (ntfy)</div>
+        <form class="form-stack" onsubmit="Pages.system.saveNtfy(event)">
+          <div class="form-field">
+            <label>ntfy-Server <span class="muted" style="font-weight:normal;font-size:.8rem">(leer = ntfy.sh)</span></label>
+            <input type="url" id="cfgNtfyUrl" class="input" placeholder="https://ntfy.sh">
+          </div>
+          <div class="form-field">
+            <label>Topic <span class="muted" style="font-weight:normal;font-size:.8rem">(leer = deaktiviert)</span></label>
+            <input type="text" id="cfgNtfyTopic" class="input" placeholder="mein-scanner-abc123">
+          </div>
+          <div class="form-field">
+            <label>Warnung ab (Tage vor Ablauf)</label>
+            <input type="number" id="cfgNtfyDays" class="input" min="1" max="30" value="3" style="width:100px">
+          </div>
+          <p class="muted" style="font-size:.8rem;margin:0">ntfy-App installieren und Topic abonnieren. Pr&uuml;fung alle 6 Stunden.</p>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
         <div class="card-title">Lautstärke</div>
         <div class="form-field">
           <label>Lautstärke (%)</label>

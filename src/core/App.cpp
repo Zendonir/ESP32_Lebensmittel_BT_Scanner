@@ -169,6 +169,22 @@ void App::loop() {
             doInventoryPull();
         }
     }
+    // Ntfy push check every 6 hours
+    if (device_config.getNtfyTopic().length() > 0 &&
+        millis() - _lastNtfyCheckMs >= NTFY_CHECK_INTERVAL_MS) {
+        _lastNtfyCheckMs = millis();
+        int days = device_config.getNtfyDays();
+        int expCount = countExpiringSoon(days);
+        if (expCount > 0) {
+            String title = "Lebensmittel laufen ab!";
+            String msg = String(expCount) + " Produkt" + (expCount != 1 ? "e laufen" : " laeuft") +
+                         " in den naechsten " + String(days) + " Tagen ab.";
+            NtfyNotifier::send(device_config.getNtfyUrl(),
+                               device_config.getNtfyTopic(),
+                               title, msg, "high");
+        }
+    }
+
     // Auto-dismiss result screen after 5 seconds
     if (workflow == WorkflowMode::RESULT
             && _resultShownMs != 0
@@ -786,6 +802,25 @@ void App::processOnscreenAction(OnscreenAction action) {
             showLocationSelect();
             break;
 
+        // ── Batch label printing ────────────────────────────────────────────
+        case OnscreenAction::PRINT_LABEL_1:
+        case OnscreenAction::PRINT_LABEL_2:
+        case OnscreenAction::PRINT_LABEL_3:
+        case OnscreenAction::PRINT_LABEL_5:
+        case OnscreenAction::PRINT_LABEL_10:
+            if (workflow == WorkflowMode::RESULT) {
+                int count = 1;
+                if (action == OnscreenAction::PRINT_LABEL_2)  count = 2;
+                if (action == OnscreenAction::PRINT_LABEL_3)  count = 3;
+                if (action == OnscreenAction::PRINT_LABEL_5)  count = 5;
+                if (action == OnscreenAction::PRINT_LABEL_10) count = 10;
+                for (int i = 0; i < count; i++) printer.printLabel(_lastSavedItem);
+                workflow = WorkflowMode::HOME;
+                _resultShownMs = 0;
+                renderDashboard();
+            }
+            break;
+
         // ── Template MHD confirm ───────────────────────────────────────────
         case OnscreenAction::MHD_DAY_MINUS:
             if (workflow == WorkflowMode::TMPL_MHD) {
@@ -1049,15 +1084,15 @@ bool App::finishStorageWorkflow() {
         String sp; serializeJson(sdoc, sp);
         sync_manager.enqueue("ADD", sp);
     }
-    bool printed = stored && printer.printLabel(item);
+    if (stored) _lastSavedItem = item;
     workflow = WorkflowMode::RESULT;
     state.setState(stored ? AppState::SUCCESS : AppState::ERROR);
     _resultSuccess = stored;
     _resultTitle = stored ? "Eingelagert" : "Speicherfehler";
     _resultMessage = stored
-        ? String(item.labelBarcode) + (printed ? " gedruckt" : " gespeichert, Drucker?")
+        ? String(item.labelBarcode) + " gespeichert"
         : "Inventar konnte nicht gespeichert werden";
-    display_obj.showResult(_resultTitle, _resultMessage, stored);
+    display_obj.showResult(_resultTitle, _resultMessage, stored, stored);
     if (stored) audio_obj.playSuccessTone(); else audio_obj.playErrorTone();
     return stored;
 }

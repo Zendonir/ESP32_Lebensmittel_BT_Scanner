@@ -1304,6 +1304,9 @@ Pages.system = {
       document.getElementById('cfgHouseholdAbbr').value  = cfg.householdAbbr  || '';
       document.getElementById('cfgDeviceName').value     = cfg.deviceName     || '';
       State.householdAbbr = cfg.householdAbbr || '';
+      document.getElementById('cfgNtfyUrl').value   = cfg.ntfyUrl   || '';
+      document.getElementById('cfgNtfyTopic').value = cfg.ntfyTopic || '';
+      document.getElementById('cfgNtfyDays').value  = cfg.ntfyDays  != null ? cfg.ntfyDays : 3;
       try {
         const disp = await API.get('/api/display-config');
         document.getElementById('cfgStandby').value = String(disp.standby_sec ?? 0);
@@ -1328,6 +1331,20 @@ Pages.system = {
         API.post('/api/display-config', { standby_sec: standbySec }),
       ]);
       Toast.success('Gerät & Haushalt gespeichert');
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async saveNtfy(e) {
+    e.preventDefault();
+    try {
+      await API.post('/api/device-config', {
+        ntfyUrl:   document.getElementById('cfgNtfyUrl').value.trim(),
+        ntfyTopic: document.getElementById('cfgNtfyTopic').value.trim(),
+        ntfyDays:  parseInt(document.getElementById('cfgNtfyDays').value, 10) || 3,
+      });
+      Toast.success('Push-Einstellungen gespeichert');
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }

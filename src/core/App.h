@@ -20,6 +20,8 @@
 #include "../inventory/LabelCounter.h"
 #include "../printer/PrinterManager.h"
 #include "../network/SyncManager.h"
+#include "../network/NtfyNotifier.h"
+#include "../inventory/InventoryItem.h"
 
 class App {
 public:
@@ -147,6 +149,13 @@ private:
     // Inventory pull sync timer
     uint32_t _lastInventorySyncMs = 0;
     static constexpr uint32_t INVENTORY_SYNC_INTERVAL_MS = 120000; // 2 minutes
+
+    // Ntfy push notification timer
+    uint32_t _lastNtfyCheckMs = 0;
+    static constexpr uint32_t NTFY_CHECK_INTERVAL_MS = 21600000UL; // 6 hours
+
+    // Last saved item for batch label printing
+    InventoryItem _lastSavedItem;
 
     // Result screen auto-dismiss
     uint32_t _resultShownMs = 0;

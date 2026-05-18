@@ -494,6 +494,9 @@ void WebInterface::registerApiRoutes() {
         doc["household"]     = device_config.getHousehold();
         doc["householdAbbr"] = device_config.getHouseholdAbbr();
         doc["deviceName"]    = device_config.getDeviceName();
+        doc["ntfyUrl"]       = device_config.getNtfyUrl();
+        doc["ntfyTopic"]     = device_config.getNtfyTopic();
+        doc["ntfyDays"]      = device_config.getNtfyDays();
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);
@@ -510,6 +513,12 @@ void WebInterface::registerApiRoutes() {
                     device_config.setHouseholdAbbr(doc["householdAbbr"].as<String>());
                 if (!doc["deviceName"].isNull())
                     device_config.setDeviceName(doc["deviceName"].as<String>());
+                if (!doc["ntfyUrl"].isNull())
+                    device_config.setNtfyUrl(doc["ntfyUrl"].as<String>());
+                if (!doc["ntfyTopic"].isNull())
+                    device_config.setNtfyTopic(doc["ntfyTopic"].as<String>());
+                if (!doc["ntfyDays"].isNull())
+                    device_config.setNtfyDays(doc["ntfyDays"].as<int>());
             }
             req->send(200, "application/json", "{\"ok\":true}");
         },

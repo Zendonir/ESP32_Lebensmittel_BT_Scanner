@@ -945,11 +945,11 @@ void Display::showQuantityEntry(const ProductInfo &product,
 //   Result dialog
 // ─────────────────────────────────────────────────────────
 
-void Display::showResult(const String &title, const String &message, bool success) {
+void Display::showResult(const String &title, const String &message, bool success, bool showPrintButtons) {
     if (!_initialized) return;
     if (_homeState.valid) render_home(_homeState);
     else _spr.fillSprite(C_BG);
-    int dw = 380, dh = 160;
+    int dw = 400, dh = showPrintButtons ? 200 : 160;
     int dx = (SCR_W - dw) / 2, dy = (SCR_H - dh) / 2;
     _spr.fillRoundRect(dx, dy, dw, dh, 12, C_SURFACE);
     _spr.drawRoundRect(dx, dy, dw, dh, 12, C_BORDER);
@@ -969,8 +969,32 @@ void Display::showResult(const String &title, const String &message, bool succes
         _spr.drawString(msg.substring(44).c_str(),    dx + dw / 2, dy + 72);
     }
     clear_regions();
-    draw_button(dx + dw / 2 - 60, dy + dh - 50, 120, 36,
-                "OK", C_ACCENT, C_TEXT, 2, OnscreenAction::REFRESH);
+    if (showPrintButtons) {
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TC_DATUM);
+        _spr.drawString("LABELS DRUCKEN:", dx + dw / 2, dy + 104);
+        static const struct { const char *lbl; OnscreenAction act; } btns[] = {
+            {"1",  OnscreenAction::PRINT_LABEL_1},
+            {"2",  OnscreenAction::PRINT_LABEL_2},
+            {"3",  OnscreenAction::PRINT_LABEL_3},
+            {"5",  OnscreenAction::PRINT_LABEL_5},
+            {"10", OnscreenAction::PRINT_LABEL_10},
+        };
+        int btn_w = 52, btn_h = 36, gap = 6;
+        int total_w = 5 * btn_w + 4 * gap;
+        int bx = dx + (dw - total_w) / 2;
+        int by = dy + 122;
+        for (int i = 0; i < 5; i++) {
+            draw_button(bx + i * (btn_w + gap), by, btn_w, btn_h,
+                        btns[i].lbl, C_SURFACE2, C_TEXT, 2, btns[i].act);
+        }
+        draw_button(dx + dw / 2 - 36, dy + dh - 38, 72, 28,
+                    "Ohne", C_SURFACE2, C_SUBTEXT, 2, OnscreenAction::REFRESH);
+    } else {
+        draw_button(dx + dw / 2 - 60, dy + dh - 50, 120, 36,
+                    "OK", C_ACCENT, C_TEXT, 2, OnscreenAction::REFRESH);
+    }
     commit();
 }
 
