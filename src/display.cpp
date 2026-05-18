@@ -613,22 +613,59 @@ void Display::showSplash() {
     if (!_initialized) return;
     clear_regions();
     _spr.fillSprite(C_BG);
-    int bw = 360, bh = 160;
-    int bx = (SCR_W - bw) / 2, by = (SCR_H - bh) / 2 - 10;
-    _spr.fillRoundRect(bx, by, bw, bh, 16, C_SURFACE);
-    _spr.drawRoundRect(bx, by, bw, bh, 16, C_ACCENT);
-    _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.setTextFont(6);
+
+    // ── Barcode-Grafik (links oben im Logo-Block) ─────────────
+    int lx = 100, ly = 52;      // logo block top-left
+    int bw = 280, bh = 140;     // logo block size
+
+    // Barcode-Streifen (große vertikale Balken)
+    static const struct { int x; int w; } bars[] = {
+        {0,4},{7,8},{18,4},{25,4},{32,8},{43,4},{50,8},
+        {61,4},{68,4},{75,8},{86,4},{93,4},{100,8},{111,4},
+        {118,8},{129,4},{136,4},{143,8},{154,4},{161,8},{172,4},
+        {179,4},{186,8},{197,4},{204,4},{211,8},{222,4},{229,4},
+        {236,8},{247,4},{254,4},{261,8},{272,4},
+    };
+    int bar_h = bh - 30;
+    for (auto &b : bars) {
+        if (lx + b.x + b.w > lx + bw) break;
+        _spr.fillRect(lx + b.x, ly, b.w, bar_h, C_ACCENT);
+    }
+
+    // Weiße(subtext-farbene) Zahlen-Zeile unter dem Barcode
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.setTextFont(1);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("FoodScanner", SCR_W / 2, by + 20);
-    _spr.setTextColor(C_ACCENT, C_SURFACE);
-    _spr.setTextFont(2);
+    _spr.drawString("4 006001 157701", lx + bw / 2, ly + bar_h + 6);
+
+    // ── App-Name ───────────────────────────────────────────────
+    int text_y = ly + bh + 14;
+    _spr.setTextColor(C_TEXT, C_BG);
+    _spr.setTextFont(4);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Lebensmittel smart verwalten", SCR_W / 2, by + 86);
+    _spr.drawString("FOOD", SCR_W / 2 - 58, text_y);
+    _spr.setTextColor(C_ACCENT, C_BG);
+    _spr.drawString("SCANNER", SCR_W / 2 + 60, text_y);
+
+    // Trennlinie zwischen den beiden Wörtern
+    _spr.fillRect(SCR_W / 2 - 2, text_y, 2, 26, C_BORDER);
+
+    // ── Tagline ────────────────────────────────────────────────
     _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("Lebensmittel smart verwalten", SCR_W / 2, text_y + 36);
+
+    // ── Ladebalken unten ───────────────────────────────────────
+    int pb_y = SCR_H - 28, pb_w = 240, pb_h = 6;
+    int pb_x = (SCR_W - pb_w) / 2;
+    _spr.fillRoundRect(pb_x, pb_y, pb_w, pb_h, 3, C_SURFACE2);
+    _spr.fillRoundRect(pb_x, pb_y, pb_w / 3, pb_h, 3, C_ACCENT);
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.setTextFont(1);
     _spr.setTextDatum(BC_DATUM);
-    _spr.drawString("System startet...", SCR_W / 2, SCR_H - 16);
+    _spr.drawString("System wird gestartet...", SCR_W / 2, pb_y - 4);
+
     commit();
 }
 
