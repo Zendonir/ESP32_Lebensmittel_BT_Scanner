@@ -21,7 +21,7 @@
 #include "../printer/PrinterManager.h"
 #include "../network/SyncManager.h"
 #include "../network/NtfyNotifier.h"
-#include "../inventory/InventoryItem.h"
+#include "../models/InventoryItem.h"
 
 class App {
 public:
