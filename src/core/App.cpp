@@ -844,25 +844,6 @@ void App::processOnscreenAction(OnscreenAction action) {
             showLocationSelect();
             break;
 
-        // ── Batch label printing ────────────────────────────────────────────
-        case OnscreenAction::PRINT_LABEL_1:
-        case OnscreenAction::PRINT_LABEL_2:
-        case OnscreenAction::PRINT_LABEL_3:
-        case OnscreenAction::PRINT_LABEL_5:
-        case OnscreenAction::PRINT_LABEL_10:
-            if (workflow == WorkflowMode::RESULT) {
-                int count = 1;
-                if (action == OnscreenAction::PRINT_LABEL_2)  count = 2;
-                if (action == OnscreenAction::PRINT_LABEL_3)  count = 3;
-                if (action == OnscreenAction::PRINT_LABEL_5)  count = 5;
-                if (action == OnscreenAction::PRINT_LABEL_10) count = 10;
-                for (int i = 0; i < count; i++) printer.printLabel(_lastSavedItem);
-                workflow = WorkflowMode::HOME;
-                _resultShownMs = 0;
-                renderDashboard();
-            }
-            break;
-
         // ── Template MHD confirm ───────────────────────────────────────────
         case OnscreenAction::MHD_DAY_MINUS:
             if (workflow == WorkflowMode::TMPL_MHD) {
@@ -1112,45 +1093,58 @@ bool App::formatDateDraft(String &formatted) const {
 bool App::finishStorageWorkflow() {
     state.setState(AppState::PRINTING);
 
-    InventoryItem item;
-    item.barcode = _pendingProduct.barcode;
-    item.name = _pendingProduct.name.isEmpty() ? "Lebensmittel" : _pendingProduct.name;
-    item.brand = _pendingProduct.brand;
-    item.category = "Barcode";
-    item.expiryDate = _pendingExpiryDate;
-    item.addedDate = time_manager.today();
-    item.quantity = _pendingQuantity;
-    item.labelBarcode = labelCounter.nextLabel();
-    item.location = device_config.getActiveLocation();
+    const int qty  = _pendingQuantity;
+    const String name = _pendingProduct.name.isEmpty() ? "Lebensmittel" : _pendingProduct.name;
+    int storedCount = 0;
 
-    bool stored = inventory.addItem(item);
-    if (stored) {
-        JsonDocument sdoc;
-        sdoc["type"]         = "ADD";
-        sdoc["barcode"]      = item.barcode;
-        sdoc["name"]         = item.name;
-        sdoc["brand"]        = item.brand;
-        sdoc["category"]     = item.category;
-        sdoc["expiryDate"]   = item.expiryDate;
-        sdoc["addedDate"]    = item.addedDate;
-        sdoc["quantity"]     = item.quantity;
-        sdoc["labelBarcode"] = item.labelBarcode;
-        sdoc["household"]    = device_config.getHousehold();
-        sdoc["deviceName"]   = device_config.getDeviceName();
-        sdoc["location"]     = item.location;
-        sdoc["timestamp"]    = (long)time(nullptr);
-        String sp; serializeJson(sdoc, sp);
-        sync_manager.enqueue("ADD", sp);
+    for (int i = 0; i < qty; i++) {
+        InventoryItem item;
+        item.barcode      = _pendingProduct.barcode;
+        item.name         = name;
+        item.brand        = _pendingProduct.brand;
+        item.category     = "Barcode";
+        item.expiryDate   = _pendingExpiryDate;
+        item.addedDate    = time_manager.today();
+        item.quantity     = 1;  // jede Einlagerung ist unabhängig
+        item.labelBarcode = labelCounter.nextLabel();
+        item.location     = device_config.getActiveLocation();
+
+        if (inventory.addItem(item)) {
+            JsonDocument sdoc;
+            sdoc["type"]         = "ADD";
+            sdoc["barcode"]      = item.barcode;
+            sdoc["name"]         = item.name;
+            sdoc["brand"]        = item.brand;
+            sdoc["category"]     = item.category;
+            sdoc["expiryDate"]   = item.expiryDate;
+            sdoc["addedDate"]    = item.addedDate;
+            sdoc["quantity"]     = item.quantity;
+            sdoc["labelBarcode"] = item.labelBarcode;
+            sdoc["household"]    = device_config.getHousehold();
+            sdoc["deviceName"]   = device_config.getDeviceName();
+            sdoc["location"]     = item.location;
+            sdoc["timestamp"]    = (long)time(nullptr);
+            String sp; serializeJson(sdoc, sp);
+            sync_manager.enqueue("ADD", sp);
+            printer.printLabel(item);
+            storedCount++;
+        }
     }
-    if (stored) _lastSavedItem = item;
+
+    bool stored = storedCount > 0;
     workflow = WorkflowMode::RESULT;
+    _resultShownMs = millis();
     state.setState(stored ? AppState::SUCCESS : AppState::ERROR);
     _resultSuccess = stored;
-    _resultTitle = stored ? "Eingelagert" : "Speicherfehler";
-    _resultMessage = stored
-        ? String(item.labelBarcode) + " gespeichert"
-        : "Inventar konnte nicht gespeichert werden";
-    display_obj.showResult(_resultTitle, _resultMessage, stored, stored);
+    _resultTitle   = stored ? "Eingelagert" : "Speicherfehler";
+    if (stored) {
+        _resultMessage = qty == 1
+            ? name + " eingelagert"
+            : String(storedCount) + "x " + name + " eingelagert";
+    } else {
+        _resultMessage = "Inventar konnte nicht gespeichert werden";
+    }
+    display_obj.showResult(_resultTitle, _resultMessage, stored, false);
     if (stored) audio_obj.playSuccessTone(); else audio_obj.playErrorTone();
     return stored;
 }

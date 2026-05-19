@@ -165,9 +165,6 @@ private:
     uint32_t _lastBackupCheckMs = 0;
     static constexpr uint32_t BACKUP_CHECK_INTERVAL_MS = 3600000UL; // check every hour
 
-    // Last saved item for batch label printing
-    InventoryItem _lastSavedItem;
-
     // Result screen auto-dismiss
     uint32_t _resultShownMs = 0;
     static constexpr uint32_t RESULT_AUTO_DISMISS_MS = 5000;
