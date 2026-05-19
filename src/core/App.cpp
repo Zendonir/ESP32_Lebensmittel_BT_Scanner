@@ -138,7 +138,7 @@ void App::loop() {
                 if (!dup) _wifiNets.push_back(s);
             }
             WiFi.scanDelete();
-            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, false);
+            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets);
             workflow = WorkflowMode::WIFI_SETUP_LIST;
         }
     }
@@ -556,7 +556,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             return;
         }
         if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
-            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, false);
+            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets);
             workflow = WorkflowMode::WIFI_SETUP_LIST;
             return;
         }
@@ -1290,14 +1290,14 @@ void App::showTmplProducts() {
     std::vector<String> items;
     for (const auto &p : products)
         items.push_back(p.name + " (" + String(p.shelfDays) + " Tage)");
-    display_obj.showListScreen(_selectedCategory.c_str(), items, true);
+    display_obj.showListScreen(_selectedCategory.c_str(), items);
 }
 
 void App::showTmplBrands() {
     auto products = templatesForCategory(_selectedCategory);
     if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
     const ProductTemplate &tmpl = products[_selectedTemplateIdx];
-    display_obj.showListScreen(tmpl.name.c_str(), tmpl.brands, true);
+    display_obj.showListScreen(tmpl.name.c_str(), tmpl.brands);
 }
 
 void App::startTmplMHD() {

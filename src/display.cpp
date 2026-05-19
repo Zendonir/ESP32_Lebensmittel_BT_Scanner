@@ -124,6 +124,20 @@ static void draw_location_badge(int x_right = SCR_W - 8) {
     add_region(badge_left, 0, x_right - badge_left, HDR_H, OnscreenAction::LOCATION_BADGE);
 }
 
+// WiFi status shared across all screens (set once by showHome, read by draw_wifi_dot)
+static bool _s_wifi_connected = false;
+
+// Draw WiFi dot top-right on any screen (center SCR_W-12, r=7)
+static void draw_wifi_dot() {
+    uint16_t wc = _s_wifi_connected ? C_GREEN : C_RED;
+    _spr.fillCircle(SCR_W - 12, HDR_H / 2, 7, wc);
+    _spr.drawCircle(SCR_W - 12, HDR_H / 2, 7, C_BORDER);
+    _spr.setTextColor(C_SURFACE, wc);
+    _spr.setTextFont(1);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString("W", SCR_W - 12, HDR_H / 2);
+}
+
 // ─────────────────── home screen cache ───────────────────
 struct HomeState {
     UiTab  tab;
@@ -198,23 +212,15 @@ static const OnscreenAction _tab_actions[TAB_COUNT] = {
 };
 
 static void draw_header(UiTab activeTab, bool wifiConnected) {
+    _s_wifi_connected = wifiConnected;  // keep shared state in sync
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
-    // Page name top-left
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(_tab_labels[static_cast<int>(activeTab)], 12, HDR_H / 2);
-    // WiFi dot top-right
-    uint16_t wc = wifiConnected ? C_GREEN : C_RED;
-    _spr.fillCircle(SCR_W - 12, HDR_H / 2, 7, wc);
-    _spr.drawCircle(SCR_W - 12, HDR_H / 2, 7, C_BORDER);
-    _spr.setTextColor(C_SURFACE, wc);
-    _spr.setTextFont(1);
-    _spr.setTextDatum(MC_DATUM);
-    _spr.drawString("W", SCR_W - 12, HDR_H / 2);
-    // Location badge left of WiFi dot
-    draw_location_badge(SCR_W - 22); // leave room for WiFi dot (r=7 at SCR_W-12)
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
 }
 
 
@@ -772,7 +778,8 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     _spr.setTextFont(4);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.drawString("MHD EINGEBEN", 10, HDR_H / 2);
-    draw_location_badge();
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
 
     // ── Vertical divider between info panel and numpad ────────
     static constexpr int DIV_X = 240;
@@ -954,7 +961,8 @@ void Display::showQuantityEntry(const ProductInfo &product,
     _spr.drawString(trunc(product.name, 22).c_str(), 8, HDR_H / 2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
-    _spr.drawString(("MHD " + expiryDate).c_str(), SCR_W - 8, HDR_H / 2);
+    _spr.drawString(("MHD " + expiryDate).c_str(), SCR_W - 26, HDR_H / 2);
+    draw_wifi_dot();
 
     // Subheader hint
     _spr.setTextColor(C_SUBTEXT, C_BG);
@@ -968,12 +976,6 @@ void Display::showQuantityEntry(const ProductInfo &product,
     static constexpr int GRID_TOP = HDR_H + 26;
     static constexpr int BTN_H    = 78;
     draw_qty_grid(GRID_TOP, quantity, BTN_H);
-
-    // Swipe-right hint at bottom
-    _spr.setTextColor(C_SUBTEXT, C_BG);
-    _spr.setTextFont(1);
-    _spr.setTextDatum(BC_DATUM);
-    _spr.drawString("< wischen zum Abbrechen", SCR_W / 2, SCR_H - 2);
 
     commit();
 }
@@ -1082,7 +1084,8 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("INVENTAR", 12, HDR_H / 2);
-    draw_location_badge();
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
 
     // ── Search bar ──────────────────────────────────────────
     static constexpr int SEARCH_H = 30;
@@ -1194,7 +1197,8 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("KATEGORIEN", 12, HDR_H / 2);
-    draw_location_badge();
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
 
     // 2 columns × 4 rows, content area 480×276
     static constexpr int COLS     = 2;
@@ -1247,8 +1251,7 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
 // ─────────────────────────────────────────────────────────
 
 void Display::showListScreen(const char *title,
-                              const std::vector<String> &items,
-                              bool showBack) {
+                              const std::vector<String> &items) {
     if (!_initialized) return;
     _spr.fillSprite(C_BG);
     clear_regions();
@@ -1260,14 +1263,8 @@ void Display::showListScreen(const char *title,
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 12, HDR_H / 2);
-    draw_location_badge();
-
-    if (showBack) {
-        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-        _spr.setTextFont(2);
-        _spr.setTextDatum(MR_DATUM);
-        _spr.drawString("< wischen = zur\xFC" "ck", SCR_W - 8 - (int)(_s_active_location.isEmpty() ? 0 : 115), HDR_H / 2);
-    }
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
 
     // Taller rows for comfortable finger tapping and larger text
     static constexpr int ITEM_H   = 55;  // 5 rows × 55px = 275px ≈ 276px content
@@ -1323,7 +1320,8 @@ void Display::showTemplateMHD(const String &productName,
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(trunc(productName, 22).c_str(), 8, HDR_H / 2);
-    draw_location_badge();
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
 
     // MHD display (no day-adjust buttons)
     int mhd_y = HDR_H + 6;
@@ -1415,6 +1413,7 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(title, 8, HDR_H / 2);
+    draw_wifi_dot();
 
     // ── Input bar ────────────────────────────────────────────────
     _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
@@ -1522,6 +1521,7 @@ void Display::showSearchEntry(const String &current, const String &suggestion) {
     _spr.setTextFont(4);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("SUCHE", 8, HDR_H / 2);
+    draw_wifi_dot();
 
     // ── Input bar ────────────────────────────────────────────────
     _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
