@@ -1071,39 +1071,8 @@ void App::handleScan(const ScanResult &scan) {
         return;
     }
 
-    // Check 48 h recently-removed buffer before a full product lookup
-    const InventoryItem *recent = inventory.findRecent(scan.code);
-    if (recent) {
-        Logger::info("Scanner", String("48h-buffer hit for bc=") + scan.code +
-                     " lb=" + recent->labelBarcode + " name=" + recent->name);
-        InventoryItem reItem = *recent;
-        inventory.addItem(reItem);
-        audio_obj.playSuccessTone();
-        {
-            JsonDocument sdoc;
-            sdoc["type"]         = "ADD";
-            sdoc["barcode"]      = reItem.barcode;
-            sdoc["name"]         = reItem.name;
-            sdoc["brand"]        = reItem.brand;
-            sdoc["category"]     = reItem.category;
-            sdoc["expiryDate"]   = reItem.expiryDate;
-            sdoc["addedDate"]    = reItem.addedDate;
-            sdoc["quantity"]     = reItem.quantity;
-            sdoc["labelBarcode"] = reItem.labelBarcode;
-            sdoc["household"]    = device_config.getHousehold();
-            sdoc["deviceName"]   = device_config.getDeviceName();
-            sdoc["timestamp"]    = (long)time(nullptr);
-            String sp; serializeJson(sdoc, sp);
-            sync_manager.enqueue("ADD", sp);
-        }
-        workflow = WorkflowMode::RESULT; _resultShownMs = millis();
-        _resultSuccess = true;
-        _resultTitle = "Wieder eingebucht";
-        _resultMessage = reItem.name.isEmpty() ? scan.code : reItem.name;
-        display_obj.showResult(_resultTitle, _resultMessage, true);
-        return;
-    }
-
+    // EAN scans always go through the full workflow (product lookup → MHD → qty).
+    // LebNumber/label barcodes are handled above for removal only.
     audio_obj.playSuccessTone();
     startProductLookup(scan.code);
 }
