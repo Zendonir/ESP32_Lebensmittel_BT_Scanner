@@ -79,6 +79,9 @@ enum class OnscreenAction {
     // SD backup import prompt
     SD_IMPORT_YES,
     SD_IMPORT_NO,
+    // FIFO out-of-order warning confirmation
+    FIFO_CONFIRM,
+    FIFO_CANCEL,
 };
 
 enum class UiTab {
@@ -138,6 +141,9 @@ public:
 
     // SD backup import prompt
     void showSdImportPrompt(const String &backupDate);
+
+    // FIFO out-of-order warning (asks Ja/Nein before removing)
+    void showFifoWarning(const String &productName, const String &olderExpiry);
 
     // Keyboard entry
     void showKeyboardEntry(const String &title, const String &current);

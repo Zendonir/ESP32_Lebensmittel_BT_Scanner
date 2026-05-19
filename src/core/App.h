@@ -59,6 +59,8 @@ private:
         INV_SEARCH,          // on-screen keyboard for filtering inventory list
         // SD backup import prompt (shown at startup)
         SD_IMPORT_PROMPT,
+        // FIFO out-of-order warning (waiting for user confirmation)
+        FIFO_WARN,
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -170,6 +172,13 @@ private:
     static constexpr uint32_t RESULT_AUTO_DISMISS_MS = 5000;
 
     int countExpiringSoon(int days = 7) const;
+
+    // FIFO warning pending state
+    String _fifoLabelCode;
+    String _fifoProductName;
+    String _fifoEanBarcode;
+    String _fifoOlderExpiry;
+    String _fifoRemovedExpiry;
 };
 
 extern App app;

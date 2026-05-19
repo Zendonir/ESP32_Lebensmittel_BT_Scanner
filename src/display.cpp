@@ -1675,3 +1675,53 @@ void Display::showLocationSelect(const String &current, const std::vector<String
 
     commit();
 }
+
+// ─────────────────────────────────────────────────────────
+//   FIFO out-of-order warning
+// ─────────────────────────────────────────────────────────
+
+void Display::showFifoWarning(const String &productName, const String &olderExpiry) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    // Draw WiFi dot (top-right)
+    draw_wifi_dot();
+
+    // Dialog box
+    static constexpr int DW = 440, DH = 220;
+    int dx = (SCR_W - DW) / 2, dy = (SCR_H - DH) / 2;
+    _spr.fillRoundRect(dx, dy, DW, DH, 12, C_SURFACE);
+    _spr.drawRoundRect(dx,     dy,     DW,     DH,     12, C_RED);
+    _spr.drawRoundRect(dx + 1, dy + 1, DW - 2, DH - 2, 11, C_RED);
+
+    // Title
+    _spr.setTextColor(C_RED, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("ACHTUNG", dx + DW / 2, dy + 12);
+
+    // Product name (small, subtext)
+    if (!productName.isEmpty()) {
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.drawString(trunc(productName, 36).c_str(), dx + DW / 2, dy + 50);
+    }
+
+    // Message – two lines, word-boundary safe
+    _spr.setTextColor(C_TEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.drawString("Ein \xE4lterer Artikel ist noch eingelagert,", dx + DW / 2, dy + 70);
+    _spr.drawString(("dessen MHD endet am " + olderExpiry + ".").c_str(), dx + DW / 2, dy + 88);
+
+    // Question
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.drawString("Dennoch auslagern?", dx + DW / 2, dy + 116);
+
+    // Buttons
+    int btn_y = dy + DH - 58;
+    draw_button(dx + 14,          btn_y, 196, 44, "Nein, abbrechen", C_RED,   C_TEXT, 2, OnscreenAction::FIFO_CANCEL);
+    draw_button(dx + DW - 210,    btn_y, 196, 44, "Ja, auslagern",   C_GREEN, C_BG,   2, OnscreenAction::FIFO_CONFIRM);
+
+    commit();
+}

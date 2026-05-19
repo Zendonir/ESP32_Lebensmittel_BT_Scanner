@@ -206,7 +206,7 @@ static bool i2s_audio_init() {
 
 // ── Tone synthesis task ───────────────────────────────────────────────────────
 
-struct ToneCmd { uint16_t freq; uint16_t ms; };
+struct ToneCmd { uint16_t freq; uint16_t ms; uint8_t vol_override; };
 
 static constexpr uint32_t SR    = 48000;
 static constexpr size_t   CHUNK = 256;
@@ -245,7 +245,7 @@ void Audio::toneTask(void *param) {
         uint32_t total  = (uint32_t)SR * cmd.ms / 1000;
         float    step   = 2.0f * M_PI * (float)cmd.freq / (float)SR;
         float    phase  = 0.0f;
-        float    amp    = 32767.0f * (float)self->volume_level / 100.0f;
+        float    amp    = 32767.0f * (float)(cmd.vol_override ? cmd.vol_override : self->volume_level) / 100.0f;
         int      ramp_n = 0;
 
         while (total > 0) {
@@ -319,7 +319,7 @@ void Audio::init(TwoWire &wire) {
 
 // ── Playback ──────────────────────────────────────────────────────────────────
 
-void Audio::playTone(uint16_t frequency, uint16_t duration_ms) {
+void Audio::playTone(uint16_t frequency, uint16_t duration_ms, uint8_t vol_override) {
     if (!is_initialized) {
         Logger::info("Audio", "playTone: nicht initialisiert!");
         return;
@@ -329,13 +329,18 @@ void Audio::playTone(uint16_t frequency, uint16_t duration_ms) {
         Logger::info("Audio", "playTone: Queue voll");
         return;
     }
-    ToneCmd cmd{ frequency, duration_ms };
+    ToneCmd cmd{ frequency, duration_ms, vol_override };
     xQueueSend(_queue, &cmd, 0);
 }
 
 void Audio::playSuccessTone()  { playTone(880, 80);  playTone(1320, 130); }
 void Audio::playErrorTone()    { playTone(320, 120); playTone(200,  280); }
-void Audio::playWarningTone()  { playTone(880, 80);  playTone(0, 60); playTone(880, 80); }
+void Audio::playWarningTone() {
+    for (int i = 0; i < 4; i++) {
+        playTone(1100, 120, 100);
+        playTone(0,     60, 100);
+    }
+}
 void Audio::playStartupTone()  { playTone(523, 80);  playTone(659, 80); playTone(784, 130); }
 void Audio::playClickTone()    { playTone(1200, 18); }
 void Audio::playSwipeTone()    { playTone(600, 35);  playTone(900, 35); }

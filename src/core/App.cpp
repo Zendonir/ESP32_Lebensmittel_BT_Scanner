@@ -653,6 +653,40 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
+    if (action == OnscreenAction::FIFO_CONFIRM && workflow == WorkflowMode::FIFO_WARN) {
+        bool removed = inventory.removeByLabel(_fifoLabelCode);
+        if (removed) {
+            audio_obj.playCheckoutTone();
+            JsonDocument sdoc;
+            sdoc["type"]         = "REMOVE_LABEL";
+            sdoc["labelBarcode"] = _fifoLabelCode;
+            sdoc["household"]    = device_config.getHousehold();
+            sdoc["deviceName"]   = device_config.getDeviceName();
+            sdoc["timestamp"]    = (long)time(nullptr);
+            String sp; serializeJson(sdoc, sp);
+            sync_manager.enqueue("REMOVE_LABEL", sp);
+        }
+        workflow = WorkflowMode::RESULT;
+        _resultShownMs = millis();
+        _resultSuccess = removed;
+        _resultTitle   = removed ? "Ausgelagert" : "Nicht gefunden";
+        _resultMessage = removed
+            ? (_fifoProductName.isEmpty() ? _fifoLabelCode : _fifoProductName)
+            : "Label ist nicht im Inventar";
+        display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
+        return;
+    }
+
+    if (action == OnscreenAction::FIFO_CANCEL && workflow == WorkflowMode::FIFO_WARN) {
+        workflow = WorkflowMode::RESULT;
+        _resultShownMs = millis();
+        _resultSuccess = true;
+        _resultTitle   = "Abgebrochen";
+        _resultMessage = "Auslagerung abgebrochen";
+        display_obj.showResult(_resultTitle, _resultMessage, true);
+        return;
+    }
+
     switch (action) {
         // ── Tab navigation ──────────────────────────────────────────────────
         case OnscreenAction::SWIPE_LEFT: {
@@ -978,7 +1012,7 @@ void App::handleScan(const ScanResult &scan) {
 
     Logger::info("Scanner", String("Barcode: ") + scan.code);
 
-    if (workflow != WorkflowMode::HOME && workflow != WorkflowMode::RESULT) {
+    if (workflow != WorkflowMode::HOME && workflow != WorkflowMode::RESULT && workflow != WorkflowMode::FIFO_WARN) {
         Logger::warn("Scanner", "Ignoring scan while product workflow is active");
         audio_obj.playTone(250, 120);
         return;
@@ -987,7 +1021,7 @@ void App::handleScan(const ScanResult &scan) {
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
 
-        // Remember item details BEFORE removing (needed for FIFO check and result message)
+        // Find item details BEFORE deciding to remove
         String removedName, removedBarcode, removedExpiry;
         for (const auto &it : inventory.items()) {
             if (it.labelBarcode == scan.code) {
@@ -998,6 +1032,21 @@ void App::handleScan(const ScanResult &scan) {
             }
         }
 
+        // FIFO check BEFORE removal: warn if older same-product item still in storage
+        String olderExpiry = findEarlierExpiry(inventory.items(), removedBarcode, scan.code, removedExpiry);
+        if (!olderExpiry.isEmpty()) {
+            _fifoLabelCode    = scan.code;
+            _fifoProductName  = removedName;
+            _fifoEanBarcode   = removedBarcode;
+            _fifoOlderExpiry  = olderExpiry;
+            _fifoRemovedExpiry = removedExpiry;
+            audio_obj.playWarningTone();
+            display_obj.showFifoWarning(removedName, olderExpiry);
+            workflow = WorkflowMode::FIFO_WARN;
+            return;
+        }
+
+        // No FIFO warning — proceed with removal
         bool removed = inventory.removeByLabel(scan.code);
         if (removed) {
             audio_obj.playCheckoutTone();
@@ -1009,19 +1058,6 @@ void App::handleScan(const ScanResult &scan) {
             sdoc["timestamp"]    = (long)time(nullptr);
             String sp; serializeJson(sdoc, sp);
             sync_manager.enqueue("REMOVE_LABEL", sp);
-
-            // FIFO check: warn if a same-product item with an EARLIER expiry is still in storage
-            String olderExpiry = findEarlierExpiry(inventory.items(), removedBarcode, scan.code, removedExpiry);
-            if (!olderExpiry.isEmpty()) {
-                audio_obj.playWarningTone();
-                _resultTitle   = "ACHTUNG";
-                _resultMessage = "Ein aelterer Artikel ist noch eingelagert,\ndessen MHD endet am " + olderExpiry;
-                _resultSuccess = false;
-                _resultShownMs = 0; // kein Auto-Dismiss – Nutzer muss aktiv wegwischen
-                workflow       = WorkflowMode::RESULT;
-                display_obj.showResult(_resultTitle, _resultMessage, false);
-                return;
-            }
         } else {
             audio_obj.playErrorTone();
         }

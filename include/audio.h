@@ -14,7 +14,7 @@ public:
     void init(TwoWire &wire);
 
     // Core playback
-    void playTone(uint16_t frequency, uint16_t duration_ms);
+    void playTone(uint16_t frequency, uint16_t duration_ms, uint8_t vol_override = 0);
     void stopTone();
 
     // Convenience signals
