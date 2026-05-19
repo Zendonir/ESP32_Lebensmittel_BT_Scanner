@@ -1220,18 +1220,20 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextColor(sc, C_SURFACE);
         _spr.setTextFont(2);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(("\x15 " + trunc(eg.name, 20)).c_str(), 10, list_y + 11);
+        // Small up-pointing filled triangle (▲ = expanded, tap to collapse)
+        _spr.fillTriangle(6, list_y+14, 14, list_y+14, 10, list_y+7, sc);
+        _spr.drawString(trunc(eg.name, 21).c_str(), 20, list_y + 11);
         if (eg.count > 1) {
             _spr.setTextColor(C_SUBTEXT, C_SURFACE);
             _spr.setTextFont(1);
-            _spr.drawString((String(eg.count) + "x").c_str(), 10, list_y + 27);
+            _spr.drawString((String(eg.count) + "x").c_str(), 20, list_y + 27);
         }
         _spr.drawFastHLine(0, list_y + ROW_H - 1, SCR_W, C_BORDER);
         add_region(0, list_y, SCR_W, ROW_H, OnscreenAction::LIST_ITEM_0);
         _s_inv_group_names[0] = eg.name;  // row 0 = header (used to detect collapse)
 
         // Individual item sub-rows
-        static constexpr int SUB_H = 38;
+        static constexpr int SUB_H = 42;
         int maxSub = (SCR_H - list_y - ROW_H) / SUB_H;
         if (maxSub > 6) maxSub = 6;
         int subShown = 0;
@@ -1245,24 +1247,33 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             uint16_t mc = (k > 0 && k < today) ? C_RED : (k > 0 && k <= warnDay) ? C_YELLOW : C_GREEN;
             _spr.fillRect(0, ry, 4, SUB_H, mc);
 
+            // MHD – top line left
             _spr.setTextColor(C_TEXT, rb);
             _spr.setTextFont(2);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(it.expiryDate.c_str(), 10, ry + 12);
+            String mhdLabel = it.expiryDate.isEmpty() ? "Kein MHD" : it.expiryDate;
+            _spr.drawString(mhdLabel.c_str(), 10, ry + 11);
 
+            // Haushalt + Lagerort – second line left
+            String meta;
+            if (!hhAbbr.isEmpty()) meta = hhAbbr;
             if (!it.location.isEmpty()) {
+                if (!meta.isEmpty()) meta += "  \xB7  ";
+                meta += it.location;
+            }
+            if (!meta.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, rb);
                 _spr.setTextFont(1);
-                _spr.drawString(trunc(it.location, 18).c_str(), 10, ry + 27);
+                _spr.drawString(trunc(meta, 26).c_str(), 10, ry + 29);
             }
 
             // Label barcode right-aligned (shortened)
             String lb = it.labelBarcode;
-            if (lb.length() > 14) lb = lb.substring(lb.length() - 14);
+            if (lb.length() > 12) lb = lb.substring(lb.length() - 12);
             _spr.setTextColor(C_SUBTEXT, rb);
             _spr.setTextFont(1);
             _spr.setTextDatum(MR_DATUM);
-            _spr.drawString(lb.c_str(), SCR_W - 8, ry + SUB_H / 2);
+            _spr.drawString(lb.c_str(), SCR_W - 8, ry + 11);
 
             _spr.drawFastHLine(0, ry + SUB_H - 1, SCR_W, C_BORDER);
         }
@@ -1279,12 +1290,14 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
             _spr.fillRect(0, ry, 4, ROW_H, sc);  // colored left bar
 
-            // Name
+            // Name – draw ▼ triangle then text
             _spr.setTextColor(C_TEXT, row_bg);
             _spr.setTextFont(2);
             _spr.setTextDatum(ML_DATUM);
-            String label = trunc(g.name, 22);
-            _spr.drawString(label.c_str(), 10, ry + 11);
+            // Small down-pointing filled triangle at (8, ry+11)
+            _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
+            String label = trunc(g.name, 21);
+            _spr.drawString(label.c_str(), 20, ry + 11);
 
             // Count badge
             if (g.count > 1) {
