@@ -1188,15 +1188,19 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     add_region(0, sb_y, SCR_W, SEARCH_H, OnscreenAction::INV_SEARCH);
 
     // ── Column headers ──────────────────────────────────────
-    static constexpr int COL_H = 24;
+    // Layout (SCR_W=480):  Produkt 0..299 | MHD 300..409 | Menge 410..479
+    static constexpr int COL_H    = 24;
+    static constexpr int COL_MHD  = 410;   // right edge of MHD column
+    static constexpr int COL_MENGE= 472;   // right edge of Menge column
     int col_y = HDR_H + SEARCH_H;
     _spr.fillRect(0, col_y, SCR_W, COL_H, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
     _spr.setTextFont(2);
     _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("Produkt", 8,   col_y + 5);
-    _spr.drawString("MHD",    310,  col_y + 5);
-    _spr.drawString("Menge",  432,  col_y + 5);
+    _spr.drawString("Produkt", 8, col_y + 5);
+    _spr.setTextDatum(TR_DATUM);
+    _spr.drawString("MHD",   COL_MHD,   col_y + 5);
+    _spr.drawString("Menge", COL_MENGE, col_y + 5);
     _spr.drawFastHLine(0, col_y + COL_H - 1, SCR_W, C_BORDER);
 
     // ── Group rows ──────────────────────────────────────────
@@ -1256,33 +1260,26 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.setTextFont(2);
             _spr.setTextDatum(ML_DATUM);
             String mhdLabel = it.expiryDate.isEmpty() ? "Kein MHD" : it.expiryDate;
-            _spr.drawString(mhdLabel.c_str(), 10, ry + 11);
+            _spr.drawString(mhdLabel.c_str(), 10, ry + 13);
 
-            // Haushalt + Lagerort – second line left
+            // Haushalt · Lagerort – second line left
             String meta;
             if (!hhAbbr.isEmpty()) meta = hhAbbr;
             if (!it.location.isEmpty()) {
-                if (!meta.isEmpty()) meta += "  \xB7  ";
+                if (!meta.isEmpty()) meta += " \xB7 ";
                 meta += it.location;
             }
             if (!meta.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, rb);
                 _spr.setTextFont(1);
-                _spr.drawString(trunc(meta, 26).c_str(), 10, ry + 29);
+                _spr.drawString(trunc(meta, 30).c_str(), 10, ry + 30);
             }
-
-            // Label barcode right-aligned (shortened)
-            String lb = it.labelBarcode;
-            if (lb.length() > 12) lb = lb.substring(lb.length() - 12);
-            _spr.setTextColor(C_SUBTEXT, rb);
-            _spr.setTextFont(1);
-            _spr.setTextDatum(MR_DATUM);
-            _spr.drawString(lb.c_str(), SCR_W - 8, ry + 11);
 
             _spr.drawFastHLine(0, ry + SUB_H - 1, SCR_W, C_BORDER);
         }
     } else {
         // ── Collapsed group list ─────────────────────────────
+        // Columns:  Produkt 0..299 | MHD ..COL_MHD | Menge ..COL_MENGE
         static constexpr uint16_t STATUS_COL[3] = { C_ACCENT, C_YELLOW, C_RED };
         int shown = 0;
         int start = (int)groups.size() - 1;
@@ -1292,39 +1289,35 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
             uint16_t sc     = STATUS_COL[g.status];
             _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
-            _spr.fillRect(0, ry, 4, ROW_H, sc);  // colored left bar
+            _spr.fillRect(0, ry, 4, ROW_H, sc);
 
-            // Name – draw ▼ triangle then text
+            // ▼ triangle + product name (col 1)
+            _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
             _spr.setTextColor(C_TEXT, row_bg);
             _spr.setTextFont(2);
             _spr.setTextDatum(ML_DATUM);
-            // Small down-pointing filled triangle at (8, ry+11)
-            _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
-            String label = trunc(g.name, 21);
-            _spr.drawString(label.c_str(), 20, ry + 11);
+            _spr.drawString(trunc(g.name, 17).c_str(), 20, ry + 11);
 
-            // Count badge
-            if (g.count > 1) {
-                int tw = (int)_spr.textWidth(label.c_str()) + 14;
-                _spr.setTextColor(sc, row_bg);
-                _spr.setTextFont(1);
-                _spr.drawString((String(g.count) + "x").c_str(), tw, ry + 10);
-            }
-
-            // Brand sub-line
+            // Brand sub-line (col 1)
             if (!g.brand.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, row_bg);
                 _spr.setTextFont(1);
-                _spr.drawString(trunc(g.brand, 28).c_str(), 10, ry + 27);
+                _spr.drawString(trunc(g.brand, 22).c_str(), 20, ry + 27);
             }
 
-            // MHD right-aligned
+            // MHD – right-aligned to COL_MHD (col 2)
             if (!g.mhd.isEmpty()) {
-                _spr.setTextColor(C_SUBTEXT, row_bg);
+                _spr.setTextColor(C_TEXT, row_bg);
                 _spr.setTextFont(2);
                 _spr.setTextDatum(MR_DATUM);
-                _spr.drawString(g.mhd.c_str(), SCR_W - 8, ry + ROW_H / 2);
+                _spr.drawString(g.mhd.c_str(), COL_MHD, ry + ROW_H / 2);
             }
+
+            // Menge – right-aligned to COL_MENGE (col 3)
+            _spr.setTextColor(sc, row_bg);
+            _spr.setTextFont(2);
+            _spr.setTextDatum(MR_DATUM);
+            _spr.drawString((String(g.count) + "x").c_str(), COL_MENGE, ry + ROW_H / 2);
 
             _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
             add_region(0, ry, SCR_W, ROW_H, LIST_ACTIONS[shown]);
