@@ -1073,8 +1073,12 @@ void Display::showSdImportPrompt(const String &backupDate) {
     commit();
 }
 
-// Forward declaration (defined after showInventoryList near showCategoryTiles)
-static const OnscreenAction LIST_ACTIONS[7];
+static const OnscreenAction LIST_ACTIONS[7] = {
+    OnscreenAction::LIST_ITEM_0, OnscreenAction::LIST_ITEM_1,
+    OnscreenAction::LIST_ITEM_2, OnscreenAction::LIST_ITEM_3,
+    OnscreenAction::LIST_ITEM_4, OnscreenAction::LIST_ITEM_5,
+    OnscreenAction::LIST_ITEM_6,
+};
 
 // ─────────────────────────────────────────────────────────
 
@@ -1355,13 +1359,6 @@ void Display::showInventoryGroupDetail(const String & /*groupName*/,
 // ─────────────────────────────────────────────────────────
 //   Category tile grid  (2 cols × 4 rows, max 7 tiles)
 // ─────────────────────────────────────────────────────────
-
-static const OnscreenAction LIST_ACTIONS[7] = {
-    OnscreenAction::LIST_ITEM_0, OnscreenAction::LIST_ITEM_1,
-    OnscreenAction::LIST_ITEM_2, OnscreenAction::LIST_ITEM_3,
-    OnscreenAction::LIST_ITEM_4, OnscreenAction::LIST_ITEM_5,
-    OnscreenAction::LIST_ITEM_6,
-};
 
 static const uint16_t TILE_ACCENTS[7] = {
     RGB(0x4C,0x9E,0xFF), // blue
