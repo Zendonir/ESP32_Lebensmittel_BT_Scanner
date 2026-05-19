@@ -38,20 +38,11 @@ bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
     if (_sync && _sync->hasConfig()) {
         if (_sync->fetchProductFromMySQL(barcode, product)) {
             Logger::info("OpenFoodFacts", String("MySQL hit: ") + barcode);
-            cacheProduct(product);  // keep local cache in sync
             return true;
         }
     }
 
-    // 2. Local LittleFS cache — offline fallback (no MySQL or no connection)
-    if (loadCachedProduct(barcode, product)) {
-        Logger::info("OpenFoodFacts", String("Local cache hit: ") + barcode);
-        // Try to push to MySQL in case it was missing there
-        if (_sync && _sync->hasConfig()) _sync->pushProduct(product);
-        return true;
-    }
-
-    // 3. OpenFoodFacts API — only for truly unknown products
+    // 2. OpenFoodFacts API — only for truly unknown products
     // Request only the fields we actually use – drops response from ~200 KB
     // down to ~1-2 KB, making the fetch 5-10× faster on slow connections.
     String url = "https://world.openfoodfacts.org/api/v2/product/" + barcode
@@ -111,10 +102,7 @@ bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
         product.labels.push_back(lbl.as<String>());
 
     bool ok = !product.name.isEmpty();
-    if (ok) {
-        cacheProduct(product);           // local LittleFS cache
-        if (_sync) _sync->pushProduct(product);  // MySQL product_cache
-    }
+    if (ok && _sync) _sync->pushProduct(product);  // write new product to MySQL
     Logger::info("OpenFoodFacts", String("API fetch: ") + product.name + " (" + product.brand + ")");
     return ok;
 }
