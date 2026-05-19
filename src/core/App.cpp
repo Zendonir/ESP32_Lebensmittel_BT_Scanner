@@ -67,8 +67,8 @@ void App::begin() {
 
     initFilesystem();
     loadDisplayConfig();
-    time_manager.begin(i2c_bus);
     device_config.begin();
+    time_manager.begin(i2c_bus, device_config.getTimezone());
 
     // SD backup import prompt: show if SD has backup and internal storage is empty
     if (BackupManager::hasBackupOnSD() && BackupManager::internalIsEmpty()) {
@@ -219,11 +219,6 @@ void App::loop() {
         handleScan(scan);
     }
 
-    AppEvent event;
-    while (events.poll(event)) {
-        Logger::debug("Event", String("Event received: ") + static_cast<int>(event.type));
-    }
-
     // Display standby
     if (_standbyMs > 0 && _displayOn && (millis() - _lastActivityMs >= _standbyMs)) {
         setBacklight(false);
@@ -320,25 +315,37 @@ void App::renderDashboard(const String &message) {
     renderActiveTab(message, true);
 }
 
-String App::buildUiSignature() const {
-    return String(static_cast<int>(_activeTab)) + "|" +
-           wifi_manager.getSSID() + "|" +
-           wifi_manager.getIPAddress() + "|" +
-           String(wifi_manager.isConnected()) + "|" +
-           ble_scanner.getStatus() + "|" +
-           ble_scanner.getDeviceAddress() + "|" +
-           ble_scanner.getDeviceName() + "|" +
-           barcode_manager.getLastScan() + "|" +
-           barcode_manager.getLastType() + "|" +
-           String(static_cast<unsigned>(inventory.items().size())) + "|" +
-           _statusMessage;
+// FNV-1a 32-bit hash of a string (fast, collision-resistant enough for UI change detection)
+static uint32_t fnv1a(const String &s) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < s.length(); i++) {
+        h ^= (uint8_t)s[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+uint32_t App::buildUiHash() const {
+    String sig =
+        String(static_cast<int>(_activeTab)) + "|" +
+        wifi_manager.getSSID() + "|" +
+        wifi_manager.getIPAddress() + "|" +
+        String(wifi_manager.isConnected()) + "|" +
+        ble_scanner.getStatus() + "|" +
+        ble_scanner.getDeviceAddress() + "|" +
+        ble_scanner.getDeviceName() + "|" +
+        barcode_manager.getLastScan() + "|" +
+        barcode_manager.getLastType() + "|" +
+        String(static_cast<unsigned>(inventory.items().size())) + "|" +
+        _statusMessage;
+    return fnv1a(sig);
 }
 
 void App::renderActiveTab(const String &message, bool force) {
     if (!message.isEmpty()) _statusMessage = message;
 
-    String signature = buildUiSignature();
-    if (!force && signature == _lastUiSignature) {
+    uint32_t hash = buildUiHash();
+    if (!force && hash == _lastUiHash) {
         _lastUiRefreshMs = millis();
         return;
     }
@@ -364,7 +371,7 @@ void App::renderActiveTab(const String &message, bool force) {
         countExpiringSoon(7),
         _statusMessage,
         AppFS::usingSD());
-    _lastUiSignature = signature;
+    _lastUiHash = hash;
     _lastUiRefreshMs = millis();
 }
 
@@ -1038,7 +1045,8 @@ void App::startProductLookup(const String &barcode) {
 
 void App::fetchTaskFn(void *param) {
     App *self = static_cast<App *>(param);
-    self->_fetchOk = self->openFoodFacts.fetchProduct(self->_pendingBarcode, self->_fetchedProduct);
+    self->_fetchOk  = self->openFoodFacts.fetchProduct(self->_pendingBarcode, self->_fetchedProduct);
+    self->_fetchTaskHandle = nullptr; // clear before signalling done to avoid stale handle
     self->_fetchDone = true;
     vTaskDelete(nullptr);
 }
@@ -1048,15 +1056,30 @@ void App::processWorkflow() {
 
     if (!_fetchStarted) {
         // Launch fetch on core 0 (network core) – UI loop continues on core 1
-        _fetchStarted = true;
-        _fetchDone    = false;
-        _fetchOk      = false;
-        _fetchedProduct = ProductInfo();
-        xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, nullptr, 0);
+        _fetchStarted    = true;
+        _fetchDone       = false;
+        _fetchOk         = false;
+        _fetchTaskHandle = nullptr;
+        _fetchedProduct  = ProductInfo();
+        _fetchStartedMs  = millis();
+        xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, &_fetchTaskHandle, 0);
         return;
     }
 
-    if (!_fetchDone) return; // Still fetching – keep rendering
+    if (!_fetchDone) {
+        // Abort if the fetch task has been running too long (network stall / server down)
+        if (millis() - _fetchStartedMs >= FETCH_TIMEOUT_MS) {
+            Logger::warn("Fetch", "Product fetch timed out – aborting task");
+            if (_fetchTaskHandle) {
+                vTaskDelete(_fetchTaskHandle);
+                _fetchTaskHandle = nullptr;
+            }
+            _fetchDone = true;
+            _fetchOk   = false;
+        } else {
+            return; // Still fetching – keep rendering
+        }
+    }
 
     // Fetch complete
     _fetchStarted = false;
@@ -1079,7 +1102,7 @@ bool App::formatDateDraft(String &formatted) const {
     int day   = _pendingDateDraft.substring(0, 2).toInt();
     int month = _pendingDateDraft.substring(2, 4).toInt();
     int year  = 2000 + _pendingDateDraft.substring(4, 6).toInt();
-    if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2024 || year > 2099) return false;
+    if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2000 || year > 2099) return false;
     char buf[12];
     snprintf(buf, sizeof(buf), "%02d.%02d.%04d", day, month, year);
     formatted = buf;
@@ -1171,6 +1194,10 @@ void App::loadTemplates() {
             String s = obj["brand"] | "";
             if (!s.isEmpty()) t.brands.push_back(s);
         }
+        if (t.shelfDays <= 0) {
+            Logger::warn("Templates", String("Vorlage '") + t.name + "' hat ungültige shelfDays=" + t.shelfDays + " – übersprungen");
+            continue;
+        }
         if (!t.name.isEmpty()) { _templates.push_back(t); idx++; }
     }
     Logger::debug("Templates", String(_templates.size()) + " Vorlagen geladen");
@@ -1209,7 +1236,7 @@ void App::showTmplProducts() {
     auto products = templatesForCategory(_selectedCategory);
     std::vector<String> items;
     for (const auto &p : products)
-        items.push_back(p.name + " (" + p.shelfDays + " Tage)");
+        items.push_back(p.name + " (" + String(p.shelfDays) + " Tage)");
     display_obj.showListScreen(_selectedCategory.c_str(), items, true);
 }
 

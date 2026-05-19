@@ -5,7 +5,7 @@
 
 class TimeManager {
 public:
-    void begin(TwoWire &wire);
+    void begin(TwoWire &wire, const String &timezone = "CET-1CEST,M3.5.0,M10.5.0/3");
     void loop();           // call from App::loop() — handles NTP sync + RTC write-back
 
     String today() const;

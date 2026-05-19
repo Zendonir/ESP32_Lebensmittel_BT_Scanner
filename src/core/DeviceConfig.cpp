@@ -10,6 +10,7 @@ void DeviceConfig::begin() {
     _deviceName           = p.getString("devName",   "");
     _activeLocation       = p.getString("location",  "");
     _activeLocationColor  = p.getString("locColor",  "");
+    _timezone             = p.getString("timezone",  "CET-1CEST,M3.5.0,M10.5.0/3");
     _ntfyUrl              = p.getString("ntfyUrl",   "https://ntfy.sh");
     _ntfyTopic            = p.getString("ntfyTopic", "");
     _ntfyDays             = p.getInt("ntfyDays",     3);
@@ -72,4 +73,10 @@ void DeviceConfig::setNtfyDays(int d) {
     _ntfyDays = max(1, min(d, 30));
     Preferences p; p.begin("device", false);
     p.putInt("ntfyDays", _ntfyDays); p.end();
+}
+
+void DeviceConfig::setTimezone(const String &tz) {
+    _timezone = tz.isEmpty() ? "CET-1CEST,M3.5.0,M10.5.0/3" : tz;
+    Preferences p; p.begin("device", false);
+    p.putString("timezone", _timezone); p.end();
 }

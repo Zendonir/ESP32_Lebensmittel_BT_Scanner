@@ -16,12 +16,13 @@ static void ntpSyncCB(struct timeval *) { s_ntpSynced = true; }
 
 TimeManager time_manager;
 
-void TimeManager::begin(TwoWire &wire) {
+void TimeManager::begin(TwoWire &wire, const String &timezone) {
     _wire = &wire;
 
-    // Apply Europe/Berlin POSIX timezone (handles CET↔CEST automatically)
-    setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+    // Apply the configured POSIX timezone string
+    setenv("TZ", timezone.c_str(), 1);
     tzset();
+    Logger::info("Time", String("Timezone: ") + timezone);
 
     // Probe PCF85063A (I2C 0x51)
     wire.beginTransmission(PCF_ADDR);
@@ -34,7 +35,7 @@ void TimeManager::begin(TwoWire &wire) {
 
     // Register NTP callback and configure servers (non-blocking)
     sntp_set_time_sync_notification_cb(ntpSyncCB);
-    configTzTime("CET-1CEST,M3.5.0,M10.5.0/3",
+    configTzTime(timezone.c_str(),
                  "pool.ntp.org", "de.pool.ntp.org", "time.google.com");
 }
 

@@ -2,11 +2,13 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <atomic>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "display.h"
 #include "AppStateManager.h"
 #include "../models/ProductTemplate.h"
-#include "EventBus.h"
 #include "TimeManager.h"
 #include "DeviceConfig.h"
 #include "../storage/LittleFSManager.h"
@@ -68,7 +70,7 @@ private:
     void handleSerialCommand(const String &command);
     void renderDashboard(const String &message = "");
     void renderActiveTab(const String &message = "", bool force = false);
-    String buildUiSignature() const;
+    uint32_t buildUiHash() const;
     void handleTouch();
     void processOnscreenAction(OnscreenAction action);
     void handleScan(const ScanResult &scan);
@@ -100,7 +102,6 @@ private:
 
     TwoWire         i2c_bus;
     AppStateManager state;
-    EventBus        events;
     TimeManager     time_manager;
     LittleFSManager fs;
     JsonStorage     json;
@@ -113,11 +114,11 @@ private:
     WebInterface    web;
     uint32_t        _lastUiRefreshMs = 0;
     String          _statusMessage;
-    String          _lastUiSignature;
+    uint32_t        _lastUiHash = 0;
     UiTab           _activeTab = UiTab::STORE;
     uint32_t        _standbyMs = 0;        // 0 = never; 120000 / 300000 ms
     uint32_t        _lastActivityMs = 0;
-    bool            _displayOn = true;
+    std::atomic<bool> _displayOn{true};
     ProductInfo     _pendingProduct;
     String          _pendingDateDraft;
     String          _pendingExpiryDate;
@@ -132,6 +133,9 @@ private:
     volatile bool   _fetchDone    = false;
     bool            _fetchOk      = false;
     ProductInfo     _fetchedProduct;
+    TaskHandle_t    _fetchTaskHandle = nullptr;
+    uint32_t        _fetchStartedMs  = 0;
+    static constexpr uint32_t FETCH_TIMEOUT_MS = 30000;
 
     // Template workflow state
     std::vector<ProductTemplate> _templates;

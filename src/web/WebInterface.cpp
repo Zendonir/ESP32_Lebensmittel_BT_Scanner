@@ -355,6 +355,19 @@ void WebInterface::sendError(AsyncWebServerRequest *req, const char *msg, int co
 /* Global body buffer — rebuilt per-request by bodyCollect() */
 static String _body;
 
+// Input validation helpers
+static bool validStr(const String &s, size_t maxLen) {
+    return s.length() <= maxLen;
+}
+
+static bool validName(const String &s) {
+    return !s.isEmpty() && validStr(s, 128);
+}
+
+static bool validOptStr(const String &s, size_t maxLen = 256) {
+    return validStr(s, maxLen);
+}
+
 static void bodyCollect(AsyncWebServerRequest *req, uint8_t *data, size_t len,
                         size_t index, size_t total) {
     if (index == 0) {
@@ -494,6 +507,7 @@ void WebInterface::registerApiRoutes() {
         doc["household"]     = device_config.getHousehold();
         doc["householdAbbr"] = device_config.getHouseholdAbbr();
         doc["deviceName"]    = device_config.getDeviceName();
+        doc["timezone"]      = device_config.getTimezone();
         doc["ntfyUrl"]       = device_config.getNtfyUrl();
         doc["ntfyTopic"]     = device_config.getNtfyTopic();
         doc["ntfyDays"]      = device_config.getNtfyDays();
@@ -506,20 +520,42 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/device-config", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument doc;
-            if (deserializeJson(doc, _body) == DeserializationError::Ok) {
-                if (!doc["household"].isNull())
-                    device_config.setHousehold(doc["household"].as<String>());
-                if (!doc["householdAbbr"].isNull())
-                    device_config.setHouseholdAbbr(doc["householdAbbr"].as<String>());
-                if (!doc["deviceName"].isNull())
-                    device_config.setDeviceName(doc["deviceName"].as<String>());
-                if (!doc["ntfyUrl"].isNull())
-                    device_config.setNtfyUrl(doc["ntfyUrl"].as<String>());
-                if (!doc["ntfyTopic"].isNull())
-                    device_config.setNtfyTopic(doc["ntfyTopic"].as<String>());
-                if (!doc["ntfyDays"].isNull())
-                    device_config.setNtfyDays(doc["ntfyDays"].as<int>());
+            if (deserializeJson(doc, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+                return;
             }
+            if (!doc["household"].isNull()) {
+                String v = doc["household"].as<String>();
+                if (!validOptStr(v, 64)) { req->send(400, "application/json", "{\"error\":\"household zu lang\"}"); return; }
+                device_config.setHousehold(v);
+            }
+            if (!doc["householdAbbr"].isNull()) {
+                String v = doc["householdAbbr"].as<String>();
+                if (!validOptStr(v, 8)) { req->send(400, "application/json", "{\"error\":\"householdAbbr zu lang (max 8)\"}"); return; }
+                device_config.setHouseholdAbbr(v);
+            }
+            if (!doc["deviceName"].isNull()) {
+                String v = doc["deviceName"].as<String>();
+                if (!validOptStr(v, 64)) { req->send(400, "application/json", "{\"error\":\"deviceName zu lang\"}"); return; }
+                device_config.setDeviceName(v);
+            }
+            if (!doc["timezone"].isNull()) {
+                String v = doc["timezone"].as<String>();
+                if (!validOptStr(v, 64)) { req->send(400, "application/json", "{\"error\":\"timezone zu lang\"}"); return; }
+                device_config.setTimezone(v);
+            }
+            if (!doc["ntfyUrl"].isNull()) {
+                String v = doc["ntfyUrl"].as<String>();
+                if (!validOptStr(v, 256)) { req->send(400, "application/json", "{\"error\":\"ntfyUrl zu lang\"}"); return; }
+                device_config.setNtfyUrl(v);
+            }
+            if (!doc["ntfyTopic"].isNull()) {
+                String v = doc["ntfyTopic"].as<String>();
+                if (!validOptStr(v, 128)) { req->send(400, "application/json", "{\"error\":\"ntfyTopic zu lang\"}"); return; }
+                device_config.setNtfyTopic(v);
+            }
+            if (!doc["ntfyDays"].isNull())
+                device_config.setNtfyDays(doc["ntfyDays"].as<int>());
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
@@ -583,6 +619,14 @@ void WebInterface::registerApiRoutes() {
             item.addedDate    = body["addedDate"]    | "";
             item.quantity     = body["quantity"]     | 1;
             item.labelBarcode = body["labelBarcode"] | "";
+
+            // Validate fields
+            if (!validOptStr(item.name, 128))       { sendError(req, "name zu lang", 400); return; }
+            if (!validOptStr(item.brand, 64))        { sendError(req, "brand zu lang", 400); return; }
+            if (!validOptStr(item.category, 64))     { sendError(req, "category zu lang", 400); return; }
+            if (!validOptStr(item.barcode, 64))      { sendError(req, "barcode zu lang", 400); return; }
+            if (!validOptStr(item.expiryDate, 16))   { sendError(req, "expiryDate ungültig", 400); return; }
+            if (item.quantity < 1 || item.quantity > 999) { sendError(req, "quantity ungültig", 400); return; }
 
             if (!item.labelBarcode.isEmpty()) {
                 // Edit path: update existing item in-place by labelBarcode
@@ -653,9 +697,18 @@ void WebInterface::registerApiRoutes() {
             JsonDocument arr, item;
             loadJson("/custom_products.json", arr, "[]");
             if (!arr.is<JsonArray>()) arr.to<JsonArray>();
-            if (deserializeJson(item, _body) == DeserializationError::Ok)
+            if (deserializeJson(item, _body) == DeserializationError::Ok) {
+                String name = item["name"] | "";
+                int days = item["defaultDays"] | (item["shelfDays"] | 0);
+                if (!validName(name)) {
+                    req->send(400, "application/json", "{\"error\":\"name fehlt oder zu lang\"}"); return;
+                }
+                if (days <= 0) {
+                    req->send(400, "application/json", "{\"error\":\"defaultDays muss > 0 sein\"}"); return;
+                }
                 arr.as<JsonArray>().add(item.as<JsonObject>());
-            saveJson("/custom_products.json", arr);
+                saveJson("/custom_products.json", arr);
+            }
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
