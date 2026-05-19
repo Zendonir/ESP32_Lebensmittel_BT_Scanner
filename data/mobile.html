@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<meta name="theme-color" content="#080c10">
+<title>Lebensmittel Scanner</title>
+<script>
+// Generate app icon via canvas — no separate file needed on flash
+(function(){
+  var c = document.createElement('canvas');
+  c.width = c.height = 180;
+  var ctx = c.getContext('2d');
+  // Background
+  ctx.fillStyle = '#080c10';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 180, 180, 28);
+  ctx.fill();
+  // Box body
+  ctx.strokeStyle = '#4c9eff';
+  ctx.lineWidth = 7;
+  ctx.lineJoin = 'round';
+  ctx.strokeRect(38, 62, 104, 82);
+  // Box lid
+  ctx.beginPath();
+  ctx.moveTo(28, 62); ctx.lineTo(152, 62);
+  ctx.lineTo(138, 44); ctx.lineTo(42, 44);
+  ctx.closePath();
+  ctx.stroke();
+  // Lid flap line
+  ctx.beginPath();
+  ctx.moveTo(90, 44); ctx.lineTo(90, 62);
+  ctx.strokeStyle = '#4c9eff';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  // Barcode stripes at bottom
+  var bx = 52, by = 112, bh = 22;
+  ctx.fillStyle = '#4c9eff';
+  var bars = [0,6,10,16,20,24,30,36,40,46,50];
+  for (var i = 0; i < bars.length; i++) {
+    var w = (i % 3 === 1) ? 5 : 3;
+    ctx.fillRect(bx + bars[i], by, w, bh);
+  }
+  var url = c.toDataURL('image/png');
+  // Apple touch icon
+  var l = document.createElement('link');
+  l.rel = 'apple-touch-icon'; l.href = url;
+  document.head.appendChild(l);
+  // Favicon
+  var f = document.createElement('link');
+  f.rel = 'icon'; f.type = 'image/png'; f.href = url;
+  document.head.appendChild(f);
+})();
+</script>
+<style>
+  :root {
+    --bg: #080c10;
+    --surface: #12171e;
+    --surface2: #1c222a;
+    --border: #282e38;
+    --text: #ecf0f4;
+    --sub: #7a8490;
+    --accent: #4c9eff;
+    --green: #2eb048;
+    --yellow: #cc9218;
+    --red: #f04640;
+    --radius: 12px;
+    --tab-h: 60px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+  /* ── Layout ── */
+  #app { display: flex; flex-direction: column; height: 100%; }
+  #header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px 10px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  #header h1 { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: .5px; }
+  #header-right { display: flex; align-items: center; gap: 10px; }
+  #wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+  #wifi-dot.ok { background: var(--green); }
+  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #tabbar { display: flex; background: var(--surface); border-top: 1px solid var(--border); height: var(--tab-h); flex-shrink: 0; }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
+  .tab-btn.active { color: var(--accent); }
+  .tab-btn svg { width: 22px; height: 22px; }
+  .tab-pane { display: none; padding: 12px; }
+  .tab-pane.active { display: block; }
+
+  /* ── Cards ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
+  .card-title { font-size: 11px; font-weight: 700; color: var(--sub); letter-spacing: .8px; text-transform: uppercase; margin-bottom: 10px; }
+
+  /* ── Stat row ── */
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 10px; text-align: center; }
+  .stat-val { font-size: 28px; font-weight: 800; line-height: 1; }
+  .stat-label { font-size: 10px; color: var(--sub); margin-top: 4px; font-weight: 600; text-transform: uppercase; }
+  .accent { color: var(--accent); }
+  .yellow { color: var(--yellow); }
+  .red { color: var(--red); }
+  .green { color: var(--green); }
+
+  /* ── Search bar ── */
+  .search-wrap { position: relative; margin-bottom: 12px; }
+  .search-wrap input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 24px; padding: 10px 16px 10px 40px; color: var(--text); font-size: 15px; outline: none; -webkit-appearance: none; }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--sub); pointer-events: none; }
+
+  /* ── Inventory list ── */
+  #inv-list { display: flex; flex-direction: column; gap: 6px; }
+  .inv-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+  .inv-item.expiring { border-color: var(--yellow); }
+  .inv-item.expired { border-color: var(--red); }
+  .inv-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
+  .inv-item.expiring .inv-dot { background: var(--yellow); }
+  .inv-item.expired .inv-dot { background: var(--red); }
+  .inv-info { flex: 1; min-width: 0; }
+  .inv-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .inv-meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .inv-qty { font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+  .inv-empty { text-align: center; color: var(--sub); padding: 40px 0; font-size: 14px; }
+
+  /* ── Expiring section ── */
+  .section-head { font-size: 11px; font-weight: 700; color: var(--sub); letter-spacing: .8px; text-transform: uppercase; padding: 6px 0 8px; }
+
+  /* ── Settings ── */
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label { font-size: 14px; }
+  .setting-sub { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .setting-val { font-size: 13px; color: var(--sub); }
+  input[type=range] { width: 120px; accent-color: var(--accent); }
+
+  /* ── Toggle switch ── */
+  .toggle { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--surface2); border-radius: 26px; border: 1px solid var(--border); transition: background .2s; cursor: pointer; }
+  .slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px; background: var(--sub); border-radius: 50%; transition: transform .2s, background .2s; }
+  .toggle input:checked + .slider { background: var(--accent); }
+  .toggle input:checked + .slider::before { transform: translateX(18px); background: #fff; }
+
+  /* ── Full-screen admin link ── */
+  .admin-link { display: block; text-align: center; color: var(--sub); font-size: 13px; padding: 16px; text-decoration: none; }
+  .admin-link:hover { color: var(--accent); }
+
+  /* ── Loading spinner ── */
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: calc(var(--tab-h) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Pull-to-refresh hint ── */
+  .ptr-hint { text-align: center; font-size: 11px; color: var(--sub); padding: 8px 0 0; }
+
+  /* ── Grouped inventory ── */
+  .inv-group { border-radius: var(--radius); overflow: hidden; margin-bottom: 6px; }
+  .inv-group-head { margin-bottom: 0; border-radius: 0; cursor: pointer; user-select: none; -webkit-user-select: none; position: relative; }
+  .inv-group:first-child .inv-group-head { border-radius: var(--radius) var(--radius) 0 0; }
+  .inv-group.solo .inv-group-head { border-radius: var(--radius) !important; }
+  .inv-chevron { font-size: 18px; color: var(--sub); transition: transform .2s; flex-shrink: 0; padding-left: 4px; line-height: 1; }
+  .inv-sub-list { background: var(--surface2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); }
+  .inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 34px; border-top: 1px solid var(--border); }
+  .inv-sub-item:first-child { border-top: none; }
+  .inv-sub-item .inv-meta { font-size: 13px; color: var(--sub); }
+  .inv-sub-item .inv-label { font-size: 11px; color: var(--sub); opacity: .7; }
+  .inv-sub-item.expiring .inv-meta { color: var(--yellow); }
+  .inv-sub-item.expired  .inv-meta { color: var(--red); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>&#x1F4E6; Scanner</h1>
+    <div id="header-right">
+      <span id="hh-abbr" style="font-size:13px;color:var(--sub)"></span>
+      <span id="wifi-dot"></span>
+    </div>
+  </div>
+
+  <div id="content">
+    <!-- INVENTAR TAB -->
+    <div id="tab-inv" class="tab-pane active">
+      <div class="stat-row">
+        <div class="stat"><div class="stat-val accent" id="s-total">-</div><div class="stat-label">Gesamt</div></div>
+        <div class="stat"><div class="stat-val yellow" id="s-soon">-</div><div class="stat-label">Bald ab</div></div>
+        <div class="stat"><div class="stat-val red" id="s-exp">-</div><div class="stat-label">Abgelaufen</div></div>
+      </div>
+      <div class="search-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="inv-search" placeholder="Suchen…" autocomplete="off" autocorrect="off" spellcheck="false">
+      </div>
+      <div id="inv-list"><div class="inv-empty"><span class="spinner"></span></div></div>
+      <div class="ptr-hint">&#8593; Ziehen zum Aktualisieren</div>
+    </div>
+
+    <!-- ABLAUFEND TAB -->
+    <div id="tab-exp" class="tab-pane">
+      <div class="section-head">Diese Woche ablaufend</div>
+      <div id="exp-list"><div class="inv-empty"><span class="spinner"></span></div></div>
+    </div>
+
+    <!-- EINSTELLUNGEN TAB -->
+    <div id="tab-sys" class="tab-pane">
+      <div class="card">
+        <div class="card-title">Haushalt</div>
+        <div class="setting-row">
+          <div><div class="setting-label">Standort</div><div class="setting-sub" id="sys-location">-</div></div>
+          <span class="setting-val" id="sys-hh">-</span>
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Produkte</div></div>
+          <span class="setting-val accent" id="sys-count">-</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Netzwerk</div>
+        <div class="setting-row">
+          <div><div class="setting-label">WLAN</div><div class="setting-sub" id="sys-ssid">-</div></div>
+          <span class="setting-val" id="sys-ip">-</span>
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">API-Sync</div></div>
+          <span class="setting-val" id="sys-sync">-</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">System</div>
+        <div class="setting-row">
+          <div><div class="setting-label">Freier Speicher</div></div>
+          <span class="setting-val" id="sys-heap">-</span>
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Uptime</div></div>
+          <span class="setting-val" id="sys-uptime">-</span>
+        </div>
+      </div>
+
+      <a href="/" class="admin-link">&#x2699;&#xFE0F; Zur vollst&auml;ndigen Verwaltung</a>
+    </div>
+  </div>
+
+  <nav id="tabbar">
+    <button class="tab-btn active" data-tab="inv" onclick="switchTab('inv')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/></svg>
+      INVENTAR
+    </button>
+    <button class="tab-btn" data-tab="exp" onclick="switchTab('exp')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      ABLAUFEND
+    </button>
+    <button class="tab-btn" data-tab="sys" onclick="switchTab('sys')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+      SYSTEM
+    </button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────
+let _allItems = [];
+let _filter   = '';
+let _sysInfo  = {};
+let _devCfg   = {};
+
+// ── Tab switching ──────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector('[data-tab="' + name + '"]').classList.add('active');
+  if (name === 'exp') renderExpiring();
+  if (name === 'sys') loadSysInfo();
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+let _toastTimer;
+function toast(msg, ms = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ── Date helpers ──────────────────────────────────────────────
+function getExpiry(it) {
+  // API returns camelCase "expiryDate"; accept legacy snake_case / mhd too
+  return it.expiryDate || it.expiry_date || it.mhd || '';
+}
+
+function parseExpiry(str) {
+  if (!str) return null;
+  // Formats: DD.MM.YY, DD.MM.YYYY, YYYY-MM-DD
+  let m = str.match(/^(\d{2})\.(\d{2})\.(\d{2,4})$/);
+  if (m) {
+    let y = parseInt(m[3]);
+    if (y < 100) y += 2000;
+    return new Date(y, parseInt(m[2]) - 1, parseInt(m[1]));
+  }
+  m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  return null;
+}
+
+function daysUntil(d) {
+  if (!d) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  return Math.round((d - now) / 86400000);
+}
+
+function fmtDate(str) {
+  const d = parseExpiry(str);
+  if (!d) return str || '';
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function expiryClass(str) {
+  const days = daysUntil(parseExpiry(str));
+  if (days === null) return '';
+  if (days < 0)  return 'expired';
+  if (days <= 7) return 'expiring';
+  return '';
+}
+
+// ── Fetch helpers ─────────────────────────────────────────────
+async function apiFetch(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+// ── Inventory ─────────────────────────────────────────────────
+async function loadInventory() {
+  try {
+    const data = await apiFetch('/api/inventory');
+    _allItems = Array.isArray(data) ? data : (data.items || []);
+    renderInventory();
+    updateStats();
+    document.getElementById('wifi-dot').classList.add('ok');
+  } catch (e) {
+    document.getElementById('inv-list').innerHTML = '<div class="inv-empty">Verbindungsfehler</div>';
+  }
+}
+
+function normalize(s) {
+  return (s || '').toLowerCase()
+    .replace(/ä/g,'a').replace(/ö/g,'o').replace(/ü/g,'u').replace(/ß/g,'ss')
+    .replace(/Ä/g,'a').replace(/Ö/g,'o').replace(/Ü/g,'u');
+}
+
+function filterItems(q) {
+  if (!q) return _allItems;
+  const nq = normalize(q);
+  return _allItems.filter(it => normalize(it.name || it.product_name || '').includes(nq) ||
+                                normalize(it.location || '').includes(nq));
+}
+
+// ── Grouping ──────────────────────────────────────────────────
+function buildGroups(items) {
+  const map = new Map();
+  for (const it of items) {
+    const key = (it.name || it.product_name || 'Unbekannt').trim();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(it);
+  }
+  return Array.from(map.entries()).map(([name, its]) => {
+    // Sort items within group: earliest expiry first, no-date last
+    its.sort((a, b) => {
+      const da = parseExpiry(getExpiry(a)), db = parseExpiry(getExpiry(b));
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da - db;
+    });
+    return { name, items: its, firstExpiry: getExpiry(its[0]) };
+  }).sort((a, b) => {
+    const da = parseExpiry(a.firstExpiry), db = parseExpiry(b.firstExpiry);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da - db;
+  });
+}
+
+function renderInventory() {
+  const filtered = filterItems(_filter);
+  const el = document.getElementById('inv-list');
+  if (!filtered.length) {
+    el.innerHTML = '<div class="inv-empty">Keine Eintr&auml;ge gefunden</div>';
+    return;
+  }
+
+  const groups = buildGroups(filtered);
+  el.innerHTML = groups.map((g, gi) => {
+    const cls   = expiryClass(g.firstExpiry);
+    const total = g.items.reduce((s, it) => s + (it.quantity || 1), 0);
+    const loc   = g.items[0].location ? ' · ' + g.items[0].location : '';
+    const solo  = g.items.length === 1;
+
+    const subHtml = solo ? '' : g.items.map(it => {
+      const exp    = getExpiry(it);
+      const subCls = expiryClass(exp);
+      const lbl    = it.labelBarcode ? `<span class="inv-label"> · ${esc(it.labelBarcode)}</span>` : '';
+      return `<div class="inv-sub-item ${subCls}">
+        <div class="inv-dot"></div>
+        <div class="inv-info">
+          <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}${lbl}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const groupHead = `<div class="inv-item inv-group-head ${cls}" onclick="${solo ? '' : 'toggleGroup(' + gi + ')'}">
+      <div class="inv-dot"></div>
+      <div class="inv-info">
+        <div class="inv-name">${esc(g.name)}</div>
+        <div class="inv-meta">${g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD'}${esc(loc)}</div>
+      </div>
+      <div class="inv-qty">${total}x</div>
+      ${solo ? '' : '<div class="inv-chevron">›</div>'}
+    </div>`;
+
+    return `<div class="inv-group${solo ? ' solo' : ''}" data-gi="${gi}">
+      ${groupHead}
+      ${solo ? '' : `<div class="inv-sub-list" style="display:none">${subHtml}</div>`}
+    </div>`;
+  }).join('');
+}
+
+function toggleGroup(gi) {
+  const group = document.querySelector(`[data-gi="${gi}"]`);
+  if (!group) return;
+  const sub     = group.querySelector('.inv-sub-list');
+  const chevron = group.querySelector('.inv-chevron');
+  if (!sub) return;
+  const open = sub.style.display !== 'none';
+  sub.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+function updateStats() {
+  const now = new Date(); now.setHours(0,0,0,0);
+  let total = 0, soon = 0, expired = 0;
+  _allItems.forEach(it => {
+    total += (it.quantity || 1);
+    const d = parseExpiry(getExpiry(it));
+    const days = daysUntil(d);
+    if (days !== null) {
+      if (days < 0)       expired++;
+      else if (days <= 7) soon++;
+    }
+  });
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-soon').textContent  = soon;
+  document.getElementById('s-exp').textContent   = expired;
+}
+
+// ── Expiring tab ──────────────────────────────────────────────
+function renderExpiring() {
+  const items = _allItems
+    .filter(it => { const d = daysUntil(parseExpiry(getExpiry(it))); return d !== null && d <= 7; })
+    .sort((a, b) => parseExpiry(getExpiry(a)) - parseExpiry(getExpiry(b)));
+  const el = document.getElementById('exp-list');
+  if (!items.length) {
+    el.innerHTML = '<div class="inv-empty">Alles in Ordnung &#x2705;</div>';
+    return;
+  }
+  el.innerHTML = items.map(it => {
+    const name = it.name || it.product_name || 'Unbekannt';
+    const exp  = getExpiry(it);
+    const qty  = it.quantity || 1;
+    const days = daysUntil(parseExpiry(exp));
+    const cls  = days !== null && days < 0 ? 'expired' : 'expiring';
+    const dayStr = days === null ? '' : days < 0
+      ? `vor ${-days} Tag${-days !== 1 ? 'en' : ''}`
+      : days === 0 ? 'heute' : `in ${days} Tag${days !== 1 ? 'en' : ''}`;
+    return `<div class="inv-item ${cls}">
+      <div class="inv-dot"></div>
+      <div class="inv-info">
+        <div class="inv-name">${esc(name)}</div>
+        <div class="inv-meta">${fmtDate(exp)} &mdash; ${dayStr}</div>
+      </div>
+      <div class="inv-qty">${qty}x</div>
+    </div>`;
+  }).join('');
+}
+
+// ── System info ───────────────────────────────────────────────
+async function loadSysInfo() {
+  try {
+    const [si, dc] = await Promise.all([apiFetch('/api/system-info'), apiFetch('/api/device-config')]);
+    _sysInfo = si; _devCfg = dc;
+    document.getElementById('sys-ssid').textContent    = si.ssid || '-';
+    document.getElementById('sys-ip').textContent      = si.ip   || '-';
+    document.getElementById('sys-heap').textContent    = si.freeHeap ? Math.round(si.freeHeap/1024) + ' KB' : '-';
+    document.getElementById('sys-uptime').textContent  = si.uptimeSec ? fmtUptime(si.uptimeSec) : '-';
+    document.getElementById('sys-hh').textContent      = dc.householdAbbr || '-';
+    document.getElementById('sys-location').textContent= dc.activeLocation || '-';
+    document.getElementById('sys-count').textContent   = _allItems.length || '-';
+    const sync = dc.apiUrl || dc.syncUrl;
+    document.getElementById('sys-sync').textContent   = sync ? 'Aktiv' : 'Aus';
+    document.getElementById('hh-abbr').textContent    = dc.householdAbbr || '';
+  } catch(e) {}
+}
+
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+// ── HTML escape ───────────────────────────────────────────────
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Search ────────────────────────────────────────────────────
+document.getElementById('inv-search').addEventListener('input', function() {
+  _filter = this.value.trim();
+  renderInventory();
+});
+
+// ── Pull to refresh ───────────────────────────────────────────
+let _ptStart = 0;
+const content = document.getElementById('content');
+content.addEventListener('touchstart', e => { if (content.scrollTop === 0) _ptStart = e.touches[0].clientY; }, {passive:true});
+content.addEventListener('touchend', e => {
+  if (_ptStart > 0 && content.scrollTop === 0) {
+    const dy = e.changedTouches[0].clientY - _ptStart;
+    if (dy > 60) { toast('Aktualisiert'); loadInventory(); }
+  }
+  _ptStart = 0;
+}, {passive:true});
+
+// ── Auto-refresh every 60 s ───────────────────────────────────
+setInterval(loadInventory, 60000);
+
+// ── Init ──────────────────────────────────────────────────────
+loadInventory();
+</script>
+</body>
+</html>

@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Lebensmittel-Scanner</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+
+<!-- ===== SIDEBAR NAV (Desktop) ===== -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    <span>Scanner</span>
+  </div>
+  <ul class="nav-list" id="navList">
+    <li><a href="#dashboard"     class="nav-link" data-page="dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Dashboard</a></li>
+    <li><a href="#inventory"     class="nav-link" data-page="inventory"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>Inventar</a></li>
+    <li><a href="#templates"     class="nav-link" data-page="templates"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Vorlagen</a></li>
+    <li><a href="#categories"    class="nav-link" data-page="categories"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8.56 2.75c4.37 6.03 6.02 9.42 8.03 17.72m2.54-15.38c-3.72 4.35-8.94 5.66-16.88 5.85m19.5 1.9c-3.5-.93-6.63-.82-8.94 0-2.58.92-5.01 2.86-7.44 6.32"/></svg>Kategorien</a></li>
+    <li><a href="#locations"     class="nav-link" data-page="locations"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Lagerorte</a></li>
+    <li><a href="#shopping"      class="nav-link" data-page="shopping"><svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>Einkauf</a></li>
+    <li class="nav-section">Einstellungen</li>
+    <li><a href="#design"        class="nav-link" data-page="design"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 105 19.07M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>Design</a></li>
+    <li><a href="#system"        class="nav-link" data-page="system"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 105 19.07M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>System</a></li>
+    <li><a href="#network"       class="nav-link" data-page="network"><svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>Netzwerk</a></li>
+    <li><a href="#printer"       class="nav-link" data-page="printer"><svg viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Drucker</a></li>
+    <li><a href="#manuallabel"   class="nav-link" data-page="manuallabel"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Etikett</a></li>
+    <li><a href="#scanner"       class="nav-link" data-page="scanner"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><path d="M3 6h2v12H3M7 6h2v12H7M11 6h4v12h-4M17 6h2v12h-2M21 6h0v12"/></svg>Scanner</a></li>
+    <li><a href="#mqtt"          class="nav-link" data-page="mqtt"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81 19.79 19.79 0 01.5 4.63 2 2 0 012.68 2.5h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 10.14a16 16 0 006.95 6.95l1-1a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>MQTT</a></li>
+    <li><a href="#telegram"      class="nav-link" data-page="telegram"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Telegram</a></li>
+    <li><a href="#serversync"    class="nav-link" data-page="serversync"><svg viewBox="0 0 24 24"><polyline points="23 4 23 8 19 8"/><polyline points="1 20 1 16 5 16"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Server-Sync</a></li>
+    <li class="nav-section">Analyse</li>
+    <li><a href="#statistics"    class="nav-link" data-page="statistics"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Statistiken</a></li>
+    <li><a href="#ota"           class="nav-link" data-page="ota"><svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>OTA Update</a></li>
+    <li><a href="#logs"          class="nav-link" data-page="logs"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Logs</a></li>
+  </ul>
+</nav>
+
+<!-- ===== MOBILE HEADER ===== -->
+<header class="mobile-header" id="mobileHeader">
+  <button class="hamburger" id="hamburgerBtn" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <span class="mobile-title" id="mobileTitle">Dashboard</span>
+  <button class="icon-btn" id="refreshBtn" aria-label="Aktualisieren">
+    <svg viewBox="0 0 24 24" width="20" height="20"><polyline points="23 4 23 8 19 8"/><polyline points="1 20 1 16 5 16"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+  </button>
+</header>
+
+<!-- ===== SIDEBAR OVERLAY (Mobile) ===== -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main-content" id="mainContent">
+
+  <!-- DASHBOARD -->
+  <section id="page-dashboard" class="page">
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <button class="btn btn-sm" onclick="Pages.dashboard.load()">
+        <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="23 4 23 8 19 8"/><polyline points="1 20 1 16 5 16"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Aktualisieren
+      </button>
+    </div>
+    <div class="stat-grid" id="dashStatGrid"></div>
+    <div class="grid-2">
+      <div class="card" id="dashExpiryCard">
+        <div class="card-title">Bald ablaufend</div>
+        <div id="dashExpiry" class="item-list"></div>
+      </div>
+      <div class="card" id="dashStatusCard">
+        <div class="card-title">Status</div>
+        <div id="dashStatus" class="status-list"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Letzte Aktivitäten</div>
+      <div id="dashActivity" class="item-list"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Speicher</div>
+        <div id="dashStorage"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Schnellaktionen</div>
+        <div class="btn-group-v" id="dashActions">
+          <button class="btn btn-ok" onclick="Router.go('inventory')">Inventar öffnen</button>
+          <button class="btn btn-ok" onclick="Router.go('shopping')">Einkaufsliste</button>
+          <button class="btn" onclick="Router.go('statistics')">Statistiken</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INVENTAR -->
+  <section id="page-inventory" class="page">
+    <div class="page-header">
+      <h1>Inventar</h1>
+      <button class="btn btn-ok" onclick="Pages.inventory.openAdd()">+ Hinzufügen</button>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="invSearch" class="search-input" placeholder="Suchen…" oninput="Pages.inventory.filter()">
+      <select id="invCatFilter" class="select" onchange="Pages.inventory.filter()"><option value="">Alle Kategorien</option></select>
+      <select id="invLocFilter" class="select" onchange="Pages.inventory.filter()"><option value="">Alle Lagerorte</option></select>
+      <select id="invStatusFilter" class="select" onchange="Pages.inventory.filter()">
+        <option value="">Alle</option>
+        <option value="ok">OK</option>
+        <option value="warn">Warnung</option>
+        <option value="danger">Abgelaufen</option>
+      </select>
+      <select id="invSort" class="select" onchange="Pages.inventory.filter()">
+        <option value="name">Name</option>
+        <option value="expiry">Ablaufdatum</option>
+        <option value="category">Kategorie</option>
+        <option value="location">Lagerort</option>
+        <option value="added">Einlagerung</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="invTable">
+        <thead>
+          <tr>
+            <th>Name / Marke</th>
+            <th>Kategorie</th>
+            <th>MHD / Status</th>
+            <th>Menge</th>
+            <th>Aktionen</th>
+          </tr>
+        </thead>
+        <tbody id="invBody"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="invEmpty" hidden>
+      <svg viewBox="0 0 24 24" width="48" height="48"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+      <p>Kein Inventar gefunden</p>
+    </div>
+  </section>
+
+  <!-- PRODUKTVORLAGEN -->
+  <section id="page-templates" class="page">
+    <div class="page-header">
+      <h1>Produktvorlagen</h1>
+      <button class="btn btn-ok" onclick="Pages.templates.openAdd()">+ Neue Vorlage</button>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="tplSearch" class="search-input" placeholder="Suchen…" oninput="Pages.templates.filter()">
+    </div>
+    <div class="card-grid" id="tplGrid"></div>
+    <div class="empty-state" id="tplEmpty" hidden>
+      <svg viewBox="0 0 24 24" width="48" height="48"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>
+      <p>Keine Vorlagen vorhanden</p>
+    </div>
+
+  </section>
+
+  <!-- KATEGORIEN -->
+  <section id="page-categories" class="page">
+    <div class="page-header">
+      <h1>Kategorien</h1>
+      <button class="btn btn-ok" onclick="Pages.categories.openAdd()">+ Neue Kategorie</button>
+    </div>
+    <div class="cat-grid" id="catGrid"></div>
+    <div class="empty-state" id="catEmpty" hidden>
+      <svg viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="10"/></svg>
+      <p>Keine Kategorien vorhanden</p>
+    </div>
+  </section>
+
+  <!-- LAGERORTE -->
+  <section id="page-locations" class="page">
+    <div class="page-header">
+      <h1>Lagerorte</h1>
+      <button class="btn btn-ok" onclick="Pages.locations.openAdd()">+ Neuer Lagerort</button>
+    </div>
+    <div id="locList" class="cat-grid"></div>
+    <div class="empty-state" id="locEmpty" hidden>
+      <svg viewBox="0 0 24 24" width="48" height="48"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <p>Keine Lagerorte vorhanden</p>
+    </div>
+  </section>
+
+  <!-- EINKAUFSLISTE -->
+  <section id="page-shopping" class="page">
+    <div class="page-header">
+      <h1>Einkaufsliste</h1>
+      <button class="btn btn-ok" onclick="Pages.shopping.openAdd()">+ Hinzufügen</button>
+    </div>
+    <div class="toolbar">
+      <select id="shopCatFilter" class="select" onchange="Pages.shopping.filter()"><option value="">Alle Kategorien</option></select>
+      <select id="shopStatusFilter" class="select" onchange="Pages.shopping.filter()">
+        <option value="">Alle</option>
+        <option value="open">Offen</option>
+        <option value="bought">Gekauft</option>
+      </select>
+    </div>
+    <div id="shopList" class="shop-list"></div>
+    <div class="empty-state" id="shopEmpty" hidden>
+      <svg viewBox="0 0 24 24" width="48" height="48"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/></svg>
+      <p>Einkaufsliste ist leer</p>
+    </div>
+  </section>
+
+  <!-- DESIGN -->
+  <section id="page-design" class="page">
+    <div class="page-header">
+      <h1>Design</h1>
+      <div class="btn-group">
+        <button class="btn" onclick="Pages.design.exportTheme()">Export</button>
+        <button class="btn" onclick="Pages.design.importTheme()">Import</button>
+        <button class="btn btn-danger" onclick="Pages.design.resetDefaults()">Zurücksetzen</button>
+        <button class="btn btn-ok" onclick="Pages.design.save()">Speichern</button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="card">
+          <div class="card-title">Farben</div>
+          <div id="designColorFields" class="form-grid"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Schriftgrößen</div>
+          <div id="designFontFields" class="form-grid"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Layout</div>
+          <div id="designLayoutFields" class="form-grid"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Verhalten</div>
+          <div id="designBehaviorFields" class="form-grid"></div>
+        </div>
+      </div>
+      <div class="card design-preview-card">
+        <div class="card-title">Vorschau</div>
+        <div id="designPreview" class="design-preview"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SYSTEM -->
+  <section id="page-system" class="page">
+    <div class="page-header"><h1>System</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Gerät &amp; Haushalt</div>
+        <form class="form-stack" onsubmit="Pages.system.saveDeviceConfig(event)">
+          <div class="form-field">
+            <label>Haushalt</label>
+            <input type="text" id="cfgHousehold" class="input" placeholder="Standard">
+          </div>
+          <div class="form-field">
+            <label>Abkürzung <span class="muted" style="font-weight:normal;font-size:.8rem">(im Inventar, max. 5 Zeichen)</span></label>
+            <input type="text" id="cfgHouseholdAbbr" class="input" placeholder="z.B. Hm." maxlength="5" style="width:120px">
+          </div>
+          <div class="form-field">
+            <label>Gerätename</label>
+            <input type="text" id="cfgDeviceName" class="input" placeholder="z.B. Küche, Keller">
+          </div>
+          <div class="form-field">
+            <label>Display-Standby</label>
+            <select id="cfgStandby" class="input">
+              <option value="0">Nie</option>
+              <option value="120">2 Minuten</option>
+              <option value="300">5 Minuten</option>
+            </select>
+          </div>
+          <p class="muted" style="font-size:.8rem;margin:0">Der Haushaltsname erscheint auf gedruckten Etiketten.</p>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Aktionen</div>
+        <div class="btn-group-v">
+          <button class="btn btn-warn" onclick="Pages.system.restart()">Neustart</button>
+          <button class="btn btn-danger" onclick="Pages.system.factoryReset()">Werksreset</button>
+          <button class="btn btn-danger" onclick="Pages.system.formatFS()">LittleFS formatieren</button>
+          <button class="btn" onclick="Pages.system.clearScanLog()">Scanlog löschen</button>
+          <button class="btn" onclick="Pages.system.clearCache()">Cache löschen</button>
+        </div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Push-Benachrichtigungen (ntfy)</div>
+        <form class="form-stack" onsubmit="Pages.system.saveNtfy(event)">
+          <div class="form-field">
+            <label>ntfy-Server <span class="muted" style="font-weight:normal;font-size:.8rem">(leer = ntfy.sh)</span></label>
+            <input type="url" id="cfgNtfyUrl" class="input" placeholder="https://ntfy.sh">
+          </div>
+          <div class="form-field">
+            <label>Topic <span class="muted" style="font-weight:normal;font-size:.8rem">(leer = deaktiviert)</span></label>
+            <input type="text" id="cfgNtfyTopic" class="input" placeholder="mein-scanner-abc123">
+          </div>
+          <div class="form-field">
+            <label>Warnung ab (Tage vor Ablauf)</label>
+            <input type="number" id="cfgNtfyDays" class="input" min="1" max="30" value="3" style="width:100px">
+          </div>
+          <p class="muted" style="font-size:.8rem;margin:0">ntfy-App installieren und Topic abonnieren. Pr&uuml;fung alle 6 Stunden.</p>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Lautstärke</div>
+        <div class="form-field">
+          <label>Lautstärke (%)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="range" id="audioVolume" min="0" max="100" value="85" style="flex:1" oninput="document.getElementById('audioVolLabel').textContent=this.value+'%'">
+            <span id="audioVolLabel" style="min-width:38px;text-align:right">85%</span>
+            <button type="button" class="btn" style="white-space:nowrap" onclick="Pages.system.setVolume()">Setzen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Geräteinformationen</div>
+        <dl class="info-list" id="sysInfoList"></dl>
+      </div>
+      <div class="card">
+        <div class="card-title">Speichernutzung</div>
+        <div id="sysStorageInfo"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NETZWERK -->
+  <section id="page-network" class="page">
+    <div class="page-header"><h1>Netzwerk</h1></div>
+    <div class="grid-2">
+      <div>
+        <div class="card">
+          <div class="card-title">WLAN-Verbindung</div>
+          <div id="wifiStatus" class="status-badge-row"></div>
+          <form id="wifiForm" class="form-stack" onsubmit="Pages.network.connectWifi(event)" novalidate>
+            <div class="form-field">
+              <label>SSID</label>
+              <div class="input-row">
+                <input type="text" id="wifiSsid" name="ssid" class="input" placeholder="SSID">
+                <button type="button" class="btn btn-sm" onclick="Pages.network.scanWifi()">Scannen</button>
+              </div>
+            </div>
+            <div class="form-field">
+              <label>Passwort</label>
+              <input type="password" id="wifiPass" name="password" class="input" placeholder="Passwort">
+            </div>
+            <button type="submit" class="btn btn-ok">Verbinden</button>
+          </form>
+          <div id="wifiScanResults" class="scan-results" hidden></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Access Point</div>
+          <form id="apForm" class="form-stack" onsubmit="Pages.network.saveAP(event)">
+            <div class="form-field"><label>AP SSID</label><input type="text" id="apSsid" class="input" placeholder="ESP32-Scanner"></div>
+            <div class="form-field"><label>AP Passwort</label><input type="password" id="apPass" class="input" placeholder="Passwort"></div>
+            <button type="submit" class="btn btn-ok">Speichern</button>
+          </form>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title">NTP / Zeit</div>
+          <form id="ntpForm" class="form-stack" onsubmit="Pages.network.saveNtp(event)">
+            <div class="form-field"><label>NTP-Server</label><input type="text" id="ntpServer" class="input" placeholder="pool.ntp.org"></div>
+            <div class="form-field"><label>Zeitzone</label><input type="text" id="ntpTimezone" class="input" placeholder="CET-1CEST,M3.5.0,M10.5.0/3"></div>
+            <div class="form-field"><label>Aktuelle Zeit</label><div id="ntpCurrentTime" class="value-display">—</div></div>
+            <button type="submit" class="btn btn-ok">Speichern</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DRUCKER -->
+  <section id="page-printer" class="page">
+    <div class="page-header"><h1>Drucker</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Einstellungen</div>
+        <form id="printerForm" class="form-stack" onsubmit="Pages.printer.save(event)">
+          <div class="form-field"><label>Baudrate</label>
+            <select id="prBaud" class="select"><option value="9600" selected>9600</option><option value="19200">19200</option><option value="38400">38400</option><option value="57600">57600</option><option value="115200">115200</option></select>
+          </div>
+          <div class="form-field"><label>Nachlauf (Dots, 8 Dots ≈ 1 mm)</label><input type="number" id="prPostFeed" class="input" value="86" min="0"></div>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title">Test</div>
+          <button type="button" class="btn btn-ok" onclick="Pages.printer.testLabel()">Testlabel drucken</button>
+          <div class="card-title" style="margin-top:12px">Status</div>
+          <div id="printerStatus" class="status-badge-row"></div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- MANUELLES ETIKETT -->
+  <section id="page-manuallabel" class="page">
+    <div class="page-header"><h1>Manuelles Etikett</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Text</div>
+        <div class="form-stack">
+          <div class="form-field">
+            <label>Inhalt (eine Zeile pro Druckzeile)</label>
+            <textarea id="mlText" class="input" rows="6" placeholder="Zeile 1&#10;Zeile 2&#10;Zeile 3"></textarea>
+          </div>
+          <div class="form-field">
+            <label>Ausrichtung</label>
+            <div style="display:flex;gap:16px;padding:4px 0">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mlAlign" value="left" checked> Linksbündig</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mlAlign" value="center"> Zentriert</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="btn btn-ok" onclick="Pages.manuallabel.print()">Etikett drucken</button>
+            <button type="button" class="btn" onclick="document.getElementById('mlText').value=''">Löschen</button>
+          </div>
+          <div id="mlResult" class="value-display mono"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Hinweis</div>
+        <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.5">
+          Schriftgröße und Zeilenabstand werden automatisch berechnet, sodass das Etikett dieselbe Papierlänge hat wie ein reguläres Inventar-Etikett.<br><br>
+          Wenige Zeilen → große Schrift (doppelte Höhe ab 2 Zeilen).<br>
+          Viele Zeilen → kleinere Schrift mit engem Abstand.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCANNER -->
+  <section id="page-scanner" class="page">
+    <div class="page-header"><h1>Scanner</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Bluetooth HID Scanner</div>
+        <form id="scannerForm" class="form-stack" onsubmit="Pages.scanner.save(event)">
+          <input type="hidden" id="scanMode" value="ble_hid">
+          <div class="form-field"><label>Auto-Reconnect</label><label class="switch"><input type="checkbox" id="scanAutoReconnect" checked><span class="slider"></span></label></div>
+          <div class="form-field"><label>Inaktivitäts-Timeout</label><div style="display:flex;align-items:center;gap:8px"><input type="number" id="scanIdleTimeout" class="input" min="0" max="120" style="width:80px" placeholder="0"><span class="muted">Min. (0 = aus)</span></div></div>
+          <div class="form-field"><label>Status</label><div id="scanBleStatus" class="value-display">—</div></div>
+          <div class="form-field"><label>Verbundenes Gerät</label><div id="scanBleDevice" class="value-display">—</div></div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-sm" onclick="Pages.scanner.bleScan()">Bluetooth Suche</button>
+            <button type="button" class="btn btn-sm" onclick="Pages.scanner.bleDisconnect()">Trennen</button>
+          </div>
+          <div id="scanBleResults" class="scan-results" hidden></div>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Letzter Scan</div>
+        <div id="scanLastResult" class="value-display mono">—</div>
+        <div class="card-title" style="margin-top:16px">Testscan</div>
+        <div id="scanTestResult" class="value-display mono">Warte…</div>
+        <button class="btn" style="margin-top:8px" onclick="Pages.scanner.startTest()">Testscan starten</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- MQTT -->
+  <section id="page-mqtt" class="page">
+    <div class="page-header"><h1>MQTT</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Einstellungen</div>
+        <form id="mqttForm" class="form-stack" onsubmit="Pages.mqtt.save(event)">
+          <div class="form-field"><label>Host</label><input type="text" id="mqttHost" class="input" placeholder="192.168.1.100"></div>
+          <div class="form-field"><label>Port</label><input type="number" id="mqttPort" class="input" value="1883" min="1" max="65535"></div>
+          <div class="form-field"><label>Benutzername</label><input type="text" id="mqttUser" class="input" autocomplete="off"></div>
+          <div class="form-field"><label>Passwort</label><input type="password" id="mqttPass" class="input" autocomplete="off"></div>
+          <div class="form-field"><label>Topic Prefix</label><input type="text" id="mqttPrefix" class="input" placeholder="scanner/kueche"></div>
+          <div class="form-field"><label>Home Assistant Discovery</label><label class="switch"><input type="checkbox" id="mqttHaDisc"><span class="slider"></span></label></div>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Status &amp; Test</div>
+        <div id="mqttStatus" class="status-badge-row"></div>
+        <button class="btn" style="margin-top:16px" onclick="Pages.mqtt.testConnection()">Verbindung testen</button>
+        <div class="card-title" style="margin-top:16px">Topics</div>
+        <div id="mqttTopics" class="topic-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TELEGRAM -->
+  <section id="page-telegram" class="page">
+    <div class="page-header"><h1>Telegram</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Einstellungen</div>
+        <form id="telegramForm" class="form-stack" onsubmit="Pages.telegram.save(event)">
+          <div class="form-field"><label>Bot-Token</label><input type="text" id="tgToken" class="input" placeholder="123456:ABC…" autocomplete="off"></div>
+          <div class="form-field"><label>Chat-ID</label><input type="text" id="tgChatId" class="input" placeholder="-100123456"></div>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Test &amp; Status</div>
+        <div id="telegramStatus" class="status-badge-row"></div>
+        <button class="btn btn-ok" style="margin-top:16px" onclick="Pages.telegram.sendTest()">Testnachricht senden</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SERVER-SYNC -->
+  <section id="page-serversync" class="page">
+    <div class="page-header"><h1>Server-Sync</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Verbindung</div>
+        <form id="syncForm" class="form-stack" onsubmit="Pages.serversync.save(event)">
+          <div class="form-field"><label>Server IP</label><input type="text" id="syncIp" class="input" placeholder="192.168.1.100"></div>
+          <div class="form-field"><label>Benutzer</label><input type="text" id="syncUser" class="input" placeholder="lebensmittel_sync" autocomplete="off"></div>
+          <div class="form-field"><label>Passwort</label><input type="password" id="syncPass" class="input" autocomplete="off"></div>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Status &amp; Aktionen</div>
+        <div id="syncStatus" class="status-badge-row"></div>
+        <div class="form-field" style="margin-top:16px"><label>Letzte Synchronisation</label><div id="syncLastSync" class="value-display">—</div></div>
+        <div class="btn-group-v" style="margin-top:16px">
+          <button id="btnTestSync" class="btn btn-ok" onclick="Pages.serversync.testConnection()">Verbindung testen</button>
+          <button id="btnShowQueue" class="btn" onclick="Pages.serversync.showQueue()">Queue anzeigen</button>
+          <button class="btn btn-danger" onclick="Pages.serversync.clearQueue()">Queue löschen</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="syncQueueCard" hidden>
+      <div class="card-title">Sync-Queue</div>
+      <div id="syncQueue" class="item-list"></div>
+    </div>
+
+    <!-- SETUP WIZARD -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title" style="cursor:pointer;user-select:none" onclick="Pages.serversync.toggleSetup()">
+        &#9881; Datenbank einrichten
+        <span id="syncSetupChevron" style="float:right;transition:transform .2s">&#9660;</span>
+      </div>
+      <div id="syncSetupBody" hidden>
+        <p class="muted" style="margin:0 0 14px;font-size:.85rem;line-height:1.5">
+          Legt die Datenbank <strong>Lebensmittel_Scanner</strong> und einen dedizierten Sync-Benutzer an.<br>
+          Root-Zugangsdaten werden <strong>nie</strong> gespeichert – nur einmalig weitergeleitet.<br>
+          Andere Datenbanken (z.&nbsp;B. Kodi) werden nicht berührt.
+        </p>
+
+        <!-- Step 1: Eingabe -->
+        <div id="syncWizStep1">
+          <div class="form-stack">
+            <div class="form-field">
+              <label>MySQL Server IP</label>
+              <input type="text" id="wizHost" class="input" placeholder="192.168.1.100">
+            </div>
+            <div class="form-field">
+              <label>Root-Benutzer</label>
+              <input type="text" id="wizRootUser" class="input" placeholder="root" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label>Root-Passwort</label>
+              <input type="password" id="wizRootPass" class="input" autocomplete="off">
+            </div>
+            <div class="form-field">
+              <label>Neues Sync-Benutzer Passwort</label>
+              <input type="password" id="wizSyncPass" class="input" autocomplete="new-password">
+            </div>
+            <div class="form-field">
+              <label>Passwort wiederholen</label>
+              <input type="password" id="wizSyncPass2" class="input" autocomplete="new-password">
+            </div>
+            <button class="btn btn-ok" onclick="Pages.serversync.runSetup()">Einrichten</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Fortschritt -->
+        <div id="syncWizStep2" hidden style="text-align:center;padding:24px 0">
+          <div style="display:inline-block;width:42px;height:42px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite"></div>
+          <p id="wizProgress" style="color:var(--text-muted);margin:12px 0 0">Verbinde mit Server…</p>
+        </div>
+
+        <!-- Step 3: Ergebnis -->
+        <div id="syncWizStep3" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATISTIKEN -->
+  <section id="page-statistics" class="page">
+    <div class="page-header"><h1>Statistiken</h1></div>
+    <div class="stat-grid" id="statsTopCards"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Häufig eingelagert</div>
+        <div id="statsTopProducts" class="bar-chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Kategorienutzung</div>
+        <div id="statsCatUsage" class="bar-chart"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Speicherverlauf</div>
+      <div id="statsStorageStats" class="table-wrap">
+        <table class="data-table" id="statsTable">
+          <thead><tr><th>Datum</th><th>Eingelagert</th><th>Ausgelagert</th><th>Weggeworfen</th></tr></thead>
+          <tbody id="statsBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Scanlog</div>
+      <div class="table-wrap">
+        <table class="data-table" id="scanlogTable">
+          <thead><tr><th>Zeit</th><th>Barcode</th><th>Aktion</th><th>Produkt</th></tr></thead>
+          <tbody id="scanlogBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- OTA UPDATE -->
+  <section id="page-ota" class="page">
+    <div class="page-header"><h1>OTA Update</h1></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Update per Datei</div>
+        <form id="otaFileForm" class="form-stack" onsubmit="Pages.ota.uploadFile(event)">
+          <div class="form-field"><label>Firmware (.bin)</label>
+            <input type="file" id="otaFile" class="input" accept=".bin" required>
+          </div>
+          <button type="submit" class="btn btn-ok">Upload &amp; Flashen</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Update per URL</div>
+        <form id="otaUrlForm" class="form-stack" onsubmit="Pages.ota.updateFromUrl(event)">
+          <div class="form-field"><label>URL (HTTPS)</label><input type="url" id="otaUrl" class="input" placeholder="https://…/firmware.bin" required></div>
+          <div class="form-field"><label>GitHub Release (neueste Version)</label>
+            <div class="input-row">
+              <input type="text" id="otaGithub" class="input" placeholder="user/repo">
+              <button type="button" class="btn btn-sm" onclick="Pages.ota.fetchGithubRelease()">Laden</button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-ok">Update starten</button>
+        </form>
+      </div>
+    </div>
+    <div class="card" id="otaProgressCard" hidden>
+      <div class="card-title">Update-Fortschritt</div>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="otaProgress" style="width:0%"></div>
+      </div>
+      <div id="otaProgressText" class="value-display">0%</div>
+      <div id="otaLog" class="log-output" style="margin-top:12px; max-height:200px"></div>
+    </div>
+  </section>
+
+  <!-- LOGS -->
+  <section id="page-logs" class="page">
+    <div class="page-header">
+      <h1>Logs</h1>
+      <div class="btn-group">
+        <button class="btn btn-sm" onclick="Pages.logs.download()">Download</button>
+        <button class="btn btn-sm btn-danger" onclick="Pages.logs.clear()">Löschen</button>
+        <label class="switch-label"><label class="switch"><input type="checkbox" id="logAutoScroll" checked><span class="slider"></span></label>Auto-Scroll</label>
+      </div>
+    </div>
+    <div class="toolbar">
+      <label class="filter-chip"><input type="checkbox" value="INFO" checked onchange="Pages.logs.applyFilter()"> INFO</label>
+      <label class="filter-chip"><input type="checkbox" value="WARN" checked onchange="Pages.logs.applyFilter()"> WARN</label>
+      <label class="filter-chip"><input type="checkbox" value="ERROR" checked onchange="Pages.logs.applyFilter()"> ERROR</label>
+      <label class="filter-chip"><input type="checkbox" value="DEBUG" onchange="Pages.logs.applyFilter()"> DEBUG</label>
+    </div>
+    <div class="log-output" id="logOutput"></div>
+  </section>
+
+</main><!-- main-content -->
+
+<!-- ===== BOTTOM NAV (Mobile) ===== -->
+<nav class="bottom-nav" id="bottomNav">
+  <a href="#dashboard"  class="bnav-item" data-page="dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Dashboard</span></a>
+  <a href="#inventory"  class="bnav-item" data-page="inventory"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span>Inventar</span></a>
+  <a href="#shopping"   class="bnav-item" data-page="shopping"><svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>Einkauf</span></a>
+  <a href="#statistics" class="bnav-item" data-page="statistics"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Statistik</span></a>
+  <button class="bnav-item bnav-more" onclick="App.toggleSidebar()"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg><span>Mehr</span></button>
+</nav>
+
+<!-- ===== MODAL ===== -->
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalTitle">Dialog</h2>
+      <button class="modal-close" onclick="Modal.hide()" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<!-- ===== TOAST CONTAINER ===== -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ===== LOADING OVERLAY ===== -->
+<div class="loading-overlay" id="loadingOverlay" hidden>
+  <div class="spinner"></div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
