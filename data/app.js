@@ -504,33 +504,96 @@ Pages.inventory = {
       return;
     }
     empty.hidden = true;
-    tbody.innerHTML = items.map((i, idx) => {
-      const days = daysUntil(i.expiryDate);
-      const locBadge = i.location
-        ? `<span class="badge" style="background:var(--surface2);color:var(--subtext);margin-right:4px">📍 ${esc(i.location)}</span>`
-        : '';
-      const hhAbbr = State.householdAbbr || '';
-      const hhBadge = hhAbbr
-        ? `<span class="badge" style="background:var(--surface2);color:var(--subtext)">🏠 ${esc(hhAbbr)}</span>`
-        : '';
-      return `
-        <tr>
-          <td>
-            <div style="font-weight:600">${esc(i.name)}</div>
-            ${i.brand ? `<div style="font-size:.75rem;color:var(--subtext)">${esc(i.brand)}</div>` : ''}
-            ${locBadge || hhBadge ? `<div style="margin-top:4px">${locBadge}${hhBadge}</div>` : ''}
-          </td>
-          <td>${i.category ? `<span class="badge badge-info">${esc(i.category)}</span>` : '—'}</td>
-          <td>${esc(i.quantity || 1)}</td>
-          <td>${formatDate(i.expiryDate)}</td>
-          <td>${expiryBadge(days)}</td>
-          <td class="actions">
-            <button class="btn btn-sm" onclick="Pages.inventory.edit(${idx})">Bearb.</button>
-            <button class="btn btn-sm btn-danger" onclick="Pages.inventory.remove(${idx})">Löschen</button>
-          </td>
-        </tr>`;
-    }).join('');
-    this._filtered = items;
+
+    // Build groups by name
+    const groupMap = new Map();
+    for (const i of items) {
+      const key = i.name || i.barcode || '?';
+      if (!groupMap.has(key)) groupMap.set(key, []);
+      groupMap.get(key).push(i);
+    }
+
+    // Sort groups by earliest expiryDate
+    const getExpiry = it => it.expiryDate || it.expiry_date || it.mhd || '';
+    const dmyToInt = s => {
+      if (!s || s.length !== 10) return 99999999;
+      return parseInt(s.slice(6)) * 10000 + parseInt(s.slice(3,5)) * 100 + parseInt(s.slice(0,2));
+    };
+    const sortedGroups = [...groupMap.entries()].map(([name, members]) => {
+      members.sort((a, b) => dmyToInt(getExpiry(a)) - dmyToInt(getExpiry(b)));
+      return { name, members, earliest: getExpiry(members[0]) };
+    }).sort((a, b) => dmyToInt(a.earliest) - dmyToInt(b.earliest));
+
+    const hhAbbr = State.householdAbbr || '';
+
+    let html = '';
+    sortedGroups.forEach((group, gi) => {
+      const isSolo = group.members.length === 1;
+      const days   = daysUntil(group.earliest);
+      const dClass = days < 0 ? 'danger' : days < 7 ? 'warn' : 'ok';
+      const dLabel = days < 0 ? `${Math.abs(days)}d abg.` : days === 0 ? 'Heute' : `${days}d`;
+      const cat    = group.members[0].category || '';
+      const brand  = group.members[0].brand || '';
+
+      // Group header row (always shown)
+      html += `<tr class="inv-group-head" onclick="Pages.inventory.toggleGroup(${gi})" style="cursor:pointer">
+        <td>
+          <div style="font-weight:600">${esc(group.name)}
+            ${!isSolo ? `<span class="badge" style="background:var(--accent);color:#000;margin-left:6px">${group.members.length}×</span>` : ''}
+          </div>
+          ${brand ? `<div style="font-size:.75rem;color:var(--subtext)">${esc(brand)}</div>` : ''}
+        </td>
+        <td>${cat ? `<span class="badge badge-info">${esc(cat)}</span>` : '—'}</td>
+        <td><span class="badge badge-${dClass}">${dLabel}</span><div style="font-size:.75rem;color:var(--subtext)">${esc(group.earliest)}</div></td>
+        <td style="text-align:center">${group.members.length}</td>
+        <td>${isSolo ? `
+          <div class="btn-group">
+            <button class="btn btn-sm" onclick="event.stopPropagation();Pages.inventory.edit(Pages.inventory._itemIndex(group.members[0]))">Bearb.</button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();Pages.inventory.remove(Pages.inventory._itemIndex(group.members[0]))">Löschen</button>
+          </div>` : `<span style="color:var(--subtext);font-size:.8rem">▶ Details</span>`}
+        </td>
+      </tr>`;
+
+      // Expanded sub-rows (hidden by default for groups with >1 item)
+      if (!isSolo) {
+        html += `<tr id="inv-group-${gi}" class="inv-sub-rows" hidden>
+          <td colspan="5" style="padding:0">
+            <table style="width:100%;border-collapse:collapse">`;
+        group.members.forEach(m => {
+          const mIdx = Pages.inventory._itemIndex(m);
+          const md = daysUntil(getExpiry(m));
+          const mc = md < 0 ? 'danger' : md < 7 ? 'warn' : 'ok';
+          const ml = md < 0 ? `${Math.abs(md)}d abg.` : md === 0 ? 'Heute' : `${md}d`;
+          const locBadge = m.location ? `<span class="badge" style="background:var(--surface2);color:var(--subtext)">📍 ${esc(m.location)}</span>` : '';
+          html += `<tr style="border-top:1px solid var(--border)">
+            <td style="padding:6px 12px;width:40%">
+              <span style="font-size:.8rem;color:var(--subtext)">${locBadge} ${esc(m.labelBarcode || '')}</span>
+            </td>
+            <td style="padding:6px 12px"></td>
+            <td style="padding:6px 12px"><span class="badge badge-${mc}">${ml}</span> <span style="font-size:.8rem;color:var(--subtext)">${esc(getExpiry(m))}</span></td>
+            <td style="padding:6px 12px;text-align:center">1</td>
+            <td style="padding:6px 12px">
+              <div class="btn-group">
+                <button class="btn btn-sm" onclick="Pages.inventory.edit(${mIdx})">Bearb.</button>
+                <button class="btn btn-sm btn-danger" onclick="Pages.inventory.remove(${mIdx})">Löschen</button>
+              </div>
+            </td>
+          </tr>`;
+        });
+        html += `</table></td></tr>`;
+      }
+    });
+
+    tbody.innerHTML = html;
+  },
+
+  toggleGroup(gi) {
+    const row = document.getElementById(`inv-group-${gi}`);
+    if (row) row.hidden = !row.hidden;
+  },
+
+  _itemIndex(item) {
+    return State.inventory.indexOf(item);
   },
 
   _filtered: [],

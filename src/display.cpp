@@ -19,6 +19,8 @@
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>
 #include <qrcode.h>
+#include <algorithm>
+#include <vector>
 
 // ─────────────────── layout constants ────────────────────
 static constexpr int SCR_W  = DISPLAY_LANDSCAPE_WIDTH;   // 480
@@ -1077,6 +1079,54 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.fillSprite(C_BG);
     clear_regions();
 
+    // ── Build display groups (aggregate by name) ─────────────────────────────
+    struct DispGroup {
+        String name;
+        String brand;
+        String mhd;      // earliest MHD
+        int    count = 0;
+    };
+
+    // Convert "DD.MM.YYYY" → comparable long YYYYMMDD (0 if empty/invalid)
+    auto mhdKey = [](const String &s) -> long {
+        if (s.length() != 10) return 0;
+        return s.substring(6).toInt() * 10000L
+             + s.substring(3, 5).toInt() * 100L
+             + s.substring(0, 2).toInt();
+    };
+
+    std::vector<DispGroup> groups;
+    for (const auto &item : items) {
+        // Apply text filter
+        if (!filter.isEmpty()) {
+            String low = item.name; low.toLowerCase();
+            String f   = filter;   f.toLowerCase();
+            if (low.indexOf(f) < 0) continue;
+        }
+        bool found = false;
+        for (auto &g : groups) {
+            if (g.name == item.name) {
+                g.count++;
+                if (g.mhd.isEmpty() || mhdKey(item.expiryDate) < mhdKey(g.mhd))
+                    g.mhd = item.expiryDate;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            DispGroup ng;
+            ng.name  = item.name;
+            ng.brand = item.brand;
+            ng.mhd   = item.expiryDate;
+            ng.count = 1;
+            groups.push_back(ng);
+        }
+    }
+    // Sort by earliest MHD
+    std::sort(groups.begin(), groups.end(), [&mhdKey](const DispGroup &a, const DispGroup &b) {
+        return mhdKey(a.mhd) < mhdKey(b.mhd);
+    });
+
     // ── Header ──────────────────────────────────────────────
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
@@ -1117,48 +1167,56 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.drawString("Menge",  432,  col_y + 5);
     _spr.drawFastHLine(0, col_y + COL_H - 1, SCR_W, C_BORDER);
 
-    // ── Item rows ───────────────────────────────────────────
+    // ── Group rows ──────────────────────────────────────────
     static constexpr int ROW_H = 40, MAX_ROWS = 5;
     int list_y = HDR_H + SEARCH_H + COL_H, shown = 0;
-    int start = static_cast<int>(items.size()) - 1;
+    int start  = (int)groups.size() - 1;
     for (int i = start; i >= 0 && shown < MAX_ROWS; i--, shown++) {
-        const InventoryItem &item = items[i];
+        const DispGroup &g = groups[i];
         int ry = list_y + shown * ROW_H;
         uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
         _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
 
-        // Name line (font 2, up to 26 chars)
+        // Name (with count badge if >1)
         _spr.setTextColor(C_TEXT, row_bg);
         _spr.setTextFont(2);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(item.name, 26).c_str(), 8, ry + 11);
+        String label = trunc(g.name, 22);
+        _spr.drawString(label.c_str(), 8, ry + 11);
 
-        // Sub-line: household abbr + location (font 1, ASCII only)
-        String sub;
-        if (!hhAbbr.isEmpty()) sub = hhAbbr + " ";
-        if (!item.location.isEmpty()) sub += "| " + item.location;
-        if (!sub.isEmpty()) {
+        // Count badge (right of name)
+        if (g.count > 1) {
+            int tw = (int)_spr.textWidth(label.c_str()) + 12;
+            String cnt = String(g.count) + "x";
+            _spr.setTextColor(C_ACCENT, row_bg);
+            _spr.setTextFont(1);
+            _spr.setTextDatum(ML_DATUM);
+            _spr.drawString(cnt.c_str(), tw, ry + 10);
+        }
+
+        // Brand sub-line
+        if (!g.brand.isEmpty()) {
             _spr.setTextColor(C_SUBTEXT, row_bg);
             _spr.setTextFont(1);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(sub, 36).c_str(), 8, ry + 28);
+            _spr.drawString(trunc(g.brand, 28).c_str(), 8, ry + 27);
         }
 
-        // MHD + Qty
-        _spr.setTextColor(C_TEXT, row_bg);
-        _spr.setTextFont(2);
-        _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(item.expiryDate, 10).c_str(), 310, ry + ROW_H / 2);
-        _spr.setTextColor(C_ACCENT, row_bg);
-        _spr.drawString(String(item.quantity).c_str(), 432, ry + ROW_H / 2);
+        // MHD (right-aligned)
+        if (!g.mhd.isEmpty()) {
+            _spr.setTextColor(C_SUBTEXT, row_bg);
+            _spr.setTextFont(2);
+            _spr.setTextDatum(MR_DATUM);
+            _spr.drawString(g.mhd.c_str(), SCR_W - 8, ry + ROW_H / 2);
+        }
+
         _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
     }
-    if (items.empty()) {
+    if (groups.empty()) {
         _spr.setTextColor(C_SUBTEXT, C_BG);
         _spr.setTextFont(2);
         _spr.setTextDatum(MC_DATUM);
-        _spr.drawString(filter.isEmpty() ? "Keine Eintraege" : "Keine Treffer",
-                        SCR_W / 2, list_y + 60);
+        _spr.drawString(items.empty() ? "Leer" : "Keine Treffer", SCR_W / 2, HDR_H + SEARCH_H + COL_H + 60);
     }
     _homeState.inventoryCount = items.size();
     commit();
