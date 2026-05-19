@@ -405,6 +405,38 @@ char App::digitForAction(OnscreenAction action) const {
     }
 }
 
+// Converts "DD.MM.YYYY" to a sortable integer YYYYMMDD for date comparison.
+// Returns 0 for empty/invalid strings (treated as "no date").
+static long dmyToInt(const String &s) {
+    if (s.length() < 10) return 0;
+    return s.substring(6, 10).toInt() * 10000L
+         + s.substring(3, 5).toInt() * 100L
+         + s.substring(0, 2).toInt();
+}
+
+// Finds the earliest expiryDate among all items sharing the same product barcode,
+// excluding the item with the given labelBarcode. Returns "" if none found.
+static String findEarlierExpiry(const std::vector<InventoryItem> &items,
+                                const String &productBarcode,
+                                const String &excludeLabel,
+                                const String &thanDate) {
+    if (productBarcode.isEmpty() || thanDate.isEmpty()) return "";
+    long limit = dmyToInt(thanDate);
+    String earliest = "";
+    long earliestInt = LONG_MAX;
+    for (const auto &it : items) {
+        if (it.labelBarcode == excludeLabel) continue;
+        if (it.barcode != productBarcode)   continue;
+        if (it.expiryDate.isEmpty())        continue;
+        long v = dmyToInt(it.expiryDate);
+        if (v > 0 && v < limit && v < earliestInt) {
+            earliestInt = v;
+            earliest    = it.expiryDate;
+        }
+    }
+    return earliest;
+}
+
 static String normalizeSearch(const String &s) {
     String out = s;
     out.toLowerCase();
@@ -954,6 +986,18 @@ void App::handleScan(const ScanResult &scan) {
 
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
+
+        // Remember item details BEFORE removing (needed for FIFO check and result message)
+        String removedName, removedBarcode, removedExpiry;
+        for (const auto &it : inventory.items()) {
+            if (it.labelBarcode == scan.code) {
+                removedName    = it.name;
+                removedBarcode = it.barcode;
+                removedExpiry  = it.expiryDate;
+                break;
+            }
+        }
+
         bool removed = inventory.removeByLabel(scan.code);
         if (removed) {
             audio_obj.playCheckoutTone();
@@ -965,13 +1009,28 @@ void App::handleScan(const ScanResult &scan) {
             sdoc["timestamp"]    = (long)time(nullptr);
             String sp; serializeJson(sdoc, sp);
             sync_manager.enqueue("REMOVE_LABEL", sp);
+
+            // FIFO check: warn if a same-product item with an EARLIER expiry is still in storage
+            String olderExpiry = findEarlierExpiry(inventory.items(), removedBarcode, scan.code, removedExpiry);
+            if (!olderExpiry.isEmpty()) {
+                audio_obj.playWarningTone();
+                _resultTitle   = "ACHTUNG";
+                _resultMessage = "Ein aelterer Artikel ist noch eingelagert,\ndessen MHD endet am " + olderExpiry;
+                _resultSuccess = false;
+                _resultShownMs = 0; // kein Auto-Dismiss – Nutzer muss aktiv wegwischen
+                workflow       = WorkflowMode::RESULT;
+                display_obj.showResult(_resultTitle, _resultMessage, false);
+                return;
+            }
         } else {
             audio_obj.playErrorTone();
         }
         workflow = WorkflowMode::RESULT; _resultShownMs = millis();
         _resultSuccess = removed;
-        _resultTitle = removed ? "Ausgelagert" : "Nicht gefunden";
-        _resultMessage = removed ? scan.code : "Label ist nicht im Inventar";
+        _resultTitle   = removed ? "Ausgelagert" : "Nicht gefunden";
+        _resultMessage = removed
+            ? (removedName.isEmpty() ? scan.code : removedName)
+            : "Label ist nicht im Inventar";
         display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
         return;
     }
