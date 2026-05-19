@@ -149,6 +149,7 @@ private:
     // Keyboard entry state
     String   _kbText;                    // current keyboard input text
     String   _invFilter;                 // inventory list text filter
+    String   _invExpandedGroup;          // name of currently expanded inventory group (empty = none)
 
     // WiFi setup state
     std::vector<String> _wifiNets;

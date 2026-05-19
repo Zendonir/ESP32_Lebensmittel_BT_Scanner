@@ -129,6 +129,8 @@ static void draw_location_badge(int x_right = SCR_W - 8) {
 // WiFi status shared across all screens (set once by showHome, read by draw_wifi_dot)
 static bool _s_wifi_connected = false;
 
+static String _s_inv_group_names[5];  // group name at each rendered row (for tap lookup)
+
 // Draw WiFi dot top-right on any screen (center SCR_W-12, r=7)
 static void draw_wifi_dot() {
     uint16_t wc = _s_wifi_connected ? C_GREEN : C_RED;
@@ -1071,10 +1073,14 @@ void Display::showSdImportPrompt(const String &backupDate) {
     commit();
 }
 
+// Forward declaration (defined after showInventoryList near showCategoryTiles)
+static const OnscreenAction LIST_ACTIONS[7];
+
 // ─────────────────────────────────────────────────────────
 
 void Display::showInventoryList(const std::vector<InventoryItem> &items,
-                                const String &filter, const String &hhAbbr) {
+                                const String &filter, const String &hhAbbr,
+                                const String &expandedGroup) {
     if (!_initialized) return;
     _spr.fillSprite(C_BG);
     clear_regions();
@@ -1084,7 +1090,9 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         String name;
         String brand;
         String mhd;      // earliest MHD
-        int    count = 0;
+        int    count  = 0;
+        int    status = 0;  // 0=ok, 1=warn (<7d), 2=expired
+        std::vector<int> indices; // indices into items[] for expansion
     };
 
     // Convert "DD.MM.YYYY" → comparable long YYYYMMDD (0 if empty/invalid)
@@ -1095,30 +1103,50 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
              + s.substring(0, 2).toInt();
     };
 
+    // Compute today and warn threshold
+    time_t now_t  = time(nullptr);
+    struct tm now_tm, warn_tm;
+    localtime_r(&now_t, &now_tm);
+    long today = (long)(now_tm.tm_year + 1900) * 10000L
+               + (long)(now_tm.tm_mon + 1)     * 100L
+               + now_tm.tm_mday;
+    time_t warn_t = now_t + 7 * 86400;
+    localtime_r(&warn_t, &warn_tm);
+    long warnDay  = (long)(warn_tm.tm_year + 1900) * 10000L
+                  + (long)(warn_tm.tm_mon + 1)     * 100L
+                  + warn_tm.tm_mday;
+
     std::vector<DispGroup> groups;
-    for (const auto &item : items) {
+    for (int ii = 0; ii < (int)items.size(); ii++) {
+        const auto &item = items[ii];
         // Apply text filter
         if (!filter.isEmpty()) {
             String low = item.name; low.toLowerCase();
             String f   = filter;   f.toLowerCase();
             if (low.indexOf(f) < 0) continue;
         }
+        long key = mhdKey(item.expiryDate);
+        int  st  = (key > 0 && key < today) ? 2 : (key > 0 && key <= warnDay) ? 1 : 0;
+
         bool found = false;
         for (auto &g : groups) {
             if (g.name == item.name) {
                 g.count++;
-                if (g.mhd.isEmpty() || mhdKey(item.expiryDate) < mhdKey(g.mhd))
-                    g.mhd = item.expiryDate;
+                if (g.mhd.isEmpty() || key < mhdKey(g.mhd)) g.mhd = item.expiryDate;
+                if (st > g.status) g.status = st;
+                g.indices.push_back(ii);
                 found = true;
                 break;
             }
         }
         if (!found) {
             DispGroup ng;
-            ng.name  = item.name;
-            ng.brand = item.brand;
-            ng.mhd   = item.expiryDate;
-            ng.count = 1;
+            ng.name    = item.name;
+            ng.brand   = item.brand;
+            ng.mhd     = item.expiryDate;
+            ng.count   = 1;
+            ng.status  = st;
+            ng.indices.push_back(ii);
             groups.push_back(ng);
         }
     }
@@ -1169,57 +1197,146 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
 
     // ── Group rows ──────────────────────────────────────────
     static constexpr int ROW_H = 40, MAX_ROWS = 5;
-    int list_y = HDR_H + SEARCH_H + COL_H, shown = 0;
-    int start  = (int)groups.size() - 1;
-    for (int i = start; i >= 0 && shown < MAX_ROWS; i--, shown++) {
-        const DispGroup &g = groups[i];
-        int ry = list_y + shown * ROW_H;
-        uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
-        _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
+    int list_y = HDR_H + SEARCH_H + COL_H;
 
-        // Name (with count badge if >1)
-        _spr.setTextColor(C_TEXT, row_bg);
+    // Clear group name cache
+    for (int r = 0; r < 5; r++) _s_inv_group_names[r] = "";
+
+    // Check for expanded group
+    int expandedIdx = -1;
+    for (int gi = 0; gi < (int)groups.size(); gi++) {
+        if (groups[gi].name == expandedGroup) { expandedIdx = gi; break; }
+    }
+
+    if (expandedIdx >= 0) {
+        // ── Expanded view: header + individual items ─────────
+        const DispGroup &eg = groups[expandedIdx];
+        static constexpr uint16_t STATUS_COL[3] = { C_ACCENT, C_YELLOW, C_RED };
+        uint16_t sc = STATUS_COL[eg.status];
+
+        // Header row (tapping collapses = LIST_ITEM_0)
+        _spr.fillRect(0, list_y, SCR_W, ROW_H, C_SURFACE);
+        _spr.fillRect(0, list_y, 4, ROW_H, sc);
+        _spr.setTextColor(sc, C_SURFACE);
         _spr.setTextFont(2);
         _spr.setTextDatum(ML_DATUM);
-        String label = trunc(g.name, 22);
-        _spr.drawString(label.c_str(), 8, ry + 11);
-
-        // Count badge (right of name)
-        if (g.count > 1) {
-            int tw = (int)_spr.textWidth(label.c_str()) + 12;
-            String cnt = String(g.count) + "x";
-            _spr.setTextColor(C_ACCENT, row_bg);
+        _spr.drawString(("\x15 " + trunc(eg.name, 20)).c_str(), 10, list_y + 11);
+        if (eg.count > 1) {
+            _spr.setTextColor(C_SUBTEXT, C_SURFACE);
             _spr.setTextFont(1);
-            _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(cnt.c_str(), tw, ry + 10);
+            _spr.drawString((String(eg.count) + "x").c_str(), 10, list_y + 27);
         }
+        _spr.drawFastHLine(0, list_y + ROW_H - 1, SCR_W, C_BORDER);
+        add_region(0, list_y, SCR_W, ROW_H, OnscreenAction::LIST_ITEM_0);
+        _s_inv_group_names[0] = eg.name;  // row 0 = header (used to detect collapse)
 
-        // Brand sub-line
-        if (!g.brand.isEmpty()) {
-            _spr.setTextColor(C_SUBTEXT, row_bg);
-            _spr.setTextFont(1);
-            _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(g.brand, 28).c_str(), 8, ry + 27);
-        }
+        // Individual item sub-rows
+        static constexpr int SUB_H = 38;
+        int maxSub = (SCR_H - list_y - ROW_H) / SUB_H;
+        if (maxSub > 6) maxSub = 6;
+        int subShown = 0;
+        for (int ii = 0; ii < (int)eg.indices.size() && subShown < maxSub; ii++, subShown++) {
+            const InventoryItem &it = items[eg.indices[ii]];
+            int ry = list_y + ROW_H + subShown * SUB_H;
+            uint16_t rb = (subShown % 2 == 0) ? C_SURFACE : C_SURFACE2;
+            _spr.fillRect(0, ry, SCR_W, SUB_H, rb);
 
-        // MHD (right-aligned)
-        if (!g.mhd.isEmpty()) {
-            _spr.setTextColor(C_SUBTEXT, row_bg);
+            long k = mhdKey(it.expiryDate);
+            uint16_t mc = (k > 0 && k < today) ? C_RED : (k > 0 && k <= warnDay) ? C_YELLOW : C_GREEN;
+            _spr.fillRect(0, ry, 4, SUB_H, mc);
+
+            _spr.setTextColor(C_TEXT, rb);
             _spr.setTextFont(2);
-            _spr.setTextDatum(MR_DATUM);
-            _spr.drawString(g.mhd.c_str(), SCR_W - 8, ry + ROW_H / 2);
-        }
+            _spr.setTextDatum(ML_DATUM);
+            _spr.drawString(it.expiryDate.c_str(), 10, ry + 12);
 
-        _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
+            if (!it.location.isEmpty()) {
+                _spr.setTextColor(C_SUBTEXT, rb);
+                _spr.setTextFont(1);
+                _spr.drawString(trunc(it.location, 18).c_str(), 10, ry + 27);
+            }
+
+            // Label barcode right-aligned (shortened)
+            String lb = it.labelBarcode;
+            if (lb.length() > 14) lb = lb.substring(lb.length() - 14);
+            _spr.setTextColor(C_SUBTEXT, rb);
+            _spr.setTextFont(1);
+            _spr.setTextDatum(MR_DATUM);
+            _spr.drawString(lb.c_str(), SCR_W - 8, ry + SUB_H / 2);
+
+            _spr.drawFastHLine(0, ry + SUB_H - 1, SCR_W, C_BORDER);
+        }
+    } else {
+        // ── Collapsed group list ─────────────────────────────
+        static constexpr uint16_t STATUS_COL[3] = { C_ACCENT, C_YELLOW, C_RED };
+        int shown = 0;
+        int start = (int)groups.size() - 1;
+        for (int i = start; i >= 0 && shown < MAX_ROWS; i--, shown++) {
+            const DispGroup &g = groups[i];
+            int ry = list_y + shown * ROW_H;
+            uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
+            uint16_t sc     = STATUS_COL[g.status];
+            _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
+            _spr.fillRect(0, ry, 4, ROW_H, sc);  // colored left bar
+
+            // Name
+            _spr.setTextColor(C_TEXT, row_bg);
+            _spr.setTextFont(2);
+            _spr.setTextDatum(ML_DATUM);
+            String label = trunc(g.name, 22);
+            _spr.drawString(label.c_str(), 10, ry + 11);
+
+            // Count badge
+            if (g.count > 1) {
+                int tw = (int)_spr.textWidth(label.c_str()) + 14;
+                _spr.setTextColor(sc, row_bg);
+                _spr.setTextFont(1);
+                _spr.drawString((String(g.count) + "x").c_str(), tw, ry + 10);
+            }
+
+            // Brand sub-line
+            if (!g.brand.isEmpty()) {
+                _spr.setTextColor(C_SUBTEXT, row_bg);
+                _spr.setTextFont(1);
+                _spr.drawString(trunc(g.brand, 28).c_str(), 10, ry + 27);
+            }
+
+            // MHD right-aligned
+            if (!g.mhd.isEmpty()) {
+                _spr.setTextColor(C_SUBTEXT, row_bg);
+                _spr.setTextFont(2);
+                _spr.setTextDatum(MR_DATUM);
+                _spr.drawString(g.mhd.c_str(), SCR_W - 8, ry + ROW_H / 2);
+            }
+
+            _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
+            add_region(0, ry, SCR_W, ROW_H, LIST_ACTIONS[shown]);
+            _s_inv_group_names[shown] = g.name;
+        }
     }
+
     if (groups.empty()) {
         _spr.setTextColor(C_SUBTEXT, C_BG);
         _spr.setTextFont(2);
         _spr.setTextDatum(MC_DATUM);
-        _spr.drawString(items.empty() ? "Leer" : "Keine Treffer", SCR_W / 2, HDR_H + SEARCH_H + COL_H + 60);
+        _spr.drawString(items.empty() ? "Leer" : "Keine Treffer",
+                        SCR_W / 2, HDR_H + SEARCH_H + COL_H + 60);
     }
     _homeState.inventoryCount = items.size();
     commit();
+}
+
+String Display::getInvGroupName(int rowIdx) const {
+    if (rowIdx < 0 || rowIdx >= 5) return "";
+    return _s_inv_group_names[rowIdx];
+}
+
+// showInventoryGroupDetail – detail view is rendered inline via showInventoryList
+// with expandedGroup param; this stub satisfies the declaration.
+void Display::showInventoryGroupDetail(const String & /*groupName*/,
+                                       const std::vector<InventoryItem> & /*groupItems*/,
+                                       const String & /*hhAbbr*/) {
+    // No-op: detail display is handled by showInventoryList(expandedGroup=...)
 }
 
 // ─────────────────────────────────────────────────────────

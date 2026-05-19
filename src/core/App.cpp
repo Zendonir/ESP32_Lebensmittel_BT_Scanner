@@ -537,6 +537,14 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
+    // Swipe-right collapses expanded inventory group before navigating
+    if (action == OnscreenAction::SWIPE_RIGHT && !_invExpandedGroup.isEmpty()) {
+        _invExpandedGroup = "";
+        display_obj.showInventoryList(inventory.items(), _invFilter,
+                                      device_config.getHouseholdAbbr(), _invExpandedGroup);
+        return;
+    }
+
     // Swipe-right = back inside WiFi setup, template workflow, inventory search, or qty entry
     if (action == OnscreenAction::SWIPE_RIGHT) {
         if (workflow == WorkflowMode::ENTER_QTY) {
@@ -552,7 +560,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::INVENTORY;
             display_obj.showInventoryList(inventory.items(), "",
-                                          device_config.getHouseholdAbbr());
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup);
             return;
         }
         if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
@@ -591,6 +599,27 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             return;
         }
+    }
+
+    // Inventory group tap (expand / collapse)
+    if (_activeTab == UiTab::INVENTORY &&
+        (action == OnscreenAction::LIST_ITEM_0 || action == OnscreenAction::LIST_ITEM_1 ||
+         action == OnscreenAction::LIST_ITEM_2 || action == OnscreenAction::LIST_ITEM_3 ||
+         action == OnscreenAction::LIST_ITEM_4)) {
+        String tapped = display_obj.getInvGroupName(
+            action == OnscreenAction::LIST_ITEM_0 ? 0 :
+            action == OnscreenAction::LIST_ITEM_1 ? 1 :
+            action == OnscreenAction::LIST_ITEM_2 ? 2 :
+            action == OnscreenAction::LIST_ITEM_3 ? 3 : 4);
+        if (!tapped.isEmpty()) {
+            if (_invExpandedGroup == tapped)
+                _invExpandedGroup = "";   // collapse
+            else
+                _invExpandedGroup = tapped;  // expand
+            display_obj.showInventoryList(inventory.items(), _invFilter,
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup);
+        }
+        return;
     }
 
     // Template list selection
@@ -732,8 +761,9 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::INVENTORY;
             _invFilter = "";
+            _invExpandedGroup = "";
             display_obj.showInventoryList(inventory.items(), "",
-                                          device_config.getHouseholdAbbr());
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup);
             _lastUiRefreshMs = millis();
             break;
 
@@ -971,8 +1001,9 @@ void App::processOnscreenAction(OnscreenAction action) {
                                 filtered.push_back(it);
                         }
                     }
+                    _invExpandedGroup = "";
                     display_obj.showInventoryList(filtered, _invFilter,
-                                                  device_config.getHouseholdAbbr());
+                                                  device_config.getHouseholdAbbr(), _invExpandedGroup);
                 }
                 break;
             }

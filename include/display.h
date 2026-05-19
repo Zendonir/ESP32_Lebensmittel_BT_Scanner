@@ -124,7 +124,14 @@ public:
     void showResult(const String &title, const String &message, bool success, bool showPrintButtons = false);
     void showInventoryList(const std::vector<InventoryItem> &items,
                            const String &filter = "",
-                           const String &hhAbbr = "");
+                           const String &hhAbbr = "",
+                           const String &expandedGroup = "");
+
+    String getInvGroupName(int rowIdx) const;
+
+    void showInventoryGroupDetail(const String &groupName,
+                                  const std::vector<InventoryItem> &groupItems,
+                                  const String &hhAbbr = "");
 
     // Template workflow
     void showCategoryTiles(const std::vector<String> &categories);
