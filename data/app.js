@@ -2225,18 +2225,45 @@ Pages.ota = {
     if (!rel) { Toast.warn('Bitte eine Version wählen'); return; }
     const asset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
     if (!asset) { Toast.error('firmware_ota.bin nicht gefunden'); return; }
-    const url = asset.browser_download_url;
 
+    const progress  = document.getElementById('otaProgress');
+    const progText  = document.getElementById('otaProgressText');
     document.getElementById('otaProgressCard').hidden = false;
-    document.getElementById('otaProgress').style.width = '0%';
-    document.getElementById('otaProgressText').textContent = 'Starte Update…';
+    progress.style.width = '0%';
+    progText.textContent = 'Lade von GitHub…';
     document.getElementById('otaInstallBtn').disabled = true;
 
     try {
-      await API.post('/api/ota-url', { url });
-      this._pollProgress();
+      // Browser lädt von GitHub (handhabt Redirects + CORS automatisch)
+      const resp = await fetch(asset.browser_download_url);
+      if (!resp.ok) throw new Error('GitHub HTTP ' + resp.status);
+      const blob = await resp.blob();
+
+      // Blob per XHR an den ESP32 übertragen (lokales Netz, kein SSL nötig)
+      progText.textContent = 'Übertrage zum Gerät…';
+      await new Promise((resolve, reject) => {
+        const fd = new FormData();
+        fd.append('firmware', blob, 'firmware_ota.bin');
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/update');
+        xhr.upload.onprogress = ev => {
+          if (ev.lengthComputable) {
+            const pct = Math.round(ev.loaded / ev.total * 100);
+            progress.style.width = pct + '%';
+            progText.textContent = pct + '%';
+          }
+        };
+        xhr.onload  = () => xhr.status === 200 ? resolve() : reject(new Error('HTTP ' + xhr.status));
+        xhr.onerror = () => reject(new Error('Übertragungsfehler'));
+        xhr.send(fd);
+      });
+
+      progress.style.width = '100%';
+      progText.textContent = 'Fertig – Neustart…';
+      Toast.success('Update erfolgreich – Gerät startet neu');
     } catch(e) {
-      Toast.error('Fehler: ' + e.message);
+      progText.textContent = 'Fehler!';
+      Toast.error('OTA: ' + e.message);
       document.getElementById('otaInstallBtn').disabled = false;
     }
   },
