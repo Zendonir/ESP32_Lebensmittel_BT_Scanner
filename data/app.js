@@ -2155,63 +2155,89 @@ Pages.statistics = {
 /* ---- OTA ---- */
 Pages.ota = {
   _pollTimer: null,
+  _releases:  [],
+  _REPO:      'Zendonir/ESP32_Lebensmittel_BT_Scanner',
 
-  load() {
-    document.getElementById('otaGithub').value = 'Zendonir/ESP32_Lebensmittel_BT_Scanner';
+  async load() {
+    // Show current firmware version
+    try {
+      const sys = await API.get('/api/system-info');
+      const ver = sys.firmware ? 'v' + sys.firmware : '—';
+      document.getElementById('otaCurrentVersion').textContent = ver;
+    } catch {}
+
+    // Load release list from GitHub
+    await this._loadReleases();
   },
 
-  async uploadFile(e) {
-    e.preventDefault();
-    const file = document.getElementById('otaFile').files[0];
-    if (!file) { Toast.warn('Datei wählen'); return; }
-    const card = document.getElementById('otaProgressCard');
-    card.hidden = false;
-    document.getElementById('otaProgress').style.width = '0%';
-    document.getElementById('otaProgressText').textContent = 'Hochladen…';
-    document.getElementById('otaLog').innerHTML = '';
-
+  async _loadReleases() {
+    const sel  = document.getElementById('otaReleaseSelect');
+    const btn  = document.getElementById('otaInstallBtn');
+    sel.innerHTML = '<option value="">Lädt…</option>';
+    btn.disabled  = true;
     try {
-      const fd = new FormData();
-      fd.append('firmware', file);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/update');
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) {
-          const pct = Math.round(ev.loaded / ev.total * 100);
-          document.getElementById('otaProgress').style.width = `${pct}%`;
-          document.getElementById('otaProgressText').textContent = `${pct}%`;
-        }
-      };
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          document.getElementById('otaProgress').style.width = '100%';
-          document.getElementById('otaProgressText').textContent = 'Abgeschlossen — Neustart…';
-          Toast.success('Update erfolgreich. Gerät startet neu.');
-        } else {
-          Toast.error('Update fehlgeschlagen: ' + xhr.statusText);
-        }
-      };
-      xhr.onerror = () => Toast.error('Upload-Fehler');
-      xhr.send(fd);
+      const res = await fetch(`https://api.github.com/repos/${this._REPO}/releases?per_page=20`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      this._releases = await res.json();
+      sel.innerHTML = '';
+      if (this._releases.length === 0) {
+        sel.innerHTML = '<option value="">Keine Releases gefunden</option>';
+        return;
+      }
+      for (const rel of this._releases) {
+        const label = rel.prerelease
+          ? `[Vorab] ${rel.tag_name}`
+          : rel.tag_name;
+        const opt = document.createElement('option');
+        opt.value = rel.tag_name;
+        opt.textContent = label;
+        sel.appendChild(opt);
+      }
+      btn.disabled = false;
+      this._onSelectChange();
     } catch(e) {
-      Toast.error('Fehler: ' + e.message);
+      sel.innerHTML = '<option value="">Fehler beim Laden</option>';
+      Toast.error('GitHub Releases: ' + e.message);
+    }
+    sel.onchange = () => this._onSelectChange();
+  },
+
+  _onSelectChange() {
+    const sel  = document.getElementById('otaReleaseSelect');
+    const note = document.getElementById('otaReleaseNote');
+    const btn  = document.getElementById('otaInstallBtn');
+    const rel  = this._releases.find(r => r.tag_name === sel.value);
+    if (!rel) { note.textContent = ''; btn.disabled = true; return; }
+    const asset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
+    if (asset) {
+      const mb = (asset.size / 1048576).toFixed(2);
+      note.textContent = `firmware_ota.bin · ${mb} MB`;
+      btn.disabled = false;
+    } else {
+      note.textContent = 'Kein firmware_ota.bin in diesem Release';
+      btn.disabled = true;
     }
   },
 
-  async updateFromUrl(e) {
-    e.preventDefault();
-    const url = document.getElementById('otaUrl').value.trim();
-    if (!url) { Toast.warn('URL erforderlich'); return; }
-    const card = document.getElementById('otaProgressCard');
-    card.hidden = false;
+  async installRelease() {
+    const sel = document.getElementById('otaReleaseSelect');
+    const rel = this._releases.find(r => r.tag_name === sel.value);
+    if (!rel) { Toast.warn('Bitte eine Version wählen'); return; }
+    const asset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
+    if (!asset) { Toast.error('firmware_ota.bin nicht gefunden'); return; }
+    const url = asset.browser_download_url;
+
+    document.getElementById('otaProgressCard').hidden = false;
     document.getElementById('otaProgress').style.width = '0%';
     document.getElementById('otaProgressText').textContent = 'Starte Update…';
-    document.getElementById('otaLog').innerHTML = '';
+    document.getElementById('otaInstallBtn').disabled = true;
+
     try {
       await API.post('/api/ota-url', { url });
       this._pollProgress();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
+      document.getElementById('otaInstallBtn').disabled = false;
     }
   },
 
@@ -2225,34 +2251,64 @@ Pages.ota = {
         if (p.done) {
           clearInterval(this._pollTimer); this._pollTimer = null;
           if (p.ok) {
+            document.getElementById('otaProgress').style.width = '100%';
             document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
-            Toast.success('Update erfolgreich – Neustart');
+            Toast.success('Update erfolgreich – Gerät startet neu');
           } else {
             document.getElementById('otaProgressText').textContent = 'Fehler!';
             Toast.error('OTA fehlgeschlagen');
+            document.getElementById('otaInstallBtn').disabled = false;
           }
         }
       } catch {}
     }, 1500);
   },
 
-  async fetchGithubRelease() {
-    const repo = document.getElementById('otaGithub').value.trim();
-    if (!repo) { Toast.warn('GitHub Repo eingeben (user/repo)'); return; }
-    try {
-      const url = `https://api.github.com/repos/${repo}/releases/latest`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Nicht gefunden');
-      const data = await res.json();
-      const asset = data.assets?.find(a => a.name.endsWith('.bin'));
-      if (asset) {
-        document.getElementById('otaUrl').value = asset.browser_download_url;
-        Toast.info(`Gefunden: ${asset.name}`);
-      } else {
-        Toast.warn('Kein .bin Asset gefunden');
+  // Manual fallback: file upload
+  async uploadFile(e) {
+    e.preventDefault();
+    const file = document.getElementById('otaFile').files[0];
+    if (!file) { Toast.warn('Datei wählen'); return; }
+    document.getElementById('otaProgressCard').hidden = false;
+    document.getElementById('otaProgress').style.width = '0%';
+    document.getElementById('otaProgressText').textContent = 'Hochladen…';
+    const fd = new FormData();
+    fd.append('firmware', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/update');
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round(ev.loaded / ev.total * 100);
+        document.getElementById('otaProgress').style.width = `${pct}%`;
+        document.getElementById('otaProgressText').textContent = `${pct}%`;
       }
+    };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        document.getElementById('otaProgress').style.width = '100%';
+        document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
+        Toast.success('Update erfolgreich – Gerät startet neu');
+      } else {
+        Toast.error('Upload fehlgeschlagen: ' + xhr.statusText);
+      }
+    };
+    xhr.onerror = () => Toast.error('Upload-Fehler');
+    xhr.send(fd);
+  },
+
+  // Manual fallback: URL
+  async updateFromUrl(e) {
+    e.preventDefault();
+    const url = document.getElementById('otaUrl').value.trim();
+    if (!url) { Toast.warn('URL erforderlich'); return; }
+    document.getElementById('otaProgressCard').hidden = false;
+    document.getElementById('otaProgress').style.width = '0%';
+    document.getElementById('otaProgressText').textContent = 'Starte Update…';
+    try {
+      await API.post('/api/ota-url', { url });
+      this._pollProgress();
     } catch(e) {
-      Toast.error('GitHub: ' + e.message);
+      Toast.error('Fehler: ' + e.message);
     }
   },
 };

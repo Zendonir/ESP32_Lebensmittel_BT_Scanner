@@ -635,38 +635,56 @@
   <!-- OTA UPDATE -->
   <section id="page-ota" class="page">
     <div class="page-header"><h1>OTA Update</h1></div>
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-title">Update per Datei</div>
-        <form id="otaFileForm" class="form-stack" onsubmit="Pages.ota.uploadFile(event)">
-          <div class="form-field"><label>Firmware (.bin)</label>
-            <input type="file" id="otaFile" class="input" accept=".bin" required>
-          </div>
-          <button type="submit" class="btn btn-ok">Upload &amp; Flashen</button>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-title">Update per URL</div>
-        <form id="otaUrlForm" class="form-stack" onsubmit="Pages.ota.updateFromUrl(event)">
-          <div class="form-field"><label>URL (HTTPS)</label><input type="url" id="otaUrl" class="input" placeholder="https://…/firmware.bin" required></div>
-          <div class="form-field"><label>GitHub Release (neueste Version)</label>
-            <div class="input-row">
-              <input type="text" id="otaGithub" class="input" placeholder="user/repo">
-              <button type="button" class="btn btn-sm" onclick="Pages.ota.fetchGithubRelease()">Laden</button>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-ok">Update starten</button>
-        </form>
+
+    <!-- GitHub Release Dropdown -->
+    <div class="card">
+      <div class="card-title">GitHub Release installieren</div>
+      <div class="form-stack">
+        <div class="form-field">
+          <label>Aktuelle Firmware</label>
+          <div id="otaCurrentVersion" class="value-display" style="font-size:1.1rem">—</div>
+        </div>
+        <div class="form-field">
+          <label>Version wählen</label>
+          <select id="otaReleaseSelect" class="input">
+            <option value="">Lädt…</option>
+          </select>
+        </div>
+        <div id="otaReleaseNote" style="font-size:0.8rem;color:var(--subtext);min-height:1.2em"></div>
+        <button class="btn btn-ok" onclick="Pages.ota.installRelease()" id="otaInstallBtn" disabled>
+          Update installieren
+        </button>
       </div>
     </div>
+
+    <!-- Progress -->
     <div class="card" id="otaProgressCard" hidden>
       <div class="card-title">Update-Fortschritt</div>
       <div class="progress-wrap">
         <div class="progress-bar" id="otaProgress" style="width:0%"></div>
       </div>
       <div id="otaProgressText" class="value-display">0%</div>
-      <div id="otaLog" class="log-output" style="margin-top:12px; max-height:200px"></div>
     </div>
+
+    <!-- Manual fallback (collapsed) -->
+    <details class="card" style="margin-top:8px">
+      <summary style="cursor:pointer;font-weight:600;padding:4px 0">Manuell (Datei / URL)</summary>
+      <div class="form-stack" style="margin-top:12px">
+        <form id="otaFileForm" class="form-stack" onsubmit="Pages.ota.uploadFile(event)">
+          <div class="form-field"><label>Firmware (.bin)</label>
+            <input type="file" id="otaFile" class="input" accept=".bin" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-ok">Upload &amp; Flashen</button>
+        </form>
+        <hr style="border-color:var(--border);margin:8px 0">
+        <form id="otaUrlForm" class="form-stack" onsubmit="Pages.ota.updateFromUrl(event)">
+          <div class="form-field"><label>URL (HTTPS)</label>
+            <input type="url" id="otaUrl" class="input" placeholder="https://…/firmware_ota.bin" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-ok">Update starten</button>
+        </form>
+      </div>
+    </details>
   </section>
 
   <!-- LOGS -->
