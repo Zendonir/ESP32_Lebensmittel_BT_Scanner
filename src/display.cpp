@@ -531,6 +531,8 @@ void Display::tick() {
             _touch_press_y     = tp.y;
             _touch_last_x      = tp.x;
             _touch_last_y      = tp.y;
+            Serial.printf("[Touch] raw(%u,%u) → cal(%u,%u)\n",
+                touch_obj.lastRawX, touch_obj.lastRawY, tp.x, tp.y);
         } else {
             // Track finger movement while pressed for swipe detection
             _touch_last_x = tp.x;

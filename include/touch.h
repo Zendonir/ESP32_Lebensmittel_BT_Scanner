@@ -18,6 +18,12 @@ public:
     TouchPoint read();
     bool isPressed();
 
+    // Last raw (pre-transformation) and calibrated coordinates for debugging
+    uint16_t lastRawX  = 0;
+    uint16_t lastRawY  = 0;
+    uint16_t lastCalX  = 0;
+    uint16_t lastCalY  = 0;
+
 private:
     TwoWire *i2c;
     TouchPoint current_point;

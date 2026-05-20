@@ -58,15 +58,24 @@ TouchPoint Touch::getCalibrated() {
     TouchPoint p = current_point;
 
     if (p.pressed) {
-        // The FT6336 reports native portrait panel coordinates. The display UI
-        // runs in TFT_eSPI rotation 1 (landscape), so map touches into the same
-        // 480x320 coordinate space used by the on-screen buttons.
-        uint16_t rawX = constrain(p.x, 0, DISPLAY_WIDTH);
-        uint16_t rawY = constrain(p.y, 0, DISPLAY_HEIGHT);
+        // FT6336 reports portrait panel coordinates (X=0..319, Y=0..479).
+        // TFT_eSPI rotation=1 (MX|MV) maps portrait → landscape:
+        //   landscape_X = portrait_Y
+        //   landscape_Y = (portrait_WIDTH - 1) - portrait_X
+        uint16_t rawX = constrain(p.x, 0, DISPLAY_WIDTH  - 1);
+        uint16_t rawY = constrain(p.y, 0, DISPLAY_HEIGHT - 1);
+
+        lastRawX = rawX;
+        lastRawY = rawY;
+
         p.x = rawY;
-        p.y = DISPLAY_WIDTH - rawX;
-        p.x = constrain(p.x, 0, DISPLAY_LANDSCAPE_WIDTH);
-        p.y = constrain(p.y, 0, DISPLAY_LANDSCAPE_HEIGHT);
+        p.y = (DISPLAY_WIDTH - 1) - rawX;
+
+        p.x = constrain(p.x, 0, DISPLAY_LANDSCAPE_WIDTH  - 1);
+        p.y = constrain(p.y, 0, DISPLAY_LANDSCAPE_HEIGHT - 1);
+
+        lastCalX = p.x;
+        lastCalY = p.y;
     }
 
     return p;

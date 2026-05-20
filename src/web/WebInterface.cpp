@@ -1,5 +1,6 @@
 #include "WebInterface.h"
 #include "../core/App.h"
+#include "touch.h"
 #include "../core/Logger.h"
 #include "../core/DeviceConfig.h"
 #include "../storage/JsonStorage.h"
@@ -1636,6 +1637,17 @@ void WebInterface::registerApiRoutes() {
         doc["pct"]  = (int)_otaFsPct;
         doc["done"] = (bool)_otaFsDone;
         doc["ok"]   = (bool)_otaFsOk;
+        String out; serializeJson(doc, out);
+        req->send(200, "application/json", out);
+    });
+
+    // ---- TOUCH DEBUG ----
+    _server.on("/api/touch-debug", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["rawX"] = touch_obj.lastRawX;
+        doc["rawY"] = touch_obj.lastRawY;
+        doc["calX"] = touch_obj.lastCalX;
+        doc["calY"] = touch_obj.lastCalY;
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
