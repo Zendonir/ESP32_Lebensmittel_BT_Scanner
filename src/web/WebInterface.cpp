@@ -478,7 +478,7 @@ void WebInterface::registerApiRoutes() {
     // ---- SYSTEM INFO ----
     _server.on("/api/system-info", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
-        doc["firmware"]   = "1.0.0";
+        doc["firmware"]   = FW_VERSION;
         doc["household"]  = device_config.getHousehold();
         doc["deviceName"] = device_config.getDeviceName();
         doc["heap"]       = ESP.getFreeHeap();
