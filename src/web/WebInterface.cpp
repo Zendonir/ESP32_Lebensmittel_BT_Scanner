@@ -34,9 +34,11 @@ static void otaUrlTask(void *param) {
 
     WiFiClientSecure client;
     client.setInsecure();   // allow any HTTPS cert for OTA
+    client.setTimeout(30);  // 30s socket timeout
     HTTPClient http;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(15000);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);  // follow cross-domain redirects (github→CDN)
+    http.setTimeout(30000);
+    http.setUserAgent("ESP32-OTA/1.0");
     if (!http.begin(client, url)) {
         Logger::error("OTA", "http.begin failed");
         free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
@@ -52,7 +54,7 @@ static void otaUrlTask(void *param) {
         http.end(); free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
     }
     WiFiClient *stream = http.getStreamPtr();
-    uint8_t buf[512];
+    uint8_t buf[4096];
     int received = 0;
     while (http.connected() && (total < 0 || received < total)) {
         int avail = stream->available();
@@ -1497,7 +1499,7 @@ void WebInterface::registerApiRoutes() {
             String url = doc["url"] | "";
             if (url.isEmpty()) { req->send(400, "application/json", "{\"ok\":false,\"error\":\"url missing\"}"); return; }
             char *urlBuf = strdup(url.c_str());
-            xTaskCreate(otaUrlTask, "ota_url", 16384, urlBuf, 3, nullptr);
+            xTaskCreate(otaUrlTask, "ota_url", 32768, urlBuf, 3, nullptr);
             req->send(202, "application/json", "{\"ok\":true}");
         }, nullptr, bodyCollect);
 
