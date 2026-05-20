@@ -42,10 +42,7 @@ jobs:
       - name: Build LittleFS image
         run: pio run -e esp32-s3-devkitc1-n16r8 --target buildfs
 
-      # ── Create merged full-flash binary ────────────────────────────────────
-      # firmware.bin  = app partition only  → used for OTA updates
-      # firmware_full_flash.bin = bootloader + partitions + app merged at correct
-      #                           offsets → used for first-time USB flashing
+      # ── Binaries zusammenstellen ───────────────────────────────────────────
       - name: Create full-flash binary (esptool merge_bin)
         run: |
           pip install esptool
@@ -68,11 +65,46 @@ jobs:
             littlefs.bin
           retention-days: 30
 
-      # ── Create GitHub Release on tags ────────────────────────────────────
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
+      # ── Vorabrelease bei jedem Push auf main ───────────────────────────────
+      # Tag "latest" wird immer auf den aktuellen main-Commit verschoben.
+      # prerelease: true → erscheint im Dropdown als "[Vorab] latest"
+      - name: Update Vorabrelease (latest)
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: latest
+          name: "Vorabversion (latest)"
+          prerelease: true
+          make_latest: false
+          files: |
+            firmware_ota.bin
+            firmware_full_flash.bin
+            littlefs.bin
+          body: |
+            ## Vorabversion – aktueller Entwicklungsstand
+
+            Automatisch gebaut von Commit ${{ github.sha }} (`${{ github.ref_name }}`)
+            Zeitstempel: ${{ github.event.head_commit.timestamp }}
+
+            > ⚠️ Dies ist kein stabiles Release. Für den Produktiveinsatz eine nummerierte Version (z.B. v1.0.x) verwenden.
+
+            | Datei | Verwendung |
+            |-------|-----------|
+            | `firmware_ota.bin` | OTA-Update über Web-Interface |
+            | `firmware_full_flash.bin` | Erstmaliges Flashen per USB (`esptool`) |
+            | `littlefs.bin` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+
+            ### USB-Flash Befehl
+            ```
+            esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
+            ```
+
+      # ── Stabiles Release bei v*-Tags ──────────────────────────────────────
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          make_latest: true
           files: |
             firmware_ota.bin
             firmware_full_flash.bin
