@@ -90,7 +90,13 @@ static void otaUrlTask(void *param) {
         Logger::info("OTA", ok ? "OTA OK" : "OTA FAILED");
         http.end();
         _otaUrlOk = ok; _otaUrlDone = true;
-        if (ok) { delay(500); esp_restart(); }
+        if (ok) {
+            delay(200);
+            WiFi.disconnect(true);
+            WiFi.mode(WIFI_OFF);
+            delay(300);
+            esp_restart();
+        }
         vTaskDelete(nullptr);
         return;
     }
@@ -1644,7 +1650,7 @@ void WebInterface::registerApiRoutes() {
             bool ok = !Update.hasError();
             req->send(200, "application/json",
                 ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Update failed\"}");
-            if (ok) { delay(500); esp_restart(); }
+            if (ok) { delay(200); WiFi.disconnect(true); WiFi.mode(WIFI_OFF); delay(300); esp_restart(); }
         },
         [](AsyncWebServerRequest *req, const String &filename,
            size_t index, uint8_t *data, size_t len, bool final) {
