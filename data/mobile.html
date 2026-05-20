@@ -169,6 +169,18 @@
   .inv-sub-item .inv-label { font-size: 11px; color: var(--sub); opacity: .7; }
   .inv-sub-item.expiring .inv-meta { color: var(--yellow); }
   .inv-sub-item.expired  .inv-meta { color: var(--red); }
+
+  /* ── Swipe-to-delete ── */
+  .swipe-wrap { position: relative; overflow: hidden; border-radius: inherit; }
+  .swipe-inner { transition: transform .2s; will-change: transform; }
+  .swipe-del-btn {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: 80px; background: var(--red);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer; border-radius: 0 var(--radius) var(--radius) 0;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -401,8 +413,9 @@ function renderInventory() {
   }
 
   const groups = buildGroups(filtered);
+  // close any open swipes when re-rendering
   el.innerHTML = groups.map((g, gi) => {
-    const cls   = expiryClass(g.firstExpiry);
+    const cls = expiryClass(g.firstExpiry);
     const total = g.items.reduce((s, it) => s + (it.quantity || 1), 0);
     const loc   = g.items[0].location ? ' · ' + g.items[0].location : '';
     const solo  = g.items.length === 1;
@@ -410,30 +423,87 @@ function renderInventory() {
     const subHtml = solo ? '' : g.items.map(it => {
       const exp    = getExpiry(it);
       const subCls = expiryClass(exp);
-      const lbl    = it.labelBarcode ? `<span class="inv-label"> · ${esc(it.labelBarcode)}</span>` : '';
-      return `<div class="inv-sub-item ${subCls}">
-        <div class="inv-dot"></div>
-        <div class="inv-info">
-          <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}${lbl}</div>
+      const lb     = esc(it.labelBarcode || '');
+      return `<div class="swipe-wrap">
+        <div class="swipe-inner inv-sub-item ${subCls}" data-lb="${lb}">
+          <div class="inv-dot"></div>
+          <div class="inv-info">
+            <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}</div>
+          </div>
         </div>
+        <div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>
       </div>`;
     }).join('');
 
-    const groupHead = `<div class="inv-item inv-group-head ${cls}" onclick="${solo ? '' : 'toggleGroup(' + gi + ')'}">
+    const soloLb = solo ? esc(g.items[0].labelBarcode || '') : '';
+    const headInner = `
       <div class="inv-dot"></div>
       <div class="inv-info">
         <div class="inv-name">${esc(g.name)}</div>
         <div class="inv-meta">${g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD'}${esc(loc)}</div>
       </div>
       <div class="inv-qty">${total}x</div>
-      ${solo ? '' : '<div class="inv-chevron">›</div>'}
-    </div>`;
+      ${solo ? '' : '<div class="inv-chevron">›</div>'}`;
+
+    const groupHead = solo
+      ? `<div class="swipe-wrap">
+           <div class="swipe-inner inv-item inv-group-head ${cls}" data-lb="${soloLb}">
+             ${headInner}
+           </div>
+           <div class="swipe-del-btn" onclick="deleteItem('${soloLb}')">Löschen</div>
+         </div>`
+      : `<div class="inv-item inv-group-head ${cls}" onclick="toggleGroup(${gi})">
+           ${headInner}
+         </div>`;
 
     return `<div class="inv-group${solo ? ' solo' : ''}" data-gi="${gi}">
       ${groupHead}
       ${solo ? '' : `<div class="inv-sub-list" style="display:none">${subHtml}</div>`}
     </div>`;
   }).join('');
+  initSwipe(el);
+}
+
+// ── Delete item ──────────────────────────────────────────────
+async function deleteItem(labelBarcode) {
+  if (!labelBarcode) return;
+  try {
+    await apiFetch('/api/inventory/delete', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ labelBarcode }) });
+    _allItems = _allItems.filter(it => it.labelBarcode !== labelBarcode);
+    renderInventory();
+    updateStats();
+    showToast('Gelöscht', 1500);
+  } catch(e) {
+    showToast('Fehler: ' + e.message, 3000);
+  }
+}
+
+// ── Swipe-to-delete (touch) ───────────────────────────────────
+function initSwipe(container) {
+  container.querySelectorAll('.swipe-wrap').forEach(wrap => {
+    const inner = wrap.querySelector('.swipe-inner');
+    if (!inner) return;
+    let startX = 0, curX = 0, swiping = false;
+    inner.addEventListener('touchstart', e => {
+      startX = e.touches[0].clientX; curX = 0; swiping = true;
+    }, { passive: true });
+    inner.addEventListener('touchmove', e => {
+      if (!swiping) return;
+      curX = e.touches[0].clientX - startX;
+      if (curX > 0) curX = 0;           // only left swipe
+      if (curX < -80) curX = -80;
+      inner.style.transition = 'none';
+      inner.style.transform = `translateX(${curX}px)`;
+    }, { passive: true });
+    inner.addEventListener('touchend', () => {
+      swiping = false;
+      inner.style.transition = 'transform .2s';
+      // snap open at -40px threshold, close otherwise
+      inner.style.transform = curX < -40 ? 'translateX(-80px)' : 'translateX(0)';
+    });
+  });
 }
 
 function toggleGroup(gi) {
