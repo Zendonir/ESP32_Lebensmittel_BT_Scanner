@@ -74,9 +74,19 @@ void App::begin() {
     if (BackupManager::hasBackupOnSD() && BackupManager::internalIsEmpty()) {
         workflow = WorkflowMode::SD_IMPORT_PROMPT;
         display_obj.showSdImportPrompt(BackupManager::backupDateString());
-        // Block here until user taps — touch task is already running
+        // Touch task (Core 0) already calls tick() — just poll hitTest() here.
+        // tick() only set _pending_action but hitTest() was never called, so
+        // the buttons appeared frozen.
         while (workflow == WorkflowMode::SD_IMPORT_PROMPT) {
-            display_obj.tick();
+            OnscreenAction act = display_obj.hitTest(0, 0);
+            if (act == OnscreenAction::SD_IMPORT_YES) {
+                BackupManager::doRestore();
+                device_config.begin();  // reload restored NVS settings
+                workflow = WorkflowMode::HOME;
+                Logger::info("Backup", "Import abgeschlossen");
+            } else if (act == OnscreenAction::SD_IMPORT_NO) {
+                workflow = WorkflowMode::HOME;
+            }
             delay(20);
         }
     }
