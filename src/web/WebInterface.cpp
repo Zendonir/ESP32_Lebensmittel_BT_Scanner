@@ -27,50 +27,75 @@ static volatile int  _otaUrlPct  = 0;
 static volatile bool _otaUrlDone = true;   // true = idle (not running)
 static volatile bool _otaUrlOk   = false;
 
+// Resolve up to 3 HTTP redirects manually and perform OTA download.
+// GitHub release URLs redirect from github.com to objects.githubusercontent.com
+// (cross-domain HTTPS). HTTPC_FORCE_FOLLOW_REDIRECTS can fail to re-init SSL
+// for the new host, so we resolve the chain ourselves.
 static void otaUrlTask(void *param) {
-    char *url = static_cast<char *>(param);
-    Logger::info("OTA", String("URL download start: ") + url);
+    char *urlBuf = static_cast<char *>(param);
     _otaUrlPct = 0; _otaUrlDone = false; _otaUrlOk = false;
 
-    WiFiClientSecure client;
-    client.setInsecure();   // allow any HTTPS cert for OTA
-    client.setTimeout(30);  // 30s socket timeout
-    HTTPClient http;
-    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);  // follow cross-domain redirects (github→CDN)
-    http.setTimeout(30000);
-    http.setUserAgent("ESP32-OTA/1.0");
-    if (!http.begin(client, url)) {
-        Logger::error("OTA", "http.begin failed");
-        free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
-    }
-    int code = http.GET();
-    if (code != 200) {
-        Logger::error("OTA", String("HTTP ") + code);
-        http.end(); free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
-    }
-    int total = http.getSize();
-    if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN)) {
-        Logger::error("OTA", "Update.begin failed");
-        http.end(); free(url); _otaUrlDone = true; vTaskDelete(nullptr); return;
-    }
-    WiFiClient *stream = http.getStreamPtr();
-    uint8_t buf[4096];
-    int received = 0;
-    while (http.connected() && (total < 0 || received < total)) {
-        int avail = stream->available();
-        if (!avail) { delay(5); continue; }
-        int n = stream->readBytes(buf, min(avail, (int)sizeof(buf)));
-        if (n > 0) {
-            Update.write(buf, n);
-            received += n;
-            if (total > 0) _otaUrlPct = received * 100 / total;
+    String currentUrl = urlBuf;
+    free(urlBuf);
+
+    // ── Step 1: follow redirects until we reach the real download URL ────────
+    for (int hop = 0; hop < 4; hop++) {
+        Logger::info("OTA", String("GET ") + currentUrl);
+        WiFiClientSecure probe;
+        probe.setInsecure();
+        probe.setTimeout(20);
+        HTTPClient http;
+        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+        http.setTimeout(20000);
+        http.setUserAgent("ESP32-OTA/1.0");
+        if (!http.begin(probe, currentUrl)) {
+            Logger::error("OTA", "http.begin failed");
+            _otaUrlDone = true; vTaskDelete(nullptr); return;
         }
+        int code = http.GET();
+        Logger::info("OTA", String("HTTP ") + code);
+        if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+            String loc = http.getLocation();
+            http.end();
+            if (loc.isEmpty()) { Logger::error("OTA", "Empty redirect"); _otaUrlDone = true; vTaskDelete(nullptr); return; }
+            currentUrl = loc;
+            continue;
+        }
+        if (code != 200) {
+            Logger::error("OTA", String("Unexpected HTTP ") + code);
+            http.end(); _otaUrlDone = true; vTaskDelete(nullptr); return;
+        }
+
+        // ── Step 2: stream the body into the OTA partition ──────────────────
+        int total = http.getSize();
+        Logger::info("OTA", String("Size: ") + total + " bytes");
+        if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN)) {
+            Logger::error("OTA", "Update.begin failed");
+            http.end(); _otaUrlDone = true; vTaskDelete(nullptr); return;
+        }
+        WiFiClient *stream = http.getStreamPtr();
+        uint8_t buf[4096];
+        int received = 0;
+        while (http.connected() && (total < 0 || received < total)) {
+            int avail = stream->available();
+            if (!avail) { delay(5); continue; }
+            int n = stream->readBytes(buf, min(avail, (int)sizeof(buf)));
+            if (n > 0) {
+                Update.write(buf, n);
+                received += n;
+                if (total > 0) _otaUrlPct = received * 100 / total;
+            }
+        }
+        bool ok = Update.end(true) && Update.isFinished();
+        Logger::info("OTA", ok ? "OTA OK" : "OTA FAILED");
+        http.end();
+        _otaUrlOk = ok; _otaUrlDone = true;
+        if (ok) { delay(500); esp_restart(); }
+        vTaskDelete(nullptr);
+        return;
     }
-    bool ok = Update.end(true) && Update.isFinished();
-    Logger::info("OTA", ok ? "URL OTA OK" : "URL OTA FAILED");
-    http.end(); free(url);
-    _otaUrlOk = ok; _otaUrlDone = true;
-    if (ok) { delay(500); esp_restart(); }
+    Logger::error("OTA", "Too many redirects");
+    _otaUrlDone = true;
     vTaskDelete(nullptr);
 }
 
