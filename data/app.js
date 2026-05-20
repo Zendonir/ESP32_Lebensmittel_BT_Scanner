@@ -2208,10 +2208,12 @@ Pages.ota = {
     const btn  = document.getElementById('otaInstallBtn');
     const rel  = this._releases.find(r => r.tag_name === sel.value);
     if (!rel) { note.textContent = ''; btn.disabled = true; return; }
-    const asset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
-    if (asset) {
-      const mb = (asset.size / 1048576).toFixed(2);
-      note.textContent = `firmware_ota.bin · ${mb} MB`;
+    const fwAsset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
+    const fsAsset = rel.assets?.find(a => a.name === 'littlefs.bin');
+    if (fwAsset) {
+      const fwMb = (fwAsset.size / 1048576).toFixed(2);
+      const fsMb = fsAsset ? ` + littlefs.bin · ${(fsAsset.size / 1048576).toFixed(2)} MB` : '';
+      note.textContent = `firmware_ota.bin · ${fwMb} MB${fsMb}`;
       btn.disabled = false;
     } else {
       note.textContent = 'Kein firmware_ota.bin in diesem Release';
@@ -2223,26 +2225,53 @@ Pages.ota = {
     const sel = document.getElementById('otaReleaseSelect');
     const rel = this._releases.find(r => r.tag_name === sel.value);
     if (!rel) { Toast.warn('Bitte eine Version wählen'); return; }
-    const asset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
-    if (!asset) { Toast.error('firmware_ota.bin nicht gefunden'); return; }
+    const fwAsset = rel.assets?.find(a => a.name === 'firmware_ota.bin');
+    if (!fwAsset) { Toast.error('firmware_ota.bin nicht gefunden'); return; }
+    const fsAsset = rel.assets?.find(a => a.name === 'littlefs.bin');
 
-    const progress  = document.getElementById('otaProgress');
-    const progText  = document.getElementById('otaProgressText');
+    const progress = document.getElementById('otaProgress');
+    const progText = document.getElementById('otaProgressText');
     document.getElementById('otaProgressCard').hidden = false;
     progress.style.width = '0%';
-    progText.textContent = 'Starte Download…';
     document.getElementById('otaInstallBtn').disabled = true;
 
     try {
-      // ESP32 lädt Firmware selbst von GitHub – umgeht Browser-CORS bei GitHub-Redirects
-      const res = await API.post('/api/ota-url', { url: asset.browser_download_url });
-      if (!res.ok) throw new Error(res.error || 'OTA start fehlgeschlagen');
+      // Phase 1: LittleFS (Web-UI) aktualisieren – kein Neustart
+      if (fsAsset) {
+        progText.textContent = 'Web-UI: Lade…';
+        const r1 = await API.post('/api/ota-url-fs', { url: fsAsset.browser_download_url });
+        if (!r1.ok) throw new Error(r1.error || 'FS-Update fehlgeschlagen');
+        await this._waitOtaProgress('/api/ota-fs-progress', progress, progText, 'Web-UI');
+      }
+
+      // Phase 2: Firmware aktualisieren – löst Neustart aus
+      progress.style.width = '0%';
+      progText.textContent = 'Firmware: Lade…';
+      const r2 = await API.post('/api/ota-url', { url: fwAsset.browser_download_url });
+      if (!r2.ok) throw new Error(r2.error || 'Firmware-Update fehlgeschlagen');
       this._pollProgress();
     } catch(e) {
       progText.textContent = 'Fehler!';
       Toast.error('OTA: ' + e.message);
       document.getElementById('otaInstallBtn').disabled = false;
     }
+  },
+
+  _waitOtaProgress(endpoint, progressEl, textEl, label) {
+    return new Promise((resolve, reject) => {
+      const t = setInterval(async () => {
+        try {
+          const p = await API.get(endpoint);
+          progressEl.style.width = `${p.pct}%`;
+          textEl.textContent = `${label}: ${p.pct}%`;
+          if (p.done) {
+            clearInterval(t);
+            if (p.ok) resolve();
+            else reject(new Error(`${label} fehlgeschlagen`));
+          }
+        } catch {}
+      }, 1500);
+    });
   },
 
   _pollProgress() {

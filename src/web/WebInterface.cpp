@@ -105,6 +105,76 @@ static void otaUrlTask(void *param) {
     vTaskDelete(nullptr);
 }
 
+/* ── OTA LittleFS from URL ────────────────────────────────────── */
+static volatile int  _otaFsPct  = 0;
+static volatile bool _otaFsDone = true;
+static volatile bool _otaFsOk   = false;
+
+static void otaFsUrlTask(void *param) {
+    char *urlBuf = static_cast<char *>(param);
+    _otaFsPct = 0; _otaFsDone = false; _otaFsOk = false;
+
+    String currentUrl = urlBuf;
+    free(urlBuf);
+
+    for (int hop = 0; hop < 4; hop++) {
+        Logger::info("OTA", String("FS GET ") + currentUrl);
+        WiFiClientSecure probe;
+        probe.setInsecure();
+        probe.setTimeout(20);
+        HTTPClient http;
+        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+        http.setTimeout(20000);
+        http.setUserAgent("ESP32-OTA/1.0");
+        if (!http.begin(probe, currentUrl)) {
+            Logger::error("OTA", "FS http.begin failed");
+            _otaFsDone = true; vTaskDelete(nullptr); return;
+        }
+        int code = http.GET();
+        Logger::info("OTA", String("FS HTTP ") + code);
+        if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+            String loc = http.getLocation();
+            http.end();
+            if (loc.isEmpty()) { Logger::error("OTA", "FS empty redirect"); _otaFsDone = true; vTaskDelete(nullptr); return; }
+            currentUrl = loc;
+            continue;
+        }
+        if (code != 200) {
+            Logger::error("OTA", String("FS unexpected HTTP ") + code);
+            http.end(); _otaFsDone = true; vTaskDelete(nullptr); return;
+        }
+
+        int total = http.getSize();
+        Logger::info("OTA", String("FS size: ") + total + " bytes");
+        if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
+            Logger::error("OTA", "FS Update.begin failed");
+            http.end(); _otaFsDone = true; vTaskDelete(nullptr); return;
+        }
+        WiFiClient *stream = http.getStreamPtr();
+        uint8_t buf[4096];
+        int received = 0;
+        while (http.connected() && (total < 0 || received < total)) {
+            int avail = stream->available();
+            if (!avail) { delay(5); continue; }
+            int n = stream->readBytes(buf, min(avail, (int)sizeof(buf)));
+            if (n > 0) {
+                Update.write(buf, n);
+                received += n;
+                if (total > 0) _otaFsPct = received * 100 / total;
+            }
+        }
+        bool ok = Update.end(true) && Update.isFinished();
+        Logger::info("OTA", ok ? "FS OTA OK" : "FS OTA FAILED");
+        http.end();
+        _otaFsOk = ok; _otaFsDone = true;
+        vTaskDelete(nullptr);
+        return;
+    }
+    Logger::error("OTA", "FS too many redirects");
+    _otaFsDone = true;
+    vTaskDelete(nullptr);
+}
+
 /* ── WiFi scan cache ──────────────────────────────────────────── */
 static constexpr int WIFI_SCAN_CACHE_MAX = 30;
 
@@ -1539,6 +1609,33 @@ void WebInterface::registerApiRoutes() {
         doc["pct"]  = (int)_otaUrlPct;
         doc["done"] = (bool)_otaUrlDone;
         doc["ok"]   = (bool)_otaUrlOk;
+        String out; serializeJson(doc, out);
+        req->send(200, "application/json", out);
+    });
+
+    _server.on("/api/ota-url-fs", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            if (!_otaFsDone) {
+                req->send(409, "application/json", "{\"ok\":false,\"error\":\"FS-OTA laeuft bereits\"}");
+                return;
+            }
+            JsonDocument doc;
+            if (deserializeJson(doc, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
+                return;
+            }
+            String url = doc["url"] | "";
+            if (url.isEmpty()) { req->send(400, "application/json", "{\"ok\":false,\"error\":\"url missing\"}"); return; }
+            char *urlBuf = strdup(url.c_str());
+            xTaskCreate(otaFsUrlTask, "ota_fs_url", 32768, urlBuf, 3, nullptr);
+            req->send(202, "application/json", "{\"ok\":true}");
+        }, nullptr, bodyCollect);
+
+    _server.on("/api/ota-fs-progress", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["pct"]  = (int)_otaFsPct;
+        doc["done"] = (bool)_otaFsDone;
+        doc["ok"]   = (bool)_otaFsOk;
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
