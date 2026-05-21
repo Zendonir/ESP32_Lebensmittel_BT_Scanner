@@ -322,6 +322,27 @@ void WebInterface::begin() {
         }
     }
 
+    // Seed default categories once if file absent
+    if (!AppFS::fs().exists("/categories.json")) {
+        struct { const char* name; uint16_t bg; } defaults[] = {
+            { "Fleisch",    0xC1C5 },   // dark red
+            { "Gefl\xC3\xBCgel", 0xBC21 }, // golden
+            { "Fisch",      0x1DF3 },   // teal
+            { "Gem\xC3\xBCse",  0x256C },  // green
+            { "Backwaren",  0x7AA9 },   // brown
+            { "S\xC3\xBC\xC3\x9Fspeisen", 0xF81F }, // magenta
+        };
+        JsonDocument doc;
+        JsonArray arr = doc.to<JsonArray>();
+        for (auto &d : defaults) {
+            JsonObject o = arr.add<JsonObject>();
+            o["name"]      = d.name;
+            o["bgColor"]   = d.bg;
+            o["textColor"] = 0xFFFF;
+        }
+        saveJson("/categories.json", doc);
+    }
+
     registerStaticRoutes();
     registerApiRoutes();
     _server.begin();
