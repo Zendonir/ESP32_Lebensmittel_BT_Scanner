@@ -670,30 +670,6 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             return;
         }
-        if (workflow == WorkflowMode::TMPL_MHD) {
-            audio_obj.playSwipeTone();
-            if (!_pendingUnit.isEmpty()) {
-                workflow = WorkflowMode::TMPL_AMOUNT;
-                _pendingAmountDraft = _pendingAmount > 1 ? String(_pendingAmount) : "";
-                display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
-            } else {
-                auto products = templatesForCategory(_selectedCategory);
-                bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                    && products[_selectedTemplateIdx].useSorten;
-                if (hasSorten) {
-                    workflow = WorkflowMode::TMPL_SORTE;
-                    showTmplSorten();
-                } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                        && products[_selectedTemplateIdx].brands.size() > 1) {
-                    workflow = WorkflowMode::TMPL_BRAND;
-                    showTmplBrands();
-                } else {
-                    workflow = WorkflowMode::TMPL_PRODUCT;
-                    showTmplProducts();
-                }
-            }
-            return;
-        }
         if (workflow == WorkflowMode::NEW_ROLL_ENTRY
                 || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
             audio_obj.playSwipeTone();
@@ -762,8 +738,10 @@ void App::processOnscreenAction(OnscreenAction action) {
                         workflow = WorkflowMode::TMPL_AMOUNT;
                         display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, "");
                     } else {
-                        workflow = WorkflowMode::TMPL_MHD;
-                        display_obj.showTemplateMHD(tmpl.name, calcMHD(tmpl.shelfDays, _mhdOffset));
+                        _pendingExpiryDate = calcMHD(tmpl.shelfDays, 0);
+                        workflow = WorkflowMode::SAVING;
+                        state.setState(AppState::SAVING);
+                        finishStorageWorkflow();
                     }
                 }
             }
@@ -1006,9 +984,10 @@ void App::processOnscreenAction(OnscreenAction action) {
                     _mhdOffset = 0;
                     auto products = templatesForCategory(_selectedCategory);
                     if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
-                        workflow = WorkflowMode::TMPL_MHD;
-                        String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, 0);
-                        display_obj.showTemplateMHD(_pendingProduct.name, mhd);
+                        _pendingExpiryDate = calcMHD(products[_selectedTemplateIdx].shelfDays, 0);
+                        workflow = WorkflowMode::SAVING;
+                        state.setState(AppState::SAVING);
+                        finishStorageWorkflow();
                     }
                 }
             } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY) {
@@ -1042,7 +1021,6 @@ void App::processOnscreenAction(OnscreenAction action) {
                     _pendingQuantity = qty;
                     display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
                 }
-            // TMPL_MHD no longer uses qty grid (always 1 label for templates)
             } else { (void)qty; }
             break;
         }
@@ -1091,27 +1069,6 @@ void App::processOnscreenAction(OnscreenAction action) {
                     workflow = WorkflowMode::TMPL_PRODUCT;
                     showTmplProducts();
                 }
-            } else if (workflow == WorkflowMode::TMPL_MHD) {
-                if (!_pendingUnit.isEmpty()) {
-                    workflow = WorkflowMode::TMPL_AMOUNT;
-                    _pendingAmountDraft = _pendingAmount > 1 ? String(_pendingAmount) : "";
-                    display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
-                } else {
-                    auto products = templatesForCategory(_selectedCategory);
-                    bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                        && products[_selectedTemplateIdx].useSorten;
-                    if (hasSorten) {
-                        workflow = WorkflowMode::TMPL_SORTE;
-                        showTmplSorten();
-                    } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                            && products[_selectedTemplateIdx].brands.size() > 1) {
-                        workflow = WorkflowMode::TMPL_BRAND;
-                        showTmplBrands();
-                    } else {
-                        workflow = WorkflowMode::TMPL_PRODUCT;
-                        showTmplProducts();
-                    }
-                }
             } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY
                     || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
                 workflow = WorkflowMode::HOME;
@@ -1149,38 +1106,9 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         }
 
-        // ── Template MHD confirm ───────────────────────────────────────────
-        case OnscreenAction::MHD_DAY_MINUS:
-            if (workflow == WorkflowMode::TMPL_MHD) {
-                _mhdOffset--;
-                auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx < (int)products.size()) {
-                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                    display_obj.showTemplateMHD(_pendingProduct.name, mhd);
-                }
-            }
-            break;
-        case OnscreenAction::MHD_DAY_PLUS:
-            if (workflow == WorkflowMode::TMPL_MHD) {
-                _mhdOffset++;
-                auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx < (int)products.size()) {
-                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                    display_obj.showTemplateMHD(_pendingProduct.name, mhd);
-                }
-            }
-            break;
-        case OnscreenAction::MHD_CONFIRM:
-            if (workflow == WorkflowMode::TMPL_MHD) {
-                auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx < (int)products.size()) {
-                    _pendingExpiryDate = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                    workflow = WorkflowMode::SAVING;
-                    state.setState(AppState::SAVING);
-                    finishStorageWorkflow();
-                }
-            }
-            break;
+        case OnscreenAction::MHD_DAY_MINUS: break;
+        case OnscreenAction::MHD_DAY_PLUS:  break;
+        case OnscreenAction::MHD_CONFIRM:   break;
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
         case OnscreenAction::CONFIRM_YES:
@@ -1625,8 +1553,10 @@ void App::proceedFromSorte() {
         workflow = WorkflowMode::TMPL_AMOUNT;
         display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, "");
     } else {
-        workflow = WorkflowMode::TMPL_MHD;
-        display_obj.showTemplateMHD(_pendingProduct.name, calcMHD(tmpl.shelfDays, _mhdOffset));
+        _pendingExpiryDate = calcMHD(tmpl.shelfDays, 0);
+        workflow = WorkflowMode::SAVING;
+        state.setState(AppState::SAVING);
+        finishStorageWorkflow();
     }
 }
 
@@ -1682,8 +1612,10 @@ void App::startTmplMHD() {
             workflow = WorkflowMode::TMPL_AMOUNT;
             display_obj.showAmountEntry(tmpl.name, tmpl.unit, "");
         } else {
-            workflow = WorkflowMode::TMPL_MHD;
-            display_obj.showTemplateMHD(tmpl.name, calcMHD(tmpl.shelfDays, 0));
+            _pendingExpiryDate = calcMHD(tmpl.shelfDays, 0);
+            workflow = WorkflowMode::SAVING;
+            state.setState(AppState::SAVING);
+            finishStorageWorkflow();
         }
     }
 }
