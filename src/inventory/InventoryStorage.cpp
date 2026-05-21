@@ -15,7 +15,8 @@ bool InventoryStorage::load(std::vector<InventoryItem> &items) {
         item.category = obj["category"] | "";
         item.expiryDate = obj["expiryDate"] | "";
         item.addedDate = obj["addedDate"] | "";
-        item.quantity = obj["quantity"] | 0;
+        item.quantity     = obj["quantity"]     | 0;
+        item.unit         = obj["unit"]         | "";
         item.labelBarcode = obj["labelBarcode"] | "";
         item.location     = obj["location"]     | "";
         items.push_back(item);
@@ -35,6 +36,7 @@ bool InventoryStorage::save(const std::vector<InventoryItem> &items) {
         obj["expiryDate"] = item.expiryDate;
         obj["addedDate"] = item.addedDate;
         obj["quantity"]     = item.quantity;
+        obj["unit"]         = item.unit;
         obj["labelBarcode"] = item.labelBarcode;
         obj["location"]     = item.location;
     }
@@ -55,7 +57,8 @@ bool InventoryStorage::loadRemoved(std::vector<RemovedItem> &items) {
         ri.item.category       = obj["category"]   | "";
         ri.item.expiryDate     = obj["expiryDate"] | "";
         ri.item.addedDate      = obj["addedDate"]  | "";
-        ri.item.quantity       = obj["quantity"]   | 0;
+        ri.item.quantity       = obj["quantity"]     | 0;
+        ri.item.unit           = obj["unit"]         | "";
         ri.item.labelBarcode   = obj["labelBarcode"] | "";
         ri.item.location       = obj["location"]     | "";
         items.push_back(ri);
@@ -76,6 +79,7 @@ bool InventoryStorage::saveRemoved(const std::vector<RemovedItem> &items) {
         obj["expiryDate"]   = ri.item.expiryDate;
         obj["addedDate"]    = ri.item.addedDate;
         obj["quantity"]     = ri.item.quantity;
+        obj["unit"]         = ri.item.unit;
         obj["labelBarcode"] = ri.item.labelBarcode;
         obj["location"]     = ri.item.location;
     }

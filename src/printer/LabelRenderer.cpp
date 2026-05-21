@@ -50,7 +50,8 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
 
     row("  Einlagerung: ", item.addedDate);
     row("  MHD:         ", item.expiryDate);
-    row("  Menge:       ", String(item.quantity) + " St.");
+    String unitStr = item.unit.isEmpty() ? "St." : item.unit;
+    row("  Menge:       ", String(item.quantity) + " " + unitStr);
     row("  Haushalt:    ", device_config.getHousehold());
 
     // ── Code 128 barcode, no HRI text ────────────────────────────────────────

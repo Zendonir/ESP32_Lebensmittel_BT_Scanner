@@ -45,7 +45,8 @@ private:
         TMPL_CATEGORY,       // showing category list
         TMPL_PRODUCT,        // showing product list for selected category
         TMPL_BRAND,          // brand selection when template has >1 brand
-        TMPL_MHD,            // MHD + qty confirm before saving
+        TMPL_AMOUNT,         // numpad entry for food amount (Stück/Gramm) if template has unit
+        TMPL_MHD,            // MHD confirm before saving
         // Fully manual keyboard entry
         KB_ENTRY,            // keyboard input for product name
         // Location selection
@@ -146,6 +147,9 @@ private:
     int      _selectedTemplateIdx = -1;
     String   _selectedBrand;             // brand chosen in TMPL_BRAND step
     int      _mhdOffset           = 0;   // ±days applied to template's shelfDays
+    String   _pendingUnit;               // unit from template (e.g. "g", "St.") – empty = no amount step
+    String   _pendingAmountDraft;        // digits typed on TMPL_AMOUNT numpad
+    int      _pendingAmount       = 1;   // confirmed food amount (pairs with _pendingUnit)
 
     // Keyboard entry state
     String   _kbText;                    // current keyboard input text

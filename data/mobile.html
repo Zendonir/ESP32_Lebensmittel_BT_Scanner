@@ -272,6 +272,16 @@
             <select id="tmpl-cat"><option value="">Kategorie wählen…</option></select>
             <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650">
           </div>
+          <div class="tmpl-form-row">
+            <select id="tmpl-unit">
+              <option value="">Keine Mengenerfassung</option>
+              <option value="St.">Stück (St.)</option>
+              <option value="g">Gramm (g)</option>
+              <option value="ml">Milliliter (ml)</option>
+              <option value="kg">Kilogramm (kg)</option>
+            </select>
+            <div style="display:flex;align-items:center;padding:0 8px;font-size:12px;color:var(--sub)">Mengeneinheit auf Label</div>
+          </div>
           <button class="btn btn-primary" style="width:100%" onclick="addTemplate()">Vorlage hinzufügen</button>
         </div>
       </div>
@@ -771,13 +781,17 @@ function renderTemplates() {
 
   el.innerHTML = Object.entries(grouped).map(([cat, items]) => `
     <div class="section-head">${esc(cat)}</div>
-    ${items.map(t => `<div class="mgmt-item">
+    ${items.map(t => {
+      const days = t.defaultDays || t.shelfDays || '?';
+      const unit = t.unit ? ` · ${esc(t.unit)}` : '';
+      return `<div class="mgmt-item">
       <div class="mgmt-item-info">
         <div class="mgmt-item-name">${esc(t.name || '')}</div>
-        <div class="mgmt-item-sub">MHD: ${t.shelfDays || '?'} Tage</div>
+        <div class="mgmt-item-sub">MHD: ${days} Tage${unit}</div>
       </div>
       <button class="btn-danger" onclick="deleteTemplate(${JSON.stringify(t.id || t.name)})">Löschen</button>
-    </div>`).join('')}
+    </div>`;
+    }).join('')}
   `).join('');
 }
 
@@ -785,14 +799,18 @@ async function addTemplate() {
   const name     = document.getElementById('tmpl-name').value.trim();
   const category = document.getElementById('tmpl-cat').value;
   const shelfDays= parseInt(document.getElementById('tmpl-days').value, 10);
-  if (!name)          { toast('Name fehlt', 2000); return; }
-  if (!category)      { toast('Kategorie fehlt', 2000); return; }
+  const unit     = document.getElementById('tmpl-unit').value;
+  if (!name)            { toast('Name fehlt', 2000); return; }
+  if (!category)        { toast('Kategorie fehlt', 2000); return; }
   if (!(shelfDays > 0)) { toast('MHD-Tage fehlt', 2000); return; }
+  const payload = { name, category, shelfDays };
+  if (unit) payload.unit = unit;
   try {
-    const res = await apiPost('/api/templates/add', { name, category, shelfDays });
+    const res = await apiPost('/api/templates/add', payload);
     document.getElementById('tmpl-name').value  = '';
     document.getElementById('tmpl-days').value  = '';
-    const newTmpl = res.template || { id: res.id, name, category, shelfDays };
+    const newTmpl = { id: res.id || String(Date.now()), name, category, shelfDays };
+    if (unit) newTmpl.unit = unit;
     _templates.push(newTmpl);
     renderCategories();
     renderTemplates();

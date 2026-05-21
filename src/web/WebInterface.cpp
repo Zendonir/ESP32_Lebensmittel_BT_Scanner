@@ -678,6 +678,7 @@ void WebInterface::registerApiRoutes() {
                 obj["expiryDate"]   = it.expiryDate;
                 obj["addedDate"]    = it.addedDate;
                 obj["quantity"]     = it.quantity;
+                obj["unit"]         = it.unit;
                 obj["labelBarcode"] = it.labelBarcode;
                 obj["location"]     = it.location;
                 obj["household"]    = device_config.getHousehold();
@@ -722,6 +723,7 @@ void WebInterface::registerApiRoutes() {
             item.expiryDate   = body["expiryDate"]   | "";
             item.addedDate    = body["addedDate"]    | "";
             item.quantity     = body["quantity"]     | 1;
+            item.unit         = body["unit"]         | "";
             item.labelBarcode = body["labelBarcode"] | "";
 
             // Validate fields
@@ -1703,16 +1705,16 @@ void WebInterface::registerApiRoutes() {
         });
 
     // ---- PRODUCT TEMPLATES ----
-    // GET /api/templates  → return all templates
+    // GET /api/templates  → return all templates (reads custom_products.json so device sees them)
     _server.on("/api/templates", HTTP_GET, [](AsyncWebServerRequest *req) {
-        sendFile(req, "/templates.json", "[]");
+        sendFile(req, "/custom_products.json", "[]");
     });
 
-    // POST /api/templates/add  → add one template {name, category, shelfDays}
+    // POST /api/templates/add  → add one template {name, category, shelfDays, unit}
     _server.on("/api/templates/add", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument arr, inp;
-            loadJson("/templates.json", arr, "[]");
+            loadJson("/custom_products.json", arr, "[]");
             if (deserializeJson(inp, _body) != DeserializationError::Ok) {
                 req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
                 return;
@@ -1723,32 +1725,40 @@ void WebInterface::registerApiRoutes() {
                 return;
             }
             JsonObject item = arr.as<JsonArray>().add<JsonObject>();
-            item["id"]        = String(millis());
-            item["name"]      = name;
-            item["category"]  = inp["category"] | "Allgemein";
-            item["shelfDays"] = inp["shelfDays"] | 14;
-            saveJson("/templates.json", arr);
-            req->send(200, "application/json", "{\"ok\":true}");
+            String newId = String(millis());
+            item["id"]          = newId;
+            item["name"]        = name;
+            item["category"]    = inp["category"] | "Allgemein";
+            item["defaultDays"] = inp["shelfDays"] | 14;
+            String unit = inp["unit"] | "";
+            if (!unit.isEmpty()) item["unit"] = unit;
+            saveJson("/custom_products.json", arr);
+            String resp = "{\"ok\":true,\"id\":\"" + newId + "\"}";
+            req->send(200, "application/json", resp);
         },
         nullptr, bodyCollect);
 
-    // POST /api/templates/delete  → delete template by id {id}
+    // POST /api/templates/delete  → delete template by id or name {id} or {name}
     _server.on("/api/templates/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             JsonDocument arr, inp;
-            loadJson("/templates.json", arr, "[]");
+            loadJson("/custom_products.json", arr, "[]");
             if (deserializeJson(inp, _body) != DeserializationError::Ok) {
                 req->send(400, "application/json", "{\"error\":\"invalid JSON\"}");
                 return;
             }
-            String del_id = inp["id"] | "";
+            String del_id   = inp["id"]   | "";
+            String del_name = inp["name"] | "";
             JsonDocument out;
             JsonArray out_arr = out.to<JsonArray>();
             for (JsonObject obj : arr.as<JsonArray>()) {
-                String oid = obj["id"] | "";
-                if (oid != del_id) out_arr.add(obj);
+                String oid   = obj["id"]   | "";
+                String oname = obj["name"] | "";
+                if ((!del_id.isEmpty()   && oid   == del_id)  ||
+                    (!del_name.isEmpty() && oname == del_name)) continue;
+                out_arr.add(obj);
             }
-            saveJson("/templates.json", out);
+            saveJson("/custom_products.json", out);
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);

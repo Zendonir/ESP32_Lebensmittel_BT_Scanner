@@ -12,4 +12,5 @@ struct InventoryItem {
     int quantity = 0;
     String labelBarcode;
     String location;   // storage location when item was added
+    String unit;       // amount unit: "St.", "g", "ml", "kg", "" = plain pieces
 };

@@ -139,7 +139,8 @@ public:
     // Template workflow
     void showCategoryTiles(const std::vector<String> &categories);
     void showListScreen(const char *title, const std::vector<String> &items);
-    void showTemplateMHD(const String &productName, const String &mhd, int qty);
+    void showTemplateMHD(const String &productName, const String &mhd);
+    void showAmountEntry(const String &productName, const String &unit, const String &draft);
 
     // Location
     void setActiveLocation(const String &loc);

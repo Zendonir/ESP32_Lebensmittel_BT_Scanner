@@ -1509,8 +1509,7 @@ void Display::showListScreen(const char *title,
 //   Template MHD + qty confirm
 // ─────────────────────────────────────────────────────────
 
-void Display::showTemplateMHD(const String &productName,
-                               const String &mhd, int qty) {
+void Display::showTemplateMHD(const String &productName, const String &mhd) {
     if (!_initialized) return;
     _spr.fillSprite(C_BG);
     clear_regions();
@@ -1525,33 +1524,163 @@ void Display::showTemplateMHD(const String &productName,
     draw_wifi_dot();
     draw_location_badge(SCR_W - 22);
 
-    // MHD display (no day-adjust buttons)
-    int mhd_y = HDR_H + 6;
+    // ── Centre: MHD card with ± day adjust ───────────────────────────────────
+    static constexpr int PAD  = 12;
+    static constexpr int BTN_W = 64, BTN_H = 52;
+    static constexpr int CARD_Y = HDR_H + 20;
+    static constexpr int CARD_H = 100;
+
+    // Label
     _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
-    _spr.setTextDatum(ML_DATUM);
-    _spr.drawString("MHD:", 8, mhd_y + 8);
-    _spr.setTextColor(C_ACCENT, C_BG);
-    _spr.setTextFont(4);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("Mindesthaltbarkeitsdatum", SCR_W / 2, CARD_Y - 16);
+
+    // MHD display card
+    draw_card(PAD + BTN_W + 4, CARD_Y, SCR_W - 2 * (PAD + BTN_W + 4), CARD_H, C_SURFACE, C_ACCENT);
+    _spr.setTextFont(6);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString(mhd.c_str(), SCR_W / 2, mhd_y + 16);
+    _spr.drawString(mhd.c_str(), SCR_W / 2, CARD_Y + CARD_H / 2);
 
-    // Separator
-    _spr.drawFastHLine(0, mhd_y + 38, SCR_W, C_BORDER);
+    // – button (left)
+    draw_button(PAD, CARD_Y + (CARD_H - BTN_H) / 2, BTN_W, BTN_H,
+                "–", C_SURFACE2, C_TEXT, 4, OnscreenAction::MHD_DAY_MINUS);
+    // + button (right)
+    draw_button(SCR_W - PAD - BTN_W, CARD_Y + (CARD_H - BTN_H) / 2, BTN_W, BTN_H,
+                "+", C_SURFACE2, C_TEXT, 4, OnscreenAction::MHD_DAY_PLUS);
 
-    // Subheader for qty
-    _spr.setTextColor(C_ACCENT, C_BG);
+    _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge ausw\xE4hlen", SCR_W / 2, mhd_y + 44);
-
-    // 4×3 quantity grid
-    draw_qty_grid(mhd_y + 62, qty);
+    _spr.drawString("Tag anpassen", SCR_W / 2, CARD_Y + CARD_H + 8);
 
     // Bottom buttons
-    int bot_y = SCR_H - 52;
-    draw_button(4,            bot_y, 130, 44, "Abbrechen",   C_RED,   C_TEXT, 2, OnscreenAction::CANCEL);
-    draw_button(SCR_W - 180, bot_y, 170, 44, "Einlagern ->", C_GREEN, C_BG,   2, OnscreenAction::MHD_CONFIRM);
+    int bot_y = SCR_H - 56;
+    draw_button(PAD,             bot_y, 140, 46, "Abbrechen",   C_RED,   C_TEXT, 2, OnscreenAction::CANCEL);
+    draw_button(SCR_W - PAD - 178, bot_y, 178, 46, "Einlagern \x1A", C_GREEN, C_BG, 2, OnscreenAction::MHD_CONFIRM);
+
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
+//   Amount entry (template workflow: Stück / Gramm)
+// ─────────────────────────────────────────────────────────
+void Display::showAmountEntry(const String &productName,
+                               const String &unit, const String &draft) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
+    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.setTextFont(4);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    String hdr = unit == "g" || unit == "ml" || unit == "kg" ? "MENGE EINGEBEN" : "ANZAHL EINGEBEN";
+    _spr.drawString(hdr.c_str(), 10, HDR_H / 2);
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
+
+    // ── Vertical divider ─────────────────────────────────────────────────────
+    static constexpr int DIV_X = 240;
+    _spr.drawFastVLine(DIV_X, HDR_H, CNT_H, C_BORDER);
+
+    // ── Left panel ───────────────────────────────────────────────────────────
+    static constexpr int LP_PAD = 10;
+    static constexpr int LP_W   = DIV_X - 1;
+
+    _spr.setTextFont(2);
+    _spr.setTextColor(C_TEXT, C_BG);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString(trunc(productName, 24).c_str(), LP_PAD, HDR_H + 18);
+
+    // Unit label
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.drawString(("Einheit: " + unit).c_str(), LP_PAD, HDR_H + 38);
+
+    _spr.drawFastHLine(LP_PAD, HDR_H + 54, LP_W - LP_PAD * 2, C_BORDER);
+
+    // Prompt label
+    _spr.setTextFont(2);
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString("Menge eingeben:", LP_PAD, HDR_H + 70);
+
+    // Amount display card
+    static constexpr int BOX_X = LP_PAD;
+    static constexpr int BOX_Y = HDR_H + 84;
+    static constexpr int BOX_W = LP_W - LP_PAD * 2;
+    static constexpr int BOX_H = 80;
+    draw_card(BOX_X, BOX_Y, BOX_W, BOX_H, C_SURFACE, C_ACCENT);
+
+    // Show entered amount (or placeholder)
+    _spr.setTextDatum(MC_DATUM);
+    if (draft.isEmpty()) {
+        _spr.setTextFont(4);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.drawString(("___ " + unit).c_str(), BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
+    } else {
+        _spr.setTextFont(6);
+        _spr.setTextColor(C_ACCENT, C_SURFACE);
+        _spr.drawString((draft + " " + unit).c_str(), BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
+    }
+
+    // "Weiter" and "Abbrechen" buttons
+    bool canConfirm = !draft.isEmpty();
+    uint16_t cfm_bg = canConfirm ? C_GREEN : C_SURFACE2;
+    uint16_t cfm_fg = canConfirm ? C_BG    : C_SUBTEXT;
+    draw_button(LP_PAD, SCR_H - 96, LP_W - LP_PAD * 2, 42,
+                "Weiter \x1A", cfm_bg, cfm_fg, 4, OnscreenAction::DATE_CONFIRM);
+    draw_button(LP_PAD, SCR_H - 48, LP_W - LP_PAD * 2, 42,
+                "Abbrechen", C_YELLOW, C_BG, 4, OnscreenAction::CANCEL);
+
+    // ── Right panel: numpad (reuses date-entry layout) ───────────────────────
+    static constexpr int NP_X  = DIV_X + 1;
+    static constexpr int NP_W  = SCR_W - NP_X;
+    static constexpr int NP_Y  = HDR_H;
+    static constexpr int NP_H  = CNT_H;
+    static constexpr int COLS  = 3;
+    static constexpr int ROWS  = 4;
+    static constexpr int BTN_W = NP_W / COLS;
+    static constexpr int BTN_H = NP_H / ROWS;
+
+    static const char *NUM_LABELS[9] = {"1","2","3","4","5","6","7","8","9"};
+    static const OnscreenAction NUM_ACT[9] = {
+        OnscreenAction::DATE_DIGIT_1, OnscreenAction::DATE_DIGIT_2, OnscreenAction::DATE_DIGIT_3,
+        OnscreenAction::DATE_DIGIT_4, OnscreenAction::DATE_DIGIT_5, OnscreenAction::DATE_DIGIT_6,
+        OnscreenAction::DATE_DIGIT_7, OnscreenAction::DATE_DIGIT_8, OnscreenAction::DATE_DIGIT_9,
+    };
+    for (int i = 0; i < 9; i++) {
+        int row = i / COLS, col = i % COLS;
+        int bx = NP_X + col * BTN_W, by = NP_Y + row * BTN_H;
+        _spr.fillRect(bx, by, BTN_W, BTN_H, C_SURFACE2);
+        _spr.drawFastHLine(bx, by, BTN_W, C_BORDER);
+        _spr.drawFastVLine(bx, by, BTN_H, C_BORDER);
+        _spr.setTextFont(6);
+        _spr.setTextColor(C_TEXT, C_SURFACE2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(NUM_LABELS[i], bx + BTN_W / 2, by + BTN_H / 2);
+        add_region(bx, by, BTN_W, BTN_H, NUM_ACT[i]);
+    }
+    // Row 3: [0 — double width] [← — red]
+    int row3_y = NP_Y + 3 * BTN_H;
+    int zero_w = BTN_W * 2;
+    _spr.fillRect(NP_X,          row3_y, zero_w, BTN_H, C_SURFACE2);
+    _spr.fillRect(NP_X + zero_w, row3_y, BTN_W,  BTN_H, C_RED);
+    _spr.drawFastHLine(NP_X, row3_y, NP_W, C_BORDER);
+    _spr.drawFastVLine(NP_X,          row3_y, BTN_H, C_BORDER);
+    _spr.drawFastVLine(NP_X + zero_w, row3_y, BTN_H, C_BORDER);
+    _spr.setTextFont(6);
+    _spr.setTextColor(C_TEXT, C_SURFACE2);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString("0", NP_X + zero_w / 2, row3_y + BTN_H / 2);
+    _spr.setTextFont(4);
+    _spr.setTextColor(C_TEXT, C_RED);
+    _spr.drawString("<--", NP_X + zero_w + BTN_W / 2, row3_y + BTN_H / 2);
+    add_region(NP_X,          row3_y, zero_w, BTN_H, OnscreenAction::DATE_DIGIT_0);
+    add_region(NP_X + zero_w, row3_y, BTN_W,  BTN_H, OnscreenAction::DATE_BACKSPACE);
 
     commit();
 }
