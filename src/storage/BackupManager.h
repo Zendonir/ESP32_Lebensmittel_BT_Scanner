@@ -9,6 +9,7 @@ namespace BackupManager {
     static const char* const BACKUP_FILES[] = {
         "/inventory.json",
         "/custom_products.json",
+        "/categories.json",
         "/locations.json",
         "/server_sync_config.json",
         "/display_config.json",
