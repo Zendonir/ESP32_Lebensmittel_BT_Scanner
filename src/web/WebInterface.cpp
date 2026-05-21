@@ -59,7 +59,6 @@ static void otaUrlTask(void *param) {
         Logger::info("OTA", String("GET ") + currentUrl);
         WiFiClientSecure probe;
         probe.setInsecure();
-        probe.setBufferSizes(4096, 512);  // reduce SSL buffers: default 16384 → saves ~24 KB SRAM
         probe.setTimeout(20);
         HTTPClient http;
         http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
@@ -140,7 +139,6 @@ static void otaFsUrlTask(void *param) {
         Logger::info("OTA", String("FS GET ") + currentUrl);
         WiFiClientSecure probe;
         probe.setInsecure();
-        probe.setBufferSizes(4096, 512);  // reduce SSL buffers: saves ~24 KB SRAM
         probe.setTimeout(20);
         HTTPClient http;
         http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
