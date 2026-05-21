@@ -22,6 +22,19 @@
 #include <esp_system.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <mbedtls/platform.h>
+#include <esp_heap_caps.h>
+
+// Route mbedTLS SSL allocations to PSRAM so internal SRAM isn't exhausted
+// while BLE + web server are active.
+static void *_ota_ssl_calloc(size_t n, size_t sz) {
+    void *p = heap_caps_calloc(n, sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p) p = heap_caps_calloc(n, sz, MALLOC_CAP_DEFAULT);
+    return p;
+}
+static inline void _ota_ssl_use_psram() {
+    mbedtls_platform_set_calloc_free(_ota_ssl_calloc, heap_caps_free);
+}
 
 /* ── OTA from URL ─────────────────────────────────────────────── */
 static volatile int  _otaUrlPct  = 0;
@@ -39,11 +52,14 @@ static void otaUrlTask(void *param) {
     String currentUrl = urlBuf;
     free(urlBuf);
 
+    _ota_ssl_use_psram();  // route SSL heap to PSRAM before any WiFiClientSecure
+
     // ── Step 1: follow redirects until we reach the real download URL ────────
     for (int hop = 0; hop < 4; hop++) {
         Logger::info("OTA", String("GET ") + currentUrl);
         WiFiClientSecure probe;
         probe.setInsecure();
+        probe.setBufferSizes(4096, 512);  // reduce SSL buffers: default 16384 → saves ~24 KB SRAM
         probe.setTimeout(20);
         HTTPClient http;
         http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
@@ -118,10 +134,13 @@ static void otaFsUrlTask(void *param) {
     String currentUrl = urlBuf;
     free(urlBuf);
 
+    _ota_ssl_use_psram();  // route SSL heap to PSRAM before any WiFiClientSecure
+
     for (int hop = 0; hop < 4; hop++) {
         Logger::info("OTA", String("FS GET ") + currentUrl);
         WiFiClientSecure probe;
         probe.setInsecure();
+        probe.setBufferSizes(4096, 512);  // reduce SSL buffers: saves ~24 KB SRAM
         probe.setTimeout(20);
         HTTPClient http;
         http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
