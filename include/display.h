@@ -85,6 +85,8 @@ enum class OnscreenAction {
     // Generic confirm dialog (WiFi password etc.)
     CONFIRM_YES,
     CONFIRM_NO,
+    // Label roll management
+    NEW_ROLL,
 };
 
 enum class UiTab {
@@ -118,7 +120,8 @@ public:
                   const String &lastScan, const String &lastType,
                   size_t inventoryCount, int expiringSoon,
                   const String &message = "",
-                  bool sdMounted = false);
+                  bool sdMounted = false,
+                  int rollRemaining = -1);
 
     // Barcode workflow
     void showFetchingProduct(const String &barcode);
@@ -141,6 +144,7 @@ public:
     void showListScreen(const char *title, const std::vector<String> &items);
     void showTemplateMHD(const String &productName, const String &mhd);
     void showAmountEntry(const String &productName, const String &unit, const String &draft);
+    void showNewRollEntry(const String &draft);
 
     // Location
     void setActiveLocation(const String &loc);

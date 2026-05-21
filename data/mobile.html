@@ -560,9 +560,7 @@ function renderInventory() {
 async function deleteItem(labelBarcode) {
   if (!labelBarcode) return;
   try {
-    await apiFetch('/api/inventory/delete', { method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ labelBarcode }) });
+    await apiPost('/api/inventory/delete', { labelBarcode });
     _allItems = _allItems.filter(it => it.labelBarcode !== labelBarcode);
     renderInventory();
     updateStats();

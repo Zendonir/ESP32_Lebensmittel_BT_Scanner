@@ -371,6 +371,15 @@ void App::renderActiveTab(const String &message, bool force) {
         return;
     }
 
+    // INVENTORY tab always shows the live list, not the empty-placeholder panel
+    if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
+        display_obj.showInventoryList(inventory.items(), _invFilter,
+            device_config.getHouseholdAbbr(), _invExpandedGroup);
+        _lastUiHash = buildUiHash();
+        _lastUiRefreshMs = millis();
+        return;
+    }
+
     uint32_t hash = buildUiHash();
     if (!force && hash == _lastUiHash) {
         _lastUiRefreshMs = millis();
@@ -397,7 +406,8 @@ void App::renderActiveTab(const String &message, bool force) {
         inventory.items().size(),
         countExpiringSoon(7),
         _statusMessage,
-        AppFS::usingSD());
+        AppFS::usingSD(),
+        labelCounter.getRemaining());
     _lastUiHash = hash;
     _lastUiRefreshMs = millis();
 }
@@ -521,6 +531,14 @@ void App::processOnscreenAction(OnscreenAction action) {
             _pendingAmountDraft += digit;
             audio_obj.playClickTone();
             display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
+        }
+        return;
+    }
+    if (digit && workflow == WorkflowMode::NEW_ROLL_ENTRY) {
+        if (_rollDraft.length() < 5) {
+            _rollDraft += digit;
+            audio_obj.playClickTone();
+            display_obj.showNewRollEntry(_rollDraft);
         }
         return;
     }
@@ -674,6 +692,13 @@ void App::processOnscreenAction(OnscreenAction action) {
                     showTmplProducts();
                 }
             }
+            return;
+        }
+        if (workflow == WorkflowMode::NEW_ROLL_ENTRY
+                || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
+            audio_obj.playSwipeTone();
+            workflow = WorkflowMode::HOME;
+            renderActiveTab("");
             return;
         }
     }
@@ -960,6 +985,9 @@ void App::processOnscreenAction(OnscreenAction action) {
             } else if (workflow == WorkflowMode::TMPL_AMOUNT && !_pendingAmountDraft.isEmpty()) {
                 _pendingAmountDraft.remove(_pendingAmountDraft.length() - 1);
                 display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
+            } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY && !_rollDraft.isEmpty()) {
+                _rollDraft.remove(_rollDraft.length() - 1);
+                display_obj.showNewRollEntry(_rollDraft);
             }
             break;
         case OnscreenAction::DATE_CONFIRM:
@@ -982,6 +1010,15 @@ void App::processOnscreenAction(OnscreenAction action) {
                         String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, 0);
                         display_obj.showTemplateMHD(_pendingProduct.name, mhd);
                     }
+                }
+            } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY) {
+                uint32_t size = _rollDraft.toInt();
+                if (size == 0) {
+                    audio_obj.playWarningTone();
+                } else {
+                    labelCounter.newRoll(size);
+                    workflow = WorkflowMode::HOME;
+                    renderActiveTab("Neue Rolle: " + String(size) + " Labels");
                 }
             }
             break;
@@ -1075,6 +1112,10 @@ void App::processOnscreenAction(OnscreenAction action) {
                         showTmplProducts();
                     }
                 }
+            } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY
+                    || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
+                workflow = WorkflowMode::HOME;
+                renderActiveTab("");
             } else {
                 workflow = WorkflowMode::HOME;
                 state.setState(AppState::MAIN);
@@ -1092,6 +1133,21 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::LOCATION_SELECT;
             showLocationSelect();
             break;
+
+        case OnscreenAction::NEW_ROLL: {
+            uint32_t prev = labelCounter.getRollSize();
+            if (prev > 0) {
+                _prevRollSize = prev;
+                workflow = WorkflowMode::NEW_ROLL_CONFIRM;
+                display_obj.showConfirmDialog("NEUE ROLLE",
+                    "Gleiche Rollengroesse (" + String(prev) + " Labels) wie zuvor?");
+            } else {
+                _rollDraft = "";
+                workflow = WorkflowMode::NEW_ROLL_ENTRY;
+                display_obj.showNewRollEntry("");
+            }
+            break;
+        }
 
         // ── Template MHD confirm ───────────────────────────────────────────
         case OnscreenAction::MHD_DAY_MINUS:
@@ -1134,12 +1190,20 @@ void App::processOnscreenAction(OnscreenAction action) {
                 _wifiConnectStartMs = millis();
                 workflow = WorkflowMode::WIFI_SETUP_CONN;
                 display_obj.showResult("Verbinde…", _selectedSsid, false);
+            } else if (workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
+                labelCounter.newRoll(_prevRollSize);
+                workflow = WorkflowMode::HOME;
+                renderActiveTab("Neue Rolle: " + String(_prevRollSize) + " Labels");
             }
             break;
         case OnscreenAction::CONFIRM_NO:
             if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
                 workflow = WorkflowMode::WIFI_SETUP_PASS;
                 display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
+            } else if (workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
+                _rollDraft = "";
+                workflow = WorkflowMode::NEW_ROLL_ENTRY;
+                display_obj.showNewRollEntry("");
             }
             break;
         case OnscreenAction::KB_CONFIRM:

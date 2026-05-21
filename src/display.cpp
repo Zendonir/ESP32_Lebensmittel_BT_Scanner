@@ -152,6 +152,7 @@ struct HomeState {
     String lastScan, lastType;
     size_t inventoryCount = 0;
     int    expiringSoon   = 0;
+    int    rollRemaining  = -1;   // -1 = no roll configured
     String message;
     bool   valid = false;
 };
@@ -235,7 +236,7 @@ static void draw_header(UiTab activeTab, bool wifiConnected) {
 static void draw_panel_store(const HomeState &s) {
     int py = CNT_Y;
 
-    static const char   *stat_labels[4] = { "Produkte", "Ablaufend", "Kritisch", "Einkauf" };
+    static const char   *stat_labels[4] = { "Produkte", "Ablaufend", "Kritisch", "Label-Rest" };
     static const uint16_t stat_colors[4] = { C_ACCENT, C_YELLOW, C_RED, C_GREEN };
     int card_w = 115, card_h = 64;
     for (int i = 0; i < 4; i++) {
@@ -243,11 +244,14 @@ static void draw_panel_store(const HomeState &s) {
         int cy = py + 4;
         draw_card(cx, cy, card_w, card_h, C_SURFACE, stat_colors[i]);
         _spr.fillRect(cx + 1, cy + 1, 4, card_h - 2, stat_colors[i]);
-        const char *count = (i == 0) ? String(s.inventoryCount).c_str() : "0";
+        String count;
+        if (i == 0)      count = String(s.inventoryCount);
+        else if (i == 3) count = (s.rollRemaining >= 0) ? String(s.rollRemaining) : "--";
+        else             count = "0";
         _spr.setTextColor(stat_colors[i], C_SURFACE);
         _spr.setTextFont(4);
         _spr.setTextDatum(TL_DATUM);
-        _spr.drawString(count, cx + 10, cy + 8);
+        _spr.drawString(count.c_str(), cx + 10, cy + 8);
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
         _spr.setTextFont(2);
         _spr.drawString(stat_labels[i], cx + 10, cy + 38);
@@ -263,6 +267,12 @@ static void draw_panel_store(const HomeState &s) {
     draw_pill(4, pill_y, wifi_pill.c_str(), wifi_bg);
     int pill_x2 = 4 + (int)_spr.textWidth(wifi_pill.c_str()) + 20;
     draw_pill(pill_x2, pill_y, ble_ok ? "BLE OK" : "BLE ---", ble_ok ? C_GREEN : C_SURFACE2);
+
+    // "Neue Rolle" button — right side of pills row
+    static constexpr int ROLL_BTN_W = 116;
+    static constexpr int ROLL_BTN_H = 26;
+    draw_button(SCR_W - ROLL_BTN_W - 4, pill_y - 2, ROLL_BTN_W, ROLL_BTN_H,
+                "Neue Rolle", C_SURFACE2, C_TEXT, 2, OnscreenAction::NEW_ROLL);
 
     int scan_y = py + 98;
     draw_card(4, scan_y, 234, 72, C_SURFACE, C_ACCENT);
@@ -722,7 +732,7 @@ void Display::showHome(UiTab activeTab,
                        const String &scannerStatus, const String &scannerName,
                        const String &lastScan, const String &lastType,
                        size_t inventoryCount, int expiringSoon,
-                       const String &message, bool sdMounted) {
+                       const String &message, bool sdMounted, int rollRemaining) {
     if (!_initialized) return;
     _homeState.tab            = activeTab;
     _homeState.wifiConnected  = wifiConnected;
@@ -735,6 +745,7 @@ void Display::showHome(UiTab activeTab,
     _homeState.lastType       = lastType;
     _homeState.inventoryCount = inventoryCount;
     _homeState.expiringSoon   = expiringSoon;
+    _homeState.rollRemaining  = rollRemaining;
     _homeState.message        = message;
     _homeState.valid          = true;
     render_home(_homeState);
@@ -1665,6 +1676,106 @@ void Display::showAmountEntry(const String &productName,
         add_region(bx, by, BTN_W, BTN_H, NUM_ACT[i]);
     }
     // Row 3: [0 — double width] [← — red]
+    int row3_y = NP_Y + 3 * BTN_H;
+    int zero_w = BTN_W * 2;
+    _spr.fillRect(NP_X,          row3_y, zero_w, BTN_H, C_SURFACE2);
+    _spr.fillRect(NP_X + zero_w, row3_y, BTN_W,  BTN_H, C_RED);
+    _spr.drawFastHLine(NP_X, row3_y, NP_W, C_BORDER);
+    _spr.drawFastVLine(NP_X,          row3_y, BTN_H, C_BORDER);
+    _spr.drawFastVLine(NP_X + zero_w, row3_y, BTN_H, C_BORDER);
+    _spr.setTextFont(6);
+    _spr.setTextColor(C_TEXT, C_SURFACE2);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString("0", NP_X + zero_w / 2, row3_y + BTN_H / 2);
+    _spr.setTextFont(4);
+    _spr.setTextColor(C_TEXT, C_RED);
+    _spr.drawString("<--", NP_X + zero_w + BTN_W / 2, row3_y + BTN_H / 2);
+    add_region(NP_X,          row3_y, zero_w, BTN_H, OnscreenAction::DATE_DIGIT_0);
+    add_region(NP_X + zero_w, row3_y, BTN_W,  BTN_H, OnscreenAction::DATE_BACKSPACE);
+
+    commit();
+}
+
+void Display::showNewRollEntry(const String &draft) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
+    _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.setTextFont(4);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.drawString("NEUE ROLLE EINLEGEN", 10, HDR_H / 2);
+    draw_wifi_dot();
+    draw_location_badge(SCR_W - 22);
+
+    static constexpr int DIV_X = 240;
+    _spr.drawFastVLine(DIV_X, HDR_H, CNT_H, C_BORDER);
+
+    static constexpr int LP_PAD = 10;
+    static constexpr int LP_W   = DIV_X - 1;
+
+    _spr.setTextFont(2);
+    _spr.setTextColor(C_TEXT, C_BG);
+    _spr.setTextDatum(ML_DATUM);
+    _spr.drawString("Labels pro Rolle", LP_PAD, HDR_H + 18);
+    _spr.setTextColor(C_SUBTEXT, C_BG);
+    _spr.drawString("Anzahl eingeben:", LP_PAD, HDR_H + 38);
+    _spr.drawFastHLine(LP_PAD, HDR_H + 54, LP_W - LP_PAD * 2, C_BORDER);
+
+    static constexpr int BOX_X = LP_PAD;
+    static constexpr int BOX_Y = HDR_H + 66;
+    static constexpr int BOX_W = LP_W - LP_PAD * 2;
+    static constexpr int BOX_H = 80;
+    draw_card(BOX_X, BOX_Y, BOX_W, BOX_H, C_SURFACE, C_ACCENT);
+
+    _spr.setTextDatum(MC_DATUM);
+    if (draft.isEmpty()) {
+        _spr.setTextFont(4);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.drawString("___ Labels", BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
+    } else {
+        _spr.setTextFont(6);
+        _spr.setTextColor(C_ACCENT, C_SURFACE);
+        _spr.drawString(draft.c_str(), BOX_X + BOX_W / 2, BOX_Y + BOX_H / 2);
+    }
+
+    bool canConfirm = !draft.isEmpty() && draft.toInt() > 0;
+    uint16_t cfm_bg = canConfirm ? C_GREEN : C_SURFACE2;
+    uint16_t cfm_fg = canConfirm ? C_BG    : C_SUBTEXT;
+    draw_button(LP_PAD, SCR_H - 96, LP_W - LP_PAD * 2, 42,
+                "Bestaetigen", cfm_bg, cfm_fg, 4, OnscreenAction::DATE_CONFIRM);
+    draw_button(LP_PAD, SCR_H - 48, LP_W - LP_PAD * 2, 42,
+                "Abbrechen", C_YELLOW, C_BG, 4, OnscreenAction::CANCEL);
+
+    static constexpr int NP_X  = DIV_X + 1;
+    static constexpr int NP_W  = SCR_W - NP_X;
+    static constexpr int NP_Y  = HDR_H;
+    static constexpr int NP_H  = CNT_H;
+    static constexpr int COLS  = 3;
+    static constexpr int ROWS  = 4;
+    static constexpr int BTN_W = NP_W / COLS;
+    static constexpr int BTN_H = NP_H / ROWS;
+
+    static const char *NUM_LABELS[9] = {"1","2","3","4","5","6","7","8","9"};
+    static const OnscreenAction NUM_ACT[9] = {
+        OnscreenAction::DATE_DIGIT_1, OnscreenAction::DATE_DIGIT_2, OnscreenAction::DATE_DIGIT_3,
+        OnscreenAction::DATE_DIGIT_4, OnscreenAction::DATE_DIGIT_5, OnscreenAction::DATE_DIGIT_6,
+        OnscreenAction::DATE_DIGIT_7, OnscreenAction::DATE_DIGIT_8, OnscreenAction::DATE_DIGIT_9,
+    };
+    for (int i = 0; i < 9; i++) {
+        int row = i / COLS, col = i % COLS;
+        int bx = NP_X + col * BTN_W, by = NP_Y + row * BTN_H;
+        _spr.fillRect(bx, by, BTN_W, BTN_H, C_SURFACE2);
+        _spr.drawFastHLine(bx, by, BTN_W, C_BORDER);
+        _spr.drawFastVLine(bx, by, BTN_H, C_BORDER);
+        _spr.setTextFont(6);
+        _spr.setTextColor(C_TEXT, C_SURFACE2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(NUM_LABELS[i], bx + BTN_W / 2, by + BTN_H / 2);
+        add_region(bx, by, BTN_W, BTN_H, NUM_ACT[i]);
+    }
     int row3_y = NP_Y + 3 * BTN_H;
     int zero_w = BTN_W * 2;
     _spr.fillRect(NP_X,          row3_y, zero_w, BTN_H, C_SURFACE2);

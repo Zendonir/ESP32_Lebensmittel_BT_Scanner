@@ -64,6 +64,9 @@ private:
         SD_IMPORT_PROMPT,
         // FIFO out-of-order warning (waiting for user confirmation)
         FIFO_WARN,
+        // Label roll management
+        NEW_ROLL_ENTRY,    // numpad to enter roll size
+        NEW_ROLL_CONFIRM,  // "same roll type as before?" dialog
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -184,6 +187,10 @@ private:
     static constexpr uint32_t RESULT_AUTO_DISMISS_MS = 5000;
 
     int countExpiringSoon(int days = 7) const;
+
+    // Label roll entry state
+    String   _rollDraft;
+    uint32_t _prevRollSize = 0;
 
     // FIFO warning pending state
     String _fifoLabelCode;
