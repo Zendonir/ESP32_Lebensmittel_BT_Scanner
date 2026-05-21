@@ -721,7 +721,8 @@ Pages.templates = {
         </div>
         <div class="tpl-meta">
           ${t.defaultDays ? `<span class="tpl-chip">${t.defaultDays} Tage MHD</span>` : ''}
-          ${t.askQty ? `<span class="tpl-chip">Menge abfragen</span>` : ''}
+          ${(t.unit || t.askQty) ? `<span class="tpl-chip">Menge · ${t.unit||'?'}</span>` : ''}
+          ${t.useSorten ? `<span class="tpl-chip">Sorten</span>` : ''}
           ${t.barcode ? `<span class="tpl-chip mono">${esc(t.barcode)}</span>` : ''}
         </div>
         ${t.description ? `<div style="font-size:.8rem;color:var(--subtext);margin-top:8px">${esc(t.description)}</div>` : ''}
@@ -771,7 +772,23 @@ Pages.templates = {
           <div class="form-field"><label>Kategorie</label><select class="select" id="tfCat"><option value="">—</option>${catOpts}</select></div>
           <div class="form-field"><label>Beschreibung</label><input class="input" id="tfDesc" value="${esc(t?.description||'')}"></div>
           <div class="form-field"><label>Standard-Haltbarkeit (Tage)</label><input class="input" type="number" id="tfDays" value="${t?.defaultDays||0}" min="0"></div>
-          <div class="form-field"><label>Menge abfragen</label><label class="switch"><input type="checkbox" id="tfAskQty" ${t?.askQty?'checked':''}><span class="slider"></span></label></div>
+          <div class="form-field" style="display:flex;align-items:center;justify-content:space-between">
+            <label>Menge abfragen</label>
+            <label class="switch"><input type="checkbox" id="tfAskQty" ${t?.askQty||t?.unit?'checked':''} onchange="document.getElementById('tfUnitRow').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
+          </div>
+          <div class="form-field" id="tfUnitRow" style="display:${t?.unit?'block':'none'}">
+            <label>Einheit</label>
+            <select class="select" id="tfUnit">
+              <option value="St." ${t?.unit==='St.'?'selected':''}>Stück (St.)</option>
+              <option value="g"   ${t?.unit==='g'  ?'selected':''}>Gramm (g)</option>
+              <option value="ml"  ${t?.unit==='ml' ?'selected':''}>Milliliter (ml)</option>
+              <option value="kg"  ${t?.unit==='kg' ?'selected':''}>Kilogramm (kg)</option>
+            </select>
+          </div>
+          <div class="form-field" style="display:flex;align-items:center;justify-content:space-between">
+            <label>Sorten-Auswahl (Texteingabe am Gerät)</label>
+            <label class="switch"><input type="checkbox" id="tfUseSorten" ${t?.useSorten?'checked':''}><span class="slider"></span></label>
+          </div>
         </form>`,
       actions: [
         { label: 'Abbrechen', cls: '', onclick: Modal.hide },
@@ -785,6 +802,9 @@ Pages.templates = {
     const name = document.getElementById('tfName').value.trim();
     if (!name) { Toast.warn('Name erforderlich'); return; }
     const brands = this._brands.map(b => b.trim()).filter(b => b.length > 0);
+    const askQty    = document.getElementById('tfAskQty').checked;
+    const unit      = askQty ? document.getElementById('tfUnit').value : '';
+    const useSorten = document.getElementById('tfUseSorten').checked;
     const data = {
       name,
       brands,
@@ -792,7 +812,9 @@ Pages.templates = {
       category:    document.getElementById('tfCat').value,
       description: document.getElementById('tfDesc').value.trim(),
       defaultDays: parseInt(document.getElementById('tfDays').value) || 0,
-      askQty:      document.getElementById('tfAskQty').checked,
+      askQty,
+      ...(unit      ? { unit }      : {}),
+      ...(useSorten ? { useSorten } : {}),
     };
     try {
       if (original !== null && original._idx !== undefined) {
