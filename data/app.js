@@ -496,6 +496,7 @@ Pages.inventory = {
   },
 
   renderTable(items) {
+    this._filtered = items;
     const tbody = document.getElementById('invBody');
     const empty = document.getElementById('invEmpty');
     if (!items.length) {
@@ -593,7 +594,7 @@ Pages.inventory = {
   },
 
   _itemIndex(item) {
-    return State.inventory.indexOf(item);
+    return this._filtered.indexOf(item);
   },
 
   _filtered: [],
