@@ -949,14 +949,14 @@ Pages.locations = {
         ? `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(loc.color)};margin-right:10px;flex-shrink:0"></span>`
         : '';
       return `
-      <div class="cat-card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-left:4px solid ${loc.color||'transparent'}">
-        <div style="display:flex;align-items:center">
+      <div class="cat-card" style="border-left:4px solid ${loc.color||'var(--border)'}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
           ${dot}
-          <div class="cat-name" style="font-size:1rem;font-weight:600">${esc(loc.name)}</div>
+          <div class="cat-name">${esc(loc.name)}</div>
         </div>
-        <div class="btn-group">
+        <div class="btn-group" style="flex-shrink:0">
           <button class="btn btn-sm" onclick="Pages.locations.setActive('${esc(loc.name)}')">Aktivieren</button>
-          <button class="btn btn-sm" onclick="Pages.locations.edit(${i})">Bearb.</button>
+          <button class="btn btn-sm" onclick="Pages.locations.edit(${i})">Bearbeiten</button>
           <button class="btn btn-sm btn-danger" onclick="Pages.locations.remove(${i})">Löschen</button>
         </div>
       </div>`;
