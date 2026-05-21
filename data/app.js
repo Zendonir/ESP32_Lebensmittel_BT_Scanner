@@ -547,11 +547,11 @@ Pages.inventory = {
         <td>${cat ? `<span class="badge badge-info">${esc(cat)}</span>` : '—'}</td>
         <td><span class="badge badge-${dClass}">${dLabel}</span><div style="font-size:.75rem;color:var(--subtext)">${esc(group.earliest)}</div></td>
         <td style="text-align:center">${group.members.length}</td>
-        <td>${isSolo ? `
+        <td>${isSolo ? (() => { const si = Pages.inventory._itemIndex(group.members[0]); return `
           <div class="btn-group">
-            <button class="btn btn-sm" onclick="event.stopPropagation();Pages.inventory.edit(Pages.inventory._itemIndex(group.members[0]))">Bearb.</button>
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();Pages.inventory.remove(Pages.inventory._itemIndex(group.members[0]))">Löschen</button>
-          </div>` : `<span style="color:var(--subtext);font-size:.8rem">▶ Details</span>`}
+            <button class="btn btn-sm" onclick="event.stopPropagation();Pages.inventory.edit(${si})">Bearb.</button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();Pages.inventory.remove(${si})">Löschen</button>
+          </div>`; })() : `<span style="color:var(--subtext);font-size:.8rem">▶ Details</span>`}
         </td>
       </tr>`;
 
