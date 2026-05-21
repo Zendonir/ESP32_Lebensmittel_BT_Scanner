@@ -181,6 +181,38 @@
     cursor: pointer; border-radius: 0 var(--radius) var(--radius) 0;
     flex-shrink: 0;
   }
+
+  /* ── Verwaltung tab ── */
+  .add-row { display: flex; gap: 8px; margin-top: 10px; }
+  .add-row input, .add-row select {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 14px;
+    outline: none; -webkit-appearance: none; min-width: 0;
+  }
+  .add-row input:focus, .add-row select:focus { border-color: var(--accent); }
+  .btn { padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-danger  { background: none; border: 1px solid var(--border); color: var(--red); padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  .mgmt-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .mgmt-item:last-child { border-bottom: none; }
+  .mgmt-item-info { flex: 1; min-width: 0; }
+  .mgmt-item-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mgmt-item-sub  { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .mgmt-empty { text-align: center; color: var(--sub); padding: 16px 0; font-size: 13px; }
+  .tmpl-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .tmpl-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tmpl-form input, .tmpl-form select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 14px;
+    outline: none; -webkit-appearance: none;
+  }
+  .tmpl-form input:focus, .tmpl-form select:focus { border-color: var(--accent); }
+  .cat-filter-wrap { margin-bottom: 10px; }
+  .cat-filter-wrap select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 13px;
+    outline: none; -webkit-appearance: none;
+  }
 </style>
 </head>
 <body>
@@ -213,6 +245,36 @@
     <div id="tab-exp" class="tab-pane">
       <div class="section-head">Diese Woche ablaufend</div>
       <div id="exp-list"><div class="inv-empty"><span class="spinner"></span></div></div>
+    </div>
+
+    <!-- VERWALTUNG TAB -->
+    <div id="tab-mgmt" class="tab-pane">
+      <div class="card">
+        <div class="card-title">Kategorien</div>
+        <div id="cat-list"><div class="mgmt-empty"><span class="spinner"></span></div></div>
+        <div class="add-row">
+          <input type="text" id="cat-input" placeholder="Neue Kategorie…" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false">
+          <button class="btn btn-primary" onclick="addCategory()">+</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Vorlagen</div>
+        <div class="cat-filter-wrap">
+          <select id="tmpl-filter-cat" onchange="renderTemplates()">
+            <option value="">Alle Kategorien</option>
+          </select>
+        </div>
+        <div id="tmpl-list"><div class="mgmt-empty"><span class="spinner"></span></div></div>
+        <div class="tmpl-form">
+          <input type="text" id="tmpl-name" placeholder="Name der Vorlage…" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false">
+          <div class="tmpl-form-row">
+            <select id="tmpl-cat"><option value="">Kategorie wählen…</option></select>
+            <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650">
+          </div>
+          <button class="btn btn-primary" style="width:100%" onclick="addTemplate()">Vorlage hinzufügen</button>
+        </div>
+      </div>
     </div>
 
     <!-- EINSTELLUNGEN TAB -->
@@ -266,6 +328,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       ABLAUFEND
     </button>
+    <button class="tab-btn" data-tab="mgmt" onclick="switchTab('mgmt')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2z"/><path d="M7 7h.01"/></svg>
+      VORLAGEN
+    </button>
     <button class="tab-btn" data-tab="sys" onclick="switchTab('sys')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
       SYSTEM
@@ -279,10 +345,12 @@
 'use strict';
 
 // ── State ──────────────────────────────────────────────────────
-let _allItems = [];
-let _filter   = '';
-let _sysInfo  = {};
-let _devCfg   = {};
+let _allItems   = [];
+let _filter     = '';
+let _sysInfo    = {};
+let _devCfg     = {};
+let _categories = [];
+let _templates  = [];
 
 // ── Tab switching ──────────────────────────────────────────────
 function switchTab(name) {
@@ -290,8 +358,9 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelector('[data-tab="' + name + '"]').classList.add('active');
-  if (name === 'exp') renderExpiring();
-  if (name === 'sys') loadSysInfo();
+  if (name === 'exp')  renderExpiring();
+  if (name === 'sys')  loadSysInfo();
+  if (name === 'mgmt') loadMgmt();
 }
 
 // ── Toast ─────────────────────────────────────────────────────
@@ -349,6 +418,16 @@ async function apiFetch(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(r.status);
   return r.json();
+}
+
+async function apiPost(path, data) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error(r.status);
+  return r.json().catch(() => ({}));
 }
 
 // ── Inventory ─────────────────────────────────────────────────
@@ -585,6 +664,154 @@ async function loadSysInfo() {
 function fmtUptime(sec) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
   return `${h}h ${m}m`;
+}
+
+// ── Verwaltung: Categories ────────────────────────────────────
+async function loadMgmt() {
+  try {
+    const [cats, tmpls] = await Promise.all([
+      apiFetch('/api/categories'),
+      apiFetch('/api/templates')
+    ]);
+    _categories = Array.isArray(cats) ? cats : (cats.categories || []);
+    _templates  = Array.isArray(tmpls) ? tmpls : (tmpls.templates || []);
+    renderCategories();
+    renderTemplates();
+    populateCatSelects();
+  } catch(e) {
+    document.getElementById('cat-list').innerHTML  = '<div class="mgmt-empty">Fehler beim Laden</div>';
+    document.getElementById('tmpl-list').innerHTML = '<div class="mgmt-empty">Fehler beim Laden</div>';
+  }
+}
+
+function renderCategories() {
+  const el = document.getElementById('cat-list');
+  if (!_categories.length) {
+    el.innerHTML = '<div class="mgmt-empty">Noch keine Kategorien</div>';
+    return;
+  }
+  el.innerHTML = _categories.map(c => {
+    const name = typeof c === 'string' ? c : (c.name || '');
+    const count = _templates.filter(t => (t.category || '') === name).length;
+    return `<div class="mgmt-item">
+      <div class="mgmt-item-info">
+        <div class="mgmt-item-name">${esc(name)}</div>
+        <div class="mgmt-item-sub">${count} Vorlage${count !== 1 ? 'n' : ''}</div>
+      </div>
+      <button class="btn-danger" onclick="deleteCategory(${JSON.stringify(esc(name))})">Löschen</button>
+    </div>`;
+  }).join('');
+}
+
+function populateCatSelects() {
+  const filterSel = document.getElementById('tmpl-filter-cat');
+  const addSel    = document.getElementById('tmpl-cat');
+  const filterVal = filterSel.value;
+  const addVal    = addSel.value;
+
+  const opts = _categories.map(c => {
+    const name = typeof c === 'string' ? c : (c.name || '');
+    return `<option value="${esc(name)}">${esc(name)}</option>`;
+  }).join('');
+
+  filterSel.innerHTML = '<option value="">Alle Kategorien</option>' + opts;
+  addSel.innerHTML    = '<option value="">Kategorie wählen…</option>' + opts;
+
+  if (filterVal) filterSel.value = filterVal;
+  if (addVal)    addSel.value    = addVal;
+}
+
+async function addCategory() {
+  const inp  = document.getElementById('cat-input');
+  const name = inp.value.trim();
+  if (!name) return;
+  try {
+    await apiPost('/api/categories', { name });
+    inp.value = '';
+    if (!_categories.includes(name)) _categories.push(name);
+    renderCategories();
+    populateCatSelects();
+    toast('Kategorie gespeichert');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
+}
+
+async function deleteCategory(name) {
+  try {
+    await apiPost('/api/categories/delete', { name });
+    _categories = _categories.filter(c => (typeof c === 'string' ? c : c.name) !== name);
+    renderCategories();
+    populateCatSelects();
+    toast('Kategorie gelöscht');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
+}
+
+// ── Verwaltung: Templates ─────────────────────────────────────
+function renderTemplates() {
+  const el        = document.getElementById('tmpl-list');
+  const filterCat = document.getElementById('tmpl-filter-cat').value;
+  const list = filterCat
+    ? _templates.filter(t => (t.category || '') === filterCat)
+    : _templates;
+
+  if (!list.length) {
+    el.innerHTML = '<div class="mgmt-empty">Keine Vorlagen' + (filterCat ? ' in dieser Kategorie' : '') + '</div>';
+    return;
+  }
+
+  const grouped = {};
+  for (const t of list) {
+    const cat = t.category || '–';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(t);
+  }
+
+  el.innerHTML = Object.entries(grouped).map(([cat, items]) => `
+    <div class="section-head">${esc(cat)}</div>
+    ${items.map(t => `<div class="mgmt-item">
+      <div class="mgmt-item-info">
+        <div class="mgmt-item-name">${esc(t.name || '')}</div>
+        <div class="mgmt-item-sub">MHD: ${t.shelfDays || '?'} Tage</div>
+      </div>
+      <button class="btn-danger" onclick="deleteTemplate(${JSON.stringify(t.id || t.name)})">Löschen</button>
+    </div>`).join('')}
+  `).join('');
+}
+
+async function addTemplate() {
+  const name     = document.getElementById('tmpl-name').value.trim();
+  const category = document.getElementById('tmpl-cat').value;
+  const shelfDays= parseInt(document.getElementById('tmpl-days').value, 10);
+  if (!name)          { toast('Name fehlt', 2000); return; }
+  if (!category)      { toast('Kategorie fehlt', 2000); return; }
+  if (!(shelfDays > 0)) { toast('MHD-Tage fehlt', 2000); return; }
+  try {
+    const res = await apiPost('/api/templates/add', { name, category, shelfDays });
+    document.getElementById('tmpl-name').value  = '';
+    document.getElementById('tmpl-days').value  = '';
+    const newTmpl = res.template || { id: res.id, name, category, shelfDays };
+    _templates.push(newTmpl);
+    renderCategories();
+    renderTemplates();
+    toast('Vorlage gespeichert');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
+}
+
+async function deleteTemplate(id) {
+  try {
+    await apiPost('/api/templates/delete', { id });
+    _templates = _templates.filter(t => (t.id || t.name) !== id);
+    renderCategories();
+    renderTemplates();
+    toast('Vorlage gelöscht');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
 }
 
 // ── HTML escape ───────────────────────────────────────────────
