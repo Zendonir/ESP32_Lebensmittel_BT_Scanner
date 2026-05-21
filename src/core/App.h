@@ -198,6 +198,10 @@ private:
     String _fifoEanBarcode;
     String _fifoOlderExpiry;
     String _fifoRemovedExpiry;
+
+    // Last successfully removed item — held for optional undo on result screen
+    InventoryItem _lastRemovedItem;
+    bool          _lastRemovedValid = false;
 };
 
 extern App app;
