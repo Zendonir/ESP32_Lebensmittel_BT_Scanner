@@ -45,6 +45,7 @@ private:
         TMPL_CATEGORY,       // showing category list
         TMPL_PRODUCT,        // showing product list for selected category
         TMPL_BRAND,          // brand selection when template has >1 brand
+        TMPL_SORTE,          // sorte/variety picker (with "Neu erstellen" at top)
         TMPL_AMOUNT,         // numpad entry for food amount (Stück/Gramm) if template has unit
         TMPL_MHD,            // MHD confirm before saving
         // Fully manual keyboard entry
@@ -92,6 +93,9 @@ private:
     void showTmplCategories();
     void showTmplProducts();
     void showTmplBrands();
+    void showTmplSorten();
+    void proceedFromSorte();
+    void addSorteToTemplate(const String &templateId, const String &sorte);
     void startTmplMHD();
     String calcMHD(int shelfDays, int offset) const;
 
@@ -146,6 +150,8 @@ private:
     String   _selectedCategory;
     int      _selectedTemplateIdx = -1;
     String   _selectedBrand;             // brand chosen in TMPL_BRAND step
+    String   _selectedSorte;            // sorte/variety chosen in TMPL_SORTE step
+    bool     _creatingNewSorte = false; // true while KB_ENTRY is used to type a new sorte
     int      _mhdOffset           = 0;   // ±days applied to template's shelfDays
     String   _pendingUnit;               // unit from template (e.g. "g", "St.") – empty = no amount step
     String   _pendingAmountDraft;        // digits typed on TMPL_AMOUNT numpad

@@ -217,8 +217,16 @@ void App::loop() {
             && _resultShownMs != 0
             && millis() - _resultShownMs >= RESULT_AUTO_DISMISS_MS) {
         _resultShownMs = 0;
-        workflow = WorkflowMode::HOME;
-        renderActiveTab("");
+        if (_activeTab == UiTab::MANUAL_ENTRY) {
+            // Return directly to manual-entry keyboard — skip the intermediate screen
+            workflow = WorkflowMode::KB_ENTRY;
+            _kbText  = "";
+            display_obj.kbReset();
+            display_obj.showKeyboardEntry("PRODUKTNAME", "");
+        } else {
+            workflow = WorkflowMode::HOME;
+            renderActiveTab("");
+        }
     }
 
     handleTouch();
@@ -353,6 +361,15 @@ uint32_t App::buildUiHash() const {
 
 void App::renderActiveTab(const String &message, bool force) {
     if (!message.isEmpty()) _statusMessage = message;
+
+    // MANUAL_ENTRY tab never shows the home screen — jump straight to keyboard
+    if (_activeTab == UiTab::MANUAL_ENTRY && workflow == WorkflowMode::HOME) {
+        workflow = WorkflowMode::KB_ENTRY;
+        _kbText  = "";
+        display_obj.kbReset();
+        display_obj.showKeyboardEntry("PRODUKTNAME", "");
+        return;
+    }
 
     uint32_t hash = buildUiHash();
     if (!force && hash == _lastUiHash) {
@@ -604,10 +621,28 @@ void App::processOnscreenAction(OnscreenAction action) {
             showTmplProducts();
             return;
         }
-        if (workflow == WorkflowMode::TMPL_AMOUNT) {
+        if (workflow == WorkflowMode::TMPL_SORTE) {
             audio_obj.playSwipeTone();
             auto products = templatesForCategory(_selectedCategory);
             if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                    && products[_selectedTemplateIdx].brands.size() > 1) {
+                workflow = WorkflowMode::TMPL_BRAND;
+                showTmplBrands();
+            } else {
+                workflow = WorkflowMode::TMPL_PRODUCT;
+                showTmplProducts();
+            }
+            return;
+        }
+        if (workflow == WorkflowMode::TMPL_AMOUNT) {
+            audio_obj.playSwipeTone();
+            auto products = templatesForCategory(_selectedCategory);
+            bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                && products[_selectedTemplateIdx].useSorten;
+            if (hasSorten) {
+                workflow = WorkflowMode::TMPL_SORTE;
+                showTmplSorten();
+            } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
                     && products[_selectedTemplateIdx].brands.size() > 1) {
                 workflow = WorkflowMode::TMPL_BRAND;
                 showTmplBrands();
@@ -625,7 +660,12 @@ void App::processOnscreenAction(OnscreenAction action) {
                 display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
             } else {
                 auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                    && products[_selectedTemplateIdx].useSorten;
+                if (hasSorten) {
+                    workflow = WorkflowMode::TMPL_SORTE;
+                    showTmplSorten();
+                } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
                         && products[_selectedTemplateIdx].brands.size() > 1) {
                     workflow = WorkflowMode::TMPL_BRAND;
                     showTmplBrands();
@@ -686,16 +726,38 @@ void App::processOnscreenAction(OnscreenAction action) {
             if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
                 const ProductTemplate &tmpl = products[_selectedTemplateIdx];
                 if (idx < (int)tmpl.brands.size()) {
-                    _pendingProduct.brand   = tmpl.brands[idx];
-                    _pendingAmountDraft     = "";
-                    _pendingAmount          = 1;
-                    if (!_pendingUnit.isEmpty()) {
+                    _pendingProduct.brand = tmpl.brands[idx];
+                    _pendingAmountDraft   = "";
+                    _pendingAmount        = 1;
+                    _selectedSorte        = "";
+                    if (tmpl.useSorten) {
+                        workflow = WorkflowMode::TMPL_SORTE;
+                        showTmplSorten();
+                    } else if (!_pendingUnit.isEmpty()) {
                         workflow = WorkflowMode::TMPL_AMOUNT;
                         display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, "");
                     } else {
                         workflow = WorkflowMode::TMPL_MHD;
-                        String mhd = calcMHD(tmpl.shelfDays, _mhdOffset);
-                        display_obj.showTemplateMHD(tmpl.name, mhd);
+                        display_obj.showTemplateMHD(tmpl.name, calcMHD(tmpl.shelfDays, _mhdOffset));
+                    }
+                }
+            }
+        } else if (workflow == WorkflowMode::TMPL_SORTE) {
+            auto products = templatesForCategory(_selectedCategory);
+            if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
+                const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+                if (idx == 0) {
+                    // "Neu erstellen" — open keyboard
+                    _creatingNewSorte = true;
+                    _kbText = "";
+                    display_obj.kbReset();
+                    display_obj.showKeyboardEntry("NEUE SORTE: " + tmpl.name, "");
+                    workflow = WorkflowMode::KB_ENTRY;
+                } else {
+                    int sorteIdx = idx - 1;
+                    if (sorteIdx < (int)tmpl.sorten.size()) {
+                        _selectedSorte = tmpl.sorten[sorteIdx];
+                        proceedFromSorte();
                     }
                 }
             }
@@ -963,8 +1025,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             } else if (workflow == WorkflowMode::TMPL_BRAND) {
                 workflow = WorkflowMode::TMPL_PRODUCT;
                 showTmplProducts();
-            } else if (workflow == WorkflowMode::TMPL_AMOUNT) {
-                // Go back to brand selection (if >1 brand) or product selection
+            } else if (workflow == WorkflowMode::TMPL_SORTE) {
                 auto products = templatesForCategory(_selectedCategory);
                 if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
                         && products[_selectedTemplateIdx].brands.size() > 1) {
@@ -974,15 +1035,38 @@ void App::processOnscreenAction(OnscreenAction action) {
                     workflow = WorkflowMode::TMPL_PRODUCT;
                     showTmplProducts();
                 }
+            } else if (workflow == WorkflowMode::KB_ENTRY && _creatingNewSorte) {
+                _creatingNewSorte = false;
+                workflow = WorkflowMode::TMPL_SORTE;
+                showTmplSorten();
+            } else if (workflow == WorkflowMode::TMPL_AMOUNT) {
+                auto products = templatesForCategory(_selectedCategory);
+                bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                    && products[_selectedTemplateIdx].useSorten;
+                if (hasSorten) {
+                    workflow = WorkflowMode::TMPL_SORTE;
+                    showTmplSorten();
+                } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                        && products[_selectedTemplateIdx].brands.size() > 1) {
+                    workflow = WorkflowMode::TMPL_BRAND;
+                    showTmplBrands();
+                } else {
+                    workflow = WorkflowMode::TMPL_PRODUCT;
+                    showTmplProducts();
+                }
             } else if (workflow == WorkflowMode::TMPL_MHD) {
-                // Go back to amount entry (if unit set) or brand/product selection
                 if (!_pendingUnit.isEmpty()) {
                     workflow = WorkflowMode::TMPL_AMOUNT;
                     _pendingAmountDraft = _pendingAmount > 1 ? String(_pendingAmount) : "";
                     display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
                 } else {
                     auto products = templatesForCategory(_selectedCategory);
-                    if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                    bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
+                        && products[_selectedTemplateIdx].useSorten;
+                    if (hasSorten) {
+                        workflow = WorkflowMode::TMPL_SORTE;
+                        showTmplSorten();
+                    } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
                             && products[_selectedTemplateIdx].brands.size() > 1) {
                         workflow = WorkflowMode::TMPL_BRAND;
                         showTmplBrands();
@@ -1094,12 +1178,24 @@ void App::processOnscreenAction(OnscreenAction action) {
                     audio_obj.playWarningTone();
                     break;
                 }
+                if (_creatingNewSorte) {
+                    _selectedSorte    = _kbText;
+                    _creatingNewSorte = false;
+                    // Persist new sorte in the template JSON
+                    auto products = templatesForCategory(_selectedCategory);
+                    if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
+                        addSorteToTemplate(products[_selectedTemplateIdx].id, _selectedSorte);
+                    }
+                    proceedFromSorte();
+                    break;
+                }
                 _pendingProduct.name    = _kbText;
                 _pendingProduct.brand   = "";
                 _pendingProduct.barcode = "";
                 _pendingDateDraft       = "";
                 _pendingExpiryDate      = "";
                 _pendingQuantity        = 1;
+                _pendingUnit            = "";
                 workflow = WorkflowMode::ENTER_DATE;
                 state.setState(AppState::ENTER_DATE);
                 display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
@@ -1372,8 +1468,14 @@ void App::loadTemplates() {
         t.name      = obj["name"] | "";
         t.category  = obj["category"] | "Allgemein";
         // custom-products uses "defaultDays"; map to shelfDays
-        t.shelfDays = obj["defaultDays"] | (obj["shelfDays"] | 14);
-        t.unit      = obj["unit"] | "";
+        t.shelfDays  = obj["defaultDays"] | (obj["shelfDays"] | 14);
+        t.unit       = obj["unit"] | "";
+        t.useSorten  = obj["useSorten"] | false;
+        t.sorten.clear();
+        if (obj["sorten"].is<JsonArray>()) {
+            for (JsonVariant s : obj["sorten"].as<JsonArray>())
+                t.sorten.push_back(s.as<String>());
+        }
         t.brands.clear();
         if (obj["brands"].is<JsonArray>()) {
             for (JsonVariant b : obj["brands"].as<JsonArray>())
@@ -1435,6 +1537,55 @@ void App::showTmplBrands() {
     display_obj.showListScreen(tmpl.name.c_str(), tmpl.brands);
 }
 
+void App::showTmplSorten() {
+    auto products = templatesForCategory(_selectedCategory);
+    if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
+    const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+    std::vector<String> items;
+    items.push_back("\x1B Neue Sorte erstellen...");  // ESC char as visual marker
+    for (const auto &s : tmpl.sorten) items.push_back(s);
+    display_obj.showListScreen(("SORTE: " + tmpl.name).c_str(), items);
+}
+
+void App::proceedFromSorte() {
+    auto products = templatesForCategory(_selectedCategory);
+    if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
+    const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+    // Append sorte to product name
+    _pendingProduct.name = _selectedSorte.isEmpty()
+        ? tmpl.name
+        : tmpl.name + " - " + _selectedSorte;
+    _pendingAmountDraft = "";
+    _pendingAmount      = 1;
+    if (!_pendingUnit.isEmpty()) {
+        workflow = WorkflowMode::TMPL_AMOUNT;
+        display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, "");
+    } else {
+        workflow = WorkflowMode::TMPL_MHD;
+        display_obj.showTemplateMHD(_pendingProduct.name, calcMHD(tmpl.shelfDays, _mhdOffset));
+    }
+}
+
+void App::addSorteToTemplate(const String &templateId, const String &sorte) {
+    JsonDocument doc;
+    if (!json.loadDocument("/custom_products.json", doc, "[]")) return;
+    bool found = false;
+    for (JsonObject obj : doc.as<JsonArray>()) {
+        if ((obj["id"] | "") == templateId) {
+            JsonArray arr = obj["sorten"].is<JsonArray>()
+                ? obj["sorten"].as<JsonArray>()
+                : obj["sorten"].to<JsonArray>();
+            arr.add(sorte);
+            found = true;
+            break;
+        }
+    }
+    if (found) {
+        json.saveDocument("/custom_products.json", doc);
+        loadTemplates();  // refresh in-memory list with new sorte
+    }
+}
+
 void App::startTmplMHD() {
     auto products = templatesForCategory(_selectedCategory);
     if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) {
@@ -1452,19 +1603,23 @@ void App::startTmplMHD() {
     _pendingUnit            = tmpl.unit;
     _pendingAmountDraft     = "";
     _pendingAmount          = 1;
+    _selectedSorte          = "";
+    _creatingNewSorte       = false;
 
     if (tmpl.brands.size() > 1) {
         workflow = WorkflowMode::TMPL_BRAND;
         showTmplBrands();
     } else {
         _pendingProduct.brand = tmpl.brands.size() == 1 ? tmpl.brands[0] : "";
-        if (!tmpl.unit.isEmpty()) {
+        if (tmpl.useSorten) {
+            workflow = WorkflowMode::TMPL_SORTE;
+            showTmplSorten();
+        } else if (!tmpl.unit.isEmpty()) {
             workflow = WorkflowMode::TMPL_AMOUNT;
             display_obj.showAmountEntry(tmpl.name, tmpl.unit, "");
         } else {
             workflow = WorkflowMode::TMPL_MHD;
-            String mhd = calcMHD(tmpl.shelfDays, 0);
-            display_obj.showTemplateMHD(tmpl.name, mhd);
+            display_obj.showTemplateMHD(tmpl.name, calcMHD(tmpl.shelfDays, 0));
         }
     }
 }

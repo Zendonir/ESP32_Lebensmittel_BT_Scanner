@@ -10,4 +10,6 @@ struct ProductTemplate {
     int    shelfDays;   // MHD = today + shelfDays
     std::vector<String> brands;  // one or more brands for this product
     String unit;        // amount unit on label: "St.", "g", "ml", "kg", "" = no amount step
+    bool   useSorten = false;          // if true: show sorte picker after template selection
+    std::vector<String> sorten;        // previously created varieties for this template
 };

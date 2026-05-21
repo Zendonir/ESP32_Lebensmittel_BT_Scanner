@@ -280,7 +280,10 @@
               <option value="ml">Milliliter (ml)</option>
               <option value="kg">Kilogramm (kg)</option>
             </select>
-            <div style="display:flex;align-items:center;padding:0 8px;font-size:12px;color:var(--sub)">Mengeneinheit auf Label</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="tmpl-sorten" style="width:18px;height:18px;accent-color:var(--accent)">
+              Sorten-Auswahl
+            </label>
           </div>
           <button class="btn btn-primary" style="width:100%" onclick="addTemplate()">Vorlage hinzufügen</button>
         </div>
@@ -784,10 +787,11 @@ function renderTemplates() {
     ${items.map(t => {
       const days = t.defaultDays || t.shelfDays || '?';
       const unit = t.unit ? ` · ${esc(t.unit)}` : '';
+      const sortenBadge = t.useSorten ? ' · Sorten' : '';
       return `<div class="mgmt-item">
       <div class="mgmt-item-info">
         <div class="mgmt-item-name">${esc(t.name || '')}</div>
-        <div class="mgmt-item-sub">MHD: ${days} Tage${unit}</div>
+        <div class="mgmt-item-sub">MHD: ${days} Tage${unit}${sortenBadge}</div>
       </div>
       <button class="btn-danger" onclick="deleteTemplate(${JSON.stringify(t.id || t.name)})">Löschen</button>
     </div>`;
@@ -803,14 +807,18 @@ async function addTemplate() {
   if (!name)            { toast('Name fehlt', 2000); return; }
   if (!category)        { toast('Kategorie fehlt', 2000); return; }
   if (!(shelfDays > 0)) { toast('MHD-Tage fehlt', 2000); return; }
+  const useSorten = document.getElementById('tmpl-sorten').checked;
   const payload = { name, category, shelfDays };
-  if (unit) payload.unit = unit;
+  if (unit)      payload.unit      = unit;
+  if (useSorten) payload.useSorten = true;
   try {
     const res = await apiPost('/api/templates/add', payload);
     document.getElementById('tmpl-name').value  = '';
     document.getElementById('tmpl-days').value  = '';
+    document.getElementById('tmpl-sorten').checked = false;
     const newTmpl = { id: res.id || String(Date.now()), name, category, shelfDays };
-    if (unit) newTmpl.unit = unit;
+    if (unit)      newTmpl.unit      = unit;
+    if (useSorten) newTmpl.useSorten = true;
     _templates.push(newTmpl);
     renderCategories();
     renderTemplates();

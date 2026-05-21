@@ -1732,6 +1732,8 @@ void WebInterface::registerApiRoutes() {
             item["defaultDays"] = inp["shelfDays"] | 14;
             String unit = inp["unit"] | "";
             if (!unit.isEmpty()) item["unit"] = unit;
+            bool useSorten = inp["useSorten"] | false;
+            if (useSorten) item["useSorten"] = true;
             saveJson("/custom_products.json", arr);
             String resp = "{\"ok\":true,\"id\":\"" + newId + "\"}";
             req->send(200, "application/json", resp);
