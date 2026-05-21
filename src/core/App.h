@@ -54,6 +54,7 @@ private:
         WIFI_SETUP_SCAN,     // showing "scanning…" screen, waiting for async scan
         WIFI_SETUP_LIST,     // showing SSID list
         WIFI_SETUP_PASS,     // showing keyboard for password entry
+        WIFI_SETUP_CONFIRM,  // "Weiter?" confirmation before connecting
         WIFI_SETUP_CONN,     // connecting, polling for result
         // Inventory text search
         INV_SEARCH,          // on-screen keyboard for filtering inventory list

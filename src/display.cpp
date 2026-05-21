@@ -1075,6 +1075,28 @@ void Display::showSdImportPrompt(const String &backupDate) {
     commit();
 }
 
+void Display::showConfirmDialog(const String &title, const String &body) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+    int dw = 400, dh = 160;
+    int dx = (SCR_W - dw) / 2, dy = (SCR_H - dh) / 2;
+    _spr.fillRoundRect(dx, dy, dw, dh, 12, C_SURFACE);
+    _spr.drawRoundRect(dx, dy, dw, dh, 12, C_ACCENT);
+    _spr.fillRect(dx + 1, dy + 1, 6, dh - 2, C_ACCENT);
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString(title, dx + dw / 2, dy + 12);
+    _spr.setTextColor(C_TEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.drawString(body, dx + dw / 2, dy + 62);
+    int btn_y = dy + dh - 50;
+    draw_button(dx + 20,       btn_y, 170, 38, "Weiter",    C_GREEN,    C_TEXT,    2, OnscreenAction::CONFIRM_YES);
+    draw_button(dx + dw - 190, btn_y, 170, 38, "Abbrechen", C_SURFACE2, C_SUBTEXT, 2, OnscreenAction::CONFIRM_NO);
+    commit();
+}
+
 static const OnscreenAction LIST_ACTIONS[7] = {
     OnscreenAction::LIST_ITEM_0, OnscreenAction::LIST_ITEM_1,
     OnscreenAction::LIST_ITEM_2, OnscreenAction::LIST_ITEM_3,
@@ -1605,9 +1627,12 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     _spr.drawString(disp.c_str(), 8, HDR_H + INP_H / 2);
 
     // ── Helper lambda: draw one key ───────────────────────────────
+    // hit_y_delta: shifts the registered hit region upward (negative) relative
+    // to the visual key — used to extend the top row into the unused input-bar
+    // area so touches just above the visual key still register.
     auto draw_key = [&](int bx, int by, int w, int h,
                         const char *label, uint16_t bg, uint16_t fg,
-                        OnscreenAction act, char reg = 0) {
+                        OnscreenAction act, char reg = 0, int hit_y_delta = 0) {
         _spr.fillRect(bx, by, w, h, bg);
         _spr.drawFastVLine(bx, by, h, C_BORDER);
         _spr.drawFastHLine(bx, by, w, C_BORDER);
@@ -1615,15 +1640,17 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
         _spr.setTextFont(2);
         _spr.setTextDatum(MC_DATUM);
         _spr.drawString(label, bx + w / 2, by + h / 2);
-        add_region(bx, by, w, h, act, reg);
+        add_region(bx, by + hit_y_delta, w, h - hit_y_delta, act, reg);
     };
 
     // ── Number / symbol row (shift toggles 123 ↔ !@#) ───────────
+    // hit_y_delta=-10: extends hit area 10 px upward into the input bar
+    // (no regions there) to catch touches that land just above the visual key.
     for (int col = 0; col < 10; col++) {
         char c = _kbShift ? KB_NUM_SHIFT[col] : KB_NUM_NORM[col];
         char lbuf[3] = {c, 0, 0};
         draw_key(col * KEY_W, NUM_Y, KEY_W, KEY_H,
-                 lbuf, C_SURFACE, C_SUBTEXT, OnscreenAction::KB_CHAR, c);
+                 lbuf, C_SURFACE, C_SUBTEXT, OnscreenAction::KB_CHAR, c, -10);
     }
 
     // ── Letter rows 0-2 ──────────────────────────────────────────
@@ -1657,8 +1684,20 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     draw_key(96, BOT_Y, 192, KEY_H,
              "SPACE", C_SURFACE2, C_TEXT, OnscreenAction::KB_CHAR, ' ');
 
-    draw_key(288, BOT_Y, 192, KEY_H,
-             "OK", C_GREEN, C_BG, OnscreenAction::KB_CONFIRM);
+    // OK: full 192 px visual, only center 120 px registers as a hit —
+    // prevents accidental confirms from touches near the SPACE boundary.
+    {
+        constexpr int OK_HIT_W = 120;
+        constexpr int bx = 288, bw = 192;
+        _spr.fillRect(bx, BOT_Y, bw, KEY_H, C_GREEN);
+        _spr.drawFastVLine(bx, BOT_Y, KEY_H, C_BORDER);
+        _spr.drawFastHLine(bx, BOT_Y, bw, C_BORDER);
+        _spr.setTextColor(C_BG, C_GREEN);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString("OK", bx + bw / 2, BOT_Y + KEY_H / 2);
+        add_region(bx + (bw - OK_HIT_W) / 2, BOT_Y, OK_HIT_W, KEY_H, OnscreenAction::KB_CONFIRM);
+    }
 
     _spr.drawFastHLine(0, BOT_Y + KEY_H, SCR_W, C_BORDER);
     commit();

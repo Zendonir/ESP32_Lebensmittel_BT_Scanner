@@ -82,6 +82,9 @@ enum class OnscreenAction {
     // FIFO out-of-order warning confirmation
     FIFO_CONFIRM,
     FIFO_CANCEL,
+    // Generic confirm dialog (WiFi password etc.)
+    CONFIRM_YES,
+    CONFIRM_NO,
 };
 
 enum class UiTab {
@@ -148,6 +151,7 @@ public:
 
     // SD backup import prompt
     void showSdImportPrompt(const String &backupDate);
+    void showConfirmDialog(const String &title, const String &body);
 
     // FIFO out-of-order warning (asks Ja/Nein before removing)
     void showFifoWarning(const String &productName, const String &olderExpiry);

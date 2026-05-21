@@ -984,13 +984,26 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
-        case OnscreenAction::KB_CONFIRM:
-            if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
+        case OnscreenAction::CONFIRM_YES:
+            if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
                 wifi_manager.saveCredentials(_selectedSsid.c_str(), _kbText.c_str());
                 wifi_manager.connectToWiFi(_selectedSsid.c_str(), _kbText.c_str());
                 _wifiConnectStartMs = millis();
                 workflow = WorkflowMode::WIFI_SETUP_CONN;
                 display_obj.showResult("Verbinde…", _selectedSsid, false);
+            }
+            break;
+        case OnscreenAction::CONFIRM_NO:
+            if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
+                workflow = WorkflowMode::WIFI_SETUP_PASS;
+                display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
+            }
+            break;
+        case OnscreenAction::KB_CONFIRM:
+            if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
+                workflow = WorkflowMode::WIFI_SETUP_CONFIRM;
+                display_obj.showConfirmDialog("WLAN verbinden",
+                    "Mit \"" + _selectedSsid + "\" verbinden?");
                 break;
             }
             if (workflow == WorkflowMode::INV_SEARCH) {
