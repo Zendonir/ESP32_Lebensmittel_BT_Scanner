@@ -1635,7 +1635,7 @@ void App::addSorteToTemplate(const String &templateId, const String &sorte) {
     if (!json.loadDocument("/custom_products.json", doc, "[]")) return;
     bool found = false;
     for (JsonObject obj : doc.as<JsonArray>()) {
-        if ((obj["id"] | "") == templateId) {
+        if (obj["id"].as<String>() == templateId) {
             JsonArray arr = obj["sorten"].is<JsonArray>()
                 ? obj["sorten"].as<JsonArray>()
                 : obj["sorten"].to<JsonArray>();
