@@ -247,10 +247,21 @@ function esc(str) {
   return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Normalize any date string to YYYY-MM-DD.
+// Accepts DD.MM.YYYY and YYYY-MM-DD; returns '' for anything else.
+function toIsoDate(str) {
+  if (!str) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+
 function daysUntil(dateStr) {
   if (!dateStr) return Infinity;
+  const iso  = toIsoDate(dateStr);
+  if (!iso) return Infinity;
   const now  = new Date(); now.setHours(0,0,0,0);
-  const then = new Date(dateStr);
+  const then = new Date(iso);
   return Math.round((then - now) / 86400000);
 }
 
@@ -268,7 +279,8 @@ function expiryBadge(days) {
 
 function formatDate(str) {
   if (!str) return '—';
-  try { return new Date(str).toLocaleDateString('de-DE'); } catch { return str; }
+  const iso = toIsoDate(str);
+  try { return iso ? new Date(iso).toLocaleDateString('de-DE') : str; } catch { return str; }
 }
 
 function formatBytes(b) {
@@ -517,8 +529,8 @@ Pages.inventory = {
     // Sort groups by earliest expiryDate
     const getExpiry = it => it.expiryDate || it.expiry_date || it.mhd || '';
     const dmyToInt = s => {
-      if (!s || s.length !== 10) return 99999999;
-      return parseInt(s.slice(6)) * 10000 + parseInt(s.slice(3,5)) * 100 + parseInt(s.slice(0,2));
+      const iso = toIsoDate(s);
+      return iso ? parseInt(iso.replace(/-/g, '')) : 99999999;
     };
     const sortedGroups = [...groupMap.entries()].map(([name, members]) => {
       members.sort((a, b) => dmyToInt(getExpiry(a)) - dmyToInt(getExpiry(b)));
@@ -621,7 +633,7 @@ Pages.inventory = {
           <div class="form-field"><label>Barcode</label><input class="input" id="ifBarcode" value="${esc(item?.barcode||'')}"></div>
           <div class="form-field"><label>Kategorie</label><select class="select" id="ifCat"><option value="">—</option>${catOpts}</select></div>
           <div class="form-field"><label>Menge</label><input class="input" type="number" id="ifQty" value="${item?.quantity||1}" min="1"></div>
-          <div class="form-field"><label>Ablaufdatum</label><input class="input" type="date" id="ifExpiry" value="${item?.expiryDate||''}"></div>
+          <div class="form-field"><label>Ablaufdatum</label><input class="input" type="date" id="ifExpiry" value="${toIsoDate(item?.expiryDate||'')}"></div>
         </form>`,
       actions: [
         { label: 'Abbrechen', cls: '', onclick: Modal.hide },

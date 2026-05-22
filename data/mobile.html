@@ -646,15 +646,20 @@ function renderExpiring() {
     const dayStr = days === null ? '' : days < 0
       ? `vor ${-days} Tag${-days !== 1 ? 'en' : ''}`
       : days === 0 ? 'heute' : `in ${days} Tag${days !== 1 ? 'en' : ''}`;
-    return `<div class="inv-item ${cls}">
-      <div class="inv-dot"></div>
-      <div class="inv-info">
-        <div class="inv-name">${esc(name)}</div>
-        <div class="inv-meta">${fmtDate(exp)} &mdash; ${dayStr}</div>
+    const lb = esc(it.labelBarcode || '');
+    return `<div class="swipe-wrap">
+      <div class="swipe-inner inv-item ${cls}" data-lb="${lb}">
+        <div class="inv-dot"></div>
+        <div class="inv-info">
+          <div class="inv-name">${esc(name)}</div>
+          <div class="inv-meta">${fmtDate(exp)} &mdash; ${dayStr}</div>
+        </div>
+        <div class="inv-qty">${qty}x</div>
       </div>
-      <div class="inv-qty">${qty}x</div>
+      ${lb ? `<div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>` : ''}
     </div>`;
   }).join('');
+  initSwipe(el);
 }
 
 // ── System info ───────────────────────────────────────────────
