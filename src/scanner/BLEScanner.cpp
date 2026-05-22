@@ -3,9 +3,10 @@
 #include <Preferences.h>
 
 // ── Static singletons used by NimBLE callbacks ───────────────
-static BLEScanner   *s_scanner  = nullptr;
-static NimBLEClient *s_client   = nullptr;
-static bool          s_nimInit  = false;
+static BLEScanner   *s_scanner    = nullptr;
+static NimBLEClient *s_client     = nullptr;
+static bool          s_nimInit    = false;
+static int           s_batteryLevel = -1;  // 0-100, -1 = unknown
 
 // ── Discovery list (shared between scan callbacks) ───────────
 static std::vector<BLEScannerDevice> s_discovered;
@@ -32,6 +33,15 @@ static char hidKey(uint8_t mod, uint8_t key) {
         case 0x37: return shift ? '>' : '.';
         case 0x38: return shift ? '?' : '/';
         default:   return 0;
+    }
+}
+
+// ── Battery level notify callback ───────────────────────────
+static void batteryNotifyCB(NimBLERemoteCharacteristic *, uint8_t *data,
+                             size_t len, bool) {
+    if (len >= 1) {
+        s_batteryLevel = (int)(uint8_t)data[0];
+        Serial.printf("[BLE] Battery notify: %d%%\n", s_batteryLevel);
     }
 }
 
@@ -93,6 +103,26 @@ static void connectTask(void *arg) {
 
     if (subscribed) {
         Serial.println("[BLE] HID subscribed OK");
+
+        // Battery Service 0x180F / Battery Level 0x2A19
+        s_batteryLevel = -1;
+        NimBLERemoteService *battSvc = s_client->getService(NimBLEUUID((uint16_t)0x180F));
+        if (battSvc) {
+            NimBLERemoteCharacteristic *battChr =
+                battSvc->getCharacteristic(NimBLEUUID((uint16_t)0x2A19));
+            if (battChr) {
+                if (battChr->canRead()) {
+                    std::string val = battChr->readValue();
+                    if (!val.empty()) {
+                        s_batteryLevel = (int)(uint8_t)val[0];
+                        Serial.printf("[BLE] Battery: %d%%\n", s_batteryLevel);
+                    }
+                }
+                if (battChr->canNotify())
+                    battChr->subscribe(true, batteryNotifyCB);
+            }
+        }
+
         if (s_scanner) s_scanner->_setConnected(true);
     } else {
         Serial.println("[BLE] No notifiable HID characteristic");
@@ -255,6 +285,8 @@ void BLEScanner::_setConnected(bool c) {
         _reconnectAfterMs  = 0;
         _lastActivityMs    = millis();
         lastError          = "";
+    } else {
+        s_batteryLevel = -1;
     }
 }
 
@@ -393,6 +425,23 @@ String BLEScanner::getStatus() const {
     if (!lastError.isEmpty())                       return "error";
     if (!deviceAddress.isEmpty() && autoReconnect)  return "reconnecting";
     return "disconnected";
+}
+
+int BLEScanner::getBatteryLevel() const { return s_batteryLevel; }
+
+void BLEScanner::readBatteryNow() {
+    if (!connected || !s_client || !s_client->isConnected()) return;
+    NimBLERemoteService *battSvc = s_client->getService(NimBLEUUID((uint16_t)0x180F));
+    if (!battSvc) return;
+    NimBLERemoteCharacteristic *battChr =
+        battSvc->getCharacteristic(NimBLEUUID((uint16_t)0x2A19));
+    if (battChr && battChr->canRead()) {
+        std::string val = battChr->readValue();
+        if (!val.empty()) {
+            s_batteryLevel = (int)(uint8_t)val[0];
+            Serial.printf("[BLE] Battery refresh: %d%%\n", s_batteryLevel);
+        }
+    }
 }
 
 void BLEScanner::loadSettings() {

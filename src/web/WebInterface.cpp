@@ -1117,6 +1117,7 @@ void WebInterface::registerApiRoutes() {
         doc["bleConnected"] = ble_scanner.isConnected();
         doc["bleConnecting"] = ble_scanner.isConnecting();
         doc["bleLastError"] = ble_scanner.getLastError();
+        doc["bleBattery"] = ble_scanner.getBatteryLevel();
         doc["idleTimeoutMin"] = ble_scanner.getIdleTimeoutMin();
         doc["lastScan"] = barcode_manager.getLastScan().isEmpty()
             ? ble_scanner.getLastScan()

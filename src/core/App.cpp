@@ -192,6 +192,24 @@ void App::loop() {
             doInventoryPull();
         }
     }
+    // Scanner battery — poll every 5 min; warn once when < 10 %
+    if (ble_scanner.isConnected()
+            && millis() - _lastBatteryPollMs >= BATTERY_POLL_MS) {
+        _lastBatteryPollMs = millis();
+        ble_scanner.readBatteryNow();
+        int bat = ble_scanner.getBatteryLevel();
+        if (bat >= 0 && bat < 10 && !_batteryWarnShown) {
+            _batteryWarnShown = true;
+            audio_obj.playWarningTone();
+            Logger::warn("BLE", String("Scanner Akku schwach: ") + bat + "%");
+            _statusMessage = "Scanner Akku schwach! " + String(bat) + "%";
+            renderActiveTab(_statusMessage);
+        } else if (bat >= 10) {
+            _batteryWarnShown = false;
+        }
+    }
+    if (!ble_scanner.isConnected()) _batteryWarnShown = false;
+
     // SD backup — check once per hour, backs up if ≥24 h since last backup
     if (millis() - _lastBackupCheckMs >= BACKUP_CHECK_INTERVAL_MS) {
         _lastBackupCheckMs = millis();
@@ -410,7 +428,8 @@ void App::renderActiveTab(const String &message, bool force) {
         countExpiringSoon(7),
         _statusMessage,
         AppFS::usingSD(),
-        labelCounter.getRemaining());
+        labelCounter.getRemaining(),
+        ble_scanner.getBatteryLevel());
     _lastUiHash = hash;
     _lastUiRefreshMs = millis();
 }

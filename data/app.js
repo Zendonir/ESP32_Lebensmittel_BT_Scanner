@@ -1717,6 +1717,17 @@ Pages.scanner = {
       const status = cfg.bleLastError ? `${cfg.bleStatus}: ${cfg.bleLastError}` : (cfg.bleStatus || (cfg.bleConnected ? 'connected' : 'disconnected'));
       document.getElementById('scanBleStatus').textContent = status;
       document.getElementById('scanLastResult').textContent = cfg.lastScan || '—';
+      const batEl = document.getElementById('scanBleBattery');
+      if (batEl) {
+        const bat = cfg.bleBattery;
+        if (bat === undefined || bat < 0) {
+          batEl.textContent = '—';
+          batEl.style.color = '';
+        } else {
+          batEl.textContent = bat + '%';
+          batEl.style.color = bat < 10 ? 'var(--danger)' : bat < 25 ? 'var(--warning,#f0a500)' : 'var(--success)';
+        }
+      }
     } catch(e) {
       Toast.error('Scanner: ' + e.message);
     }
