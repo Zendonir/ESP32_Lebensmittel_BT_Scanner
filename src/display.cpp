@@ -150,9 +150,10 @@ struct HomeState {
     String ssid, ip;
     String scannerStatus, scannerName;
     String lastScan, lastType;
-    size_t inventoryCount = 0;
-    int    expiringSoon   = 0;
-    int    rollRemaining  = -1;   // -1 = no roll configured
+    size_t inventoryCount  = 0;
+    int    expiringSoon    = 0;
+    int    rollRemaining   = -1;  // -1 = no roll configured
+    int    scannerBattery  = -1;  // 0-100, -1 = unknown
     String message;
     bool   valid = false;
 };
@@ -389,9 +390,27 @@ static void draw_panel_scanner(const HomeState &s) {
     _spr.setTextColor(sc, C_SURFACE);
     _spr.setTextFont(4);
     _spr.drawString(ble_ok ? "Verbunden" : "Getrennt", 12, py + 36);
+
+    // Battery level — shown when connected and known
+    if (ble_ok && s.scannerBattery >= 0) {
+        bool low = s.scannerBattery < 10;
+        uint16_t bc = low ? C_RED : (s.scannerBattery < 25 ? C_YELLOW : C_GREEN);
+        String bat = String(s.scannerBattery) + "% Akku";
+        _spr.setTextColor(bc, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TR_DATUM);
+        _spr.drawString(bat.c_str(), SCR_W - 12, py + 14);
+        // Small battery bar (60 × 10 px)
+        int bx = SCR_W - 72, by = py + 32, bw = 60, bh = 10;
+        _spr.drawRoundRect(bx, by, bw, bh, 2, C_BORDER);
+        int fill = (bw - 4) * s.scannerBattery / 100;
+        if (fill > 0) _spr.fillRoundRect(bx + 2, by + 2, fill, bh - 4, 1, bc);
+    }
+
     String name_str = s.scannerName.isEmpty() ? "Koppeln ueber Web-UI" : trunc(s.scannerName, 32);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextFont(2);
+    _spr.setTextDatum(TL_DATUM);
     _spr.drawString(name_str.c_str(), 12, py + 70);
     draw_button(SCR_W - 220, py + 80, 210, 34,
                 "Verbinden / Trennen",
@@ -732,7 +751,8 @@ void Display::showHome(UiTab activeTab,
                        const String &scannerStatus, const String &scannerName,
                        const String &lastScan, const String &lastType,
                        size_t inventoryCount, int expiringSoon,
-                       const String &message, bool sdMounted, int rollRemaining) {
+                       const String &message, bool sdMounted,
+                       int rollRemaining, int scannerBattery) {
     if (!_initialized) return;
     _homeState.tab            = activeTab;
     _homeState.wifiConnected  = wifiConnected;
@@ -746,6 +766,7 @@ void Display::showHome(UiTab activeTab,
     _homeState.inventoryCount = inventoryCount;
     _homeState.expiringSoon   = expiringSoon;
     _homeState.rollRemaining  = rollRemaining;
+    _homeState.scannerBattery = scannerBattery;
     _homeState.message        = message;
     _homeState.valid          = true;
     render_home(_homeState);

@@ -1717,6 +1717,17 @@ Pages.scanner = {
       const status = cfg.bleLastError ? `${cfg.bleStatus}: ${cfg.bleLastError}` : (cfg.bleStatus || (cfg.bleConnected ? 'connected' : 'disconnected'));
       document.getElementById('scanBleStatus').textContent = status;
       document.getElementById('scanLastResult').textContent = cfg.lastScan || '—';
+      const batEl = document.getElementById('scanBleBattery');
+      if (batEl) {
+        const bat = cfg.bleBattery;
+        if (bat === undefined || bat < 0) {
+          batEl.textContent = '—';
+          batEl.style.color = '';
+        } else {
+          batEl.textContent = bat + '%';
+          batEl.style.color = bat < 10 ? 'var(--danger)' : bat < 25 ? 'var(--warning,#f0a500)' : 'var(--success)';
+        }
+      }
     } catch(e) {
       Toast.error('Scanner: ' + e.message);
     }
@@ -2376,6 +2387,7 @@ Pages.logs = {
 
   async load() {
     await this.fetchLogs();
+    await this.fetchSdLogs();
     if (!this._pollTimer) {
       this._pollTimer = setInterval(() => this.fetchLogs(), 5000);
     }
@@ -2423,6 +2435,26 @@ Pages.logs = {
         Toast.error('Fehler: ' + e.message);
       }
     });
+  },
+
+  async fetchSdLogs() {
+    const el = document.getElementById('sdLogList');
+    if (!el) return;
+    try {
+      const data = await API.get('/api/logs/sd');
+      if (data.error === 'no_sd' || !data.files || !data.files.length) {
+        el.innerHTML = '<span class="subtext">Keine SD-Karte oder keine Logdateien vorhanden.</span>';
+        return;
+      }
+      el.innerHTML = [...data.files].reverse().map(f => `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
+          <span style="font-family:monospace;font-size:.9rem">${esc(f.name)}</span>
+          <span class="subtext" style="flex-shrink:0">${(f.size/1024).toFixed(1)} KB</span>
+          <a class="btn btn-sm" href="/api/logs/sd/${encodeURIComponent(f.name)}" download="${esc(f.name)}" style="flex-shrink:0">Download</a>
+        </div>`).join('');
+    } catch(e) {
+      el.innerHTML = '<span class="subtext">Fehler beim Laden der SD-Logs.</span>';
+    }
   },
 
   cleanup() {

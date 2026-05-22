@@ -322,6 +322,27 @@ void WebInterface::begin() {
         }
     }
 
+    // Seed default categories once if file absent
+    if (!AppFS::fs().exists("/categories.json")) {
+        struct { const char* name; uint16_t bg; } defaults[] = {
+            { "Fleisch",    0xC1C5 },   // dark red
+            { "Gefl\xC3\xBCgel", 0xBC21 }, // golden
+            { "Fisch",      0x1DF3 },   // teal
+            { "Gem\xC3\xBCse",  0x256C },  // green
+            { "Backwaren",  0x7AA9 },   // brown
+            { "S\xC3\xBC\xC3\x9Fspeisen", 0xF81F }, // magenta
+        };
+        JsonDocument doc;
+        JsonArray arr = doc.to<JsonArray>();
+        for (auto &d : defaults) {
+            JsonObject o = arr.add<JsonObject>();
+            o["name"]      = d.name;
+            o["bgColor"]   = d.bg;
+            o["textColor"] = 0xFFFF;
+        }
+        saveJson("/categories.json", doc);
+    }
+
     registerStaticRoutes();
     registerApiRoutes();
     _server.begin();
@@ -1096,6 +1117,7 @@ void WebInterface::registerApiRoutes() {
         doc["bleConnected"] = ble_scanner.isConnected();
         doc["bleConnecting"] = ble_scanner.isConnecting();
         doc["bleLastError"] = ble_scanner.getLastError();
+        doc["bleBattery"] = ble_scanner.getBatteryLevel();
         doc["idleTimeoutMin"] = ble_scanner.getIdleTimeoutMin();
         doc["lastScan"] = barcode_manager.getLastScan().isEmpty()
             ? ble_scanner.getLastScan()
@@ -1535,6 +1557,64 @@ void WebInterface::registerApiRoutes() {
         Logger::clearLog();
         req->send(200, "application/json", "{\"ok\":true}");
     });
+
+    // List SD log files
+    _server.on("/api/logs/sd", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (!AppFS::sdAvailable()) {
+            req->send(200, "application/json", "{\"error\":\"no_sd\",\"files\":[]}");
+            return;
+        }
+        String out = "{\"files\":[";
+        File dir = AppFS::sdFs().open("/scanner_log");
+        bool first = true;
+        if (dir && dir.isDirectory()) {
+            File f = dir.openNextFile();
+            while (f) {
+                if (!f.isDirectory()) {
+                    String name = f.name();
+                    int slash = name.lastIndexOf('/');
+                    if (slash >= 0) name = name.substring(slash + 1);
+                    if (name.endsWith(".log")) {
+                        if (!first) out += ',';
+                        out += "{\"name\":\"" + name + "\",\"size\":" + f.size() + "}";
+                        first = false;
+                    }
+                }
+                f.close();
+                f = dir.openNextFile();
+            }
+            dir.close();
+        }
+        out += "]}";
+        req->send(200, "application/json", out);
+    });
+
+    // Download a specific SD log file: GET /api/logs/sd/2026-05-22.log
+    _server.on("/api/logs/sd/*", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (!AppFS::sdAvailable()) {
+            req->send(503, "text/plain", "No SD card");
+            return;
+        }
+        String url = req->url();  // e.g. /api/logs/sd/2026-05-22.log
+        String filename = url.substring(url.lastIndexOf('/') + 1);
+        // Sanitize: only allow *.log, no path traversal
+        if (filename.isEmpty() || !filename.endsWith(".log")
+                || filename.indexOf('/') >= 0 || filename.indexOf("..") >= 0) {
+            req->send(400, "text/plain", "Bad filename");
+            return;
+        }
+        String path = String("/scanner_log/") + filename;
+        if (!AppFS::sdFs().exists(path.c_str())) {
+            req->send(404, "text/plain", "Not found");
+            return;
+        }
+        AsyncWebServerResponse *r =
+            req->beginResponse(AppFS::sdFs(), path, "text/plain");
+        r->addHeader("Content-Disposition",
+                     String("attachment; filename=\"") + filename + "\"");
+        req->send(r);
+    });
+
     _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
         portENTER_CRITICAL(&_bleScanMux);
         int state = _bleScanState;

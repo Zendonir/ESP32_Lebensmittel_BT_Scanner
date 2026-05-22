@@ -43,11 +43,13 @@ public:
 
     bool isConnected()  const { return connected; }
     bool isConnecting() const { return connecting || connectRequested; }
-    String getDeviceAddress() const { return deviceAddress; }
-    String getDeviceName()    const { return deviceName; }
-    String getLastScan()      const { return lastScan; }
-    String getLastError()     const { return lastError; }
-    String getStatus() const;
+    String getDeviceAddress()  const { return deviceAddress; }
+    String getDeviceName()     const { return deviceName; }
+    String getLastScan()       const { return lastScan; }
+    String getLastError()      const { return lastError; }
+    String getStatus()         const;
+    int    getBatteryLevel()   const; // 0-100, or -1 if unknown
+    void   readBatteryNow();          // manual refresh (call from loop periodically)
 
 private:
     void loadSettings();

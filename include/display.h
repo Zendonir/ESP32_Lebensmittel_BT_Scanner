@@ -121,7 +121,8 @@ public:
                   size_t inventoryCount, int expiringSoon,
                   const String &message = "",
                   bool sdMounted = false,
-                  int rollRemaining = -1);
+                  int rollRemaining = -1,
+                  int scannerBattery = -1);
 
     // Barcode workflow
     void showFetchingProduct(const String &barcode);

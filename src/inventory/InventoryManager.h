@@ -24,6 +24,8 @@ public:
 
     // 48 h recently-removed buffer
     const InventoryItem *findRecent(const String &barcode) const;
+    const InventoryItem *findRecentByLabel(const String &labelBarcode) const;
+    bool                 restoreByLabel(const String &labelBarcode, const InventoryItem &restored);
     void pruneOldRemoved();
 
 private:

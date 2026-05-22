@@ -192,6 +192,11 @@ private:
     String   _rollDraft;
     uint32_t _prevRollSize = 0;
 
+    // Scanner battery polling
+    uint32_t _lastBatteryPollMs  = 0;
+    bool     _batteryWarnShown   = false;
+    static constexpr uint32_t BATTERY_POLL_MS = 300000UL; // every 5 min
+
     // FIFO warning pending state
     String _fifoLabelCode;
     String _fifoProductName;

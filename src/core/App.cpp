@@ -69,6 +69,8 @@ void App::begin() {
     loadDisplayConfig();
     device_config.begin();
     time_manager.begin(i2c_bus, device_config.getTimezone());
+    if (AppFS::sdAvailable())
+        Logger::enableSdLog(&AppFS::sdFs());
 
     // SD backup import prompt: show if SD has backup and internal storage is empty
     if (BackupManager::hasBackupOnSD() && BackupManager::internalIsEmpty()) {
@@ -190,10 +192,29 @@ void App::loop() {
             doInventoryPull();
         }
     }
+    // Scanner battery — poll every 5 min; warn once when < 10 %
+    if (ble_scanner.isConnected()
+            && millis() - _lastBatteryPollMs >= BATTERY_POLL_MS) {
+        _lastBatteryPollMs = millis();
+        ble_scanner.readBatteryNow();
+        int bat = ble_scanner.getBatteryLevel();
+        if (bat >= 0 && bat < 10 && !_batteryWarnShown) {
+            _batteryWarnShown = true;
+            audio_obj.playWarningTone();
+            Logger::warn("BLE", String("Scanner Akku schwach: ") + bat + "%");
+            _statusMessage = "Scanner Akku schwach! " + String(bat) + "%";
+            renderActiveTab(_statusMessage);
+        } else if (bat >= 10) {
+            _batteryWarnShown = false;
+        }
+    }
+    if (!ble_scanner.isConnected()) _batteryWarnShown = false;
+
     // SD backup — check once per hour, backs up if ≥24 h since last backup
     if (millis() - _lastBackupCheckMs >= BACKUP_CHECK_INTERVAL_MS) {
         _lastBackupCheckMs = millis();
         BackupManager::runDailyCheck();
+        Logger::rotateSdLogIfNeeded();  // roll to new day's file if midnight passed
     }
 
     // Ntfy push check every 6 hours
@@ -407,7 +428,8 @@ void App::renderActiveTab(const String &message, bool force) {
         countExpiringSoon(7),
         _statusMessage,
         AppFS::usingSD(),
-        labelCounter.getRemaining());
+        labelCounter.getRemaining(),
+        ble_scanner.getBatteryLevel());
     _lastUiHash = hash;
     _lastUiRefreshMs = millis();
 }
@@ -670,30 +692,6 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             return;
         }
-        if (workflow == WorkflowMode::TMPL_MHD) {
-            audio_obj.playSwipeTone();
-            if (!_pendingUnit.isEmpty()) {
-                workflow = WorkflowMode::TMPL_AMOUNT;
-                _pendingAmountDraft = _pendingAmount > 1 ? String(_pendingAmount) : "";
-                display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
-            } else {
-                auto products = templatesForCategory(_selectedCategory);
-                bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                    && products[_selectedTemplateIdx].useSorten;
-                if (hasSorten) {
-                    workflow = WorkflowMode::TMPL_SORTE;
-                    showTmplSorten();
-                } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                        && products[_selectedTemplateIdx].brands.size() > 1) {
-                    workflow = WorkflowMode::TMPL_BRAND;
-                    showTmplBrands();
-                } else {
-                    workflow = WorkflowMode::TMPL_PRODUCT;
-                    showTmplProducts();
-                }
-            }
-            return;
-        }
         if (workflow == WorkflowMode::NEW_ROLL_ENTRY
                 || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
             audio_obj.playSwipeTone();
@@ -762,8 +760,10 @@ void App::processOnscreenAction(OnscreenAction action) {
                         workflow = WorkflowMode::TMPL_AMOUNT;
                         display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, "");
                     } else {
-                        workflow = WorkflowMode::TMPL_MHD;
-                        display_obj.showTemplateMHD(tmpl.name, calcMHD(tmpl.shelfDays, _mhdOffset));
+                        _pendingExpiryDate = calcMHD(tmpl.shelfDays, 0);
+                        workflow = WorkflowMode::SAVING;
+                        state.setState(AppState::SAVING);
+                        finishStorageWorkflow();
                     }
                 }
             }
@@ -1006,9 +1006,10 @@ void App::processOnscreenAction(OnscreenAction action) {
                     _mhdOffset = 0;
                     auto products = templatesForCategory(_selectedCategory);
                     if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
-                        workflow = WorkflowMode::TMPL_MHD;
-                        String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, 0);
-                        display_obj.showTemplateMHD(_pendingProduct.name, mhd);
+                        _pendingExpiryDate = calcMHD(products[_selectedTemplateIdx].shelfDays, 0);
+                        workflow = WorkflowMode::SAVING;
+                        state.setState(AppState::SAVING);
+                        finishStorageWorkflow();
                     }
                 }
             } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY) {
@@ -1042,7 +1043,6 @@ void App::processOnscreenAction(OnscreenAction action) {
                     _pendingQuantity = qty;
                     display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
                 }
-            // TMPL_MHD no longer uses qty grid (always 1 label for templates)
             } else { (void)qty; }
             break;
         }
@@ -1091,27 +1091,6 @@ void App::processOnscreenAction(OnscreenAction action) {
                     workflow = WorkflowMode::TMPL_PRODUCT;
                     showTmplProducts();
                 }
-            } else if (workflow == WorkflowMode::TMPL_MHD) {
-                if (!_pendingUnit.isEmpty()) {
-                    workflow = WorkflowMode::TMPL_AMOUNT;
-                    _pendingAmountDraft = _pendingAmount > 1 ? String(_pendingAmount) : "";
-                    display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, _pendingAmountDraft);
-                } else {
-                    auto products = templatesForCategory(_selectedCategory);
-                    bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                        && products[_selectedTemplateIdx].useSorten;
-                    if (hasSorten) {
-                        workflow = WorkflowMode::TMPL_SORTE;
-                        showTmplSorten();
-                    } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                            && products[_selectedTemplateIdx].brands.size() > 1) {
-                        workflow = WorkflowMode::TMPL_BRAND;
-                        showTmplBrands();
-                    } else {
-                        workflow = WorkflowMode::TMPL_PRODUCT;
-                        showTmplProducts();
-                    }
-                }
             } else if (workflow == WorkflowMode::NEW_ROLL_ENTRY
                     || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
                 workflow = WorkflowMode::HOME;
@@ -1149,38 +1128,9 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         }
 
-        // ── Template MHD confirm ───────────────────────────────────────────
-        case OnscreenAction::MHD_DAY_MINUS:
-            if (workflow == WorkflowMode::TMPL_MHD) {
-                _mhdOffset--;
-                auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx < (int)products.size()) {
-                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                    display_obj.showTemplateMHD(_pendingProduct.name, mhd);
-                }
-            }
-            break;
-        case OnscreenAction::MHD_DAY_PLUS:
-            if (workflow == WorkflowMode::TMPL_MHD) {
-                _mhdOffset++;
-                auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx < (int)products.size()) {
-                    String mhd = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                    display_obj.showTemplateMHD(_pendingProduct.name, mhd);
-                }
-            }
-            break;
-        case OnscreenAction::MHD_CONFIRM:
-            if (workflow == WorkflowMode::TMPL_MHD) {
-                auto products = templatesForCategory(_selectedCategory);
-                if (_selectedTemplateIdx < (int)products.size()) {
-                    _pendingExpiryDate = calcMHD(products[_selectedTemplateIdx].shelfDays, _mhdOffset);
-                    workflow = WorkflowMode::SAVING;
-                    state.setState(AppState::SAVING);
-                    finishStorageWorkflow();
-                }
-            }
-            break;
+        case OnscreenAction::MHD_DAY_MINUS: break;
+        case OnscreenAction::MHD_DAY_PLUS:  break;
+        case OnscreenAction::MHD_CONFIRM:   break;
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
         case OnscreenAction::CONFIRM_YES:
@@ -1293,6 +1243,24 @@ void App::handleScan(const ScanResult &scan) {
 
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
+
+        // Re-scan of a recently removed label → restore to inventory at current location
+        if (!inventory.hasLabel(scan.code)) {
+            const InventoryItem *recent = inventory.findRecentByLabel(scan.code);
+            if (recent) {
+                InventoryItem restored  = *recent;
+                restored.location       = device_config.getActiveLocation();
+                bool ok = inventory.restoreByLabel(scan.code, restored);
+                audio_obj.playSuccessTone();
+                workflow       = WorkflowMode::RESULT;
+                _resultShownMs = millis();
+                _resultSuccess = ok;
+                _resultTitle   = ok ? "Eingelagert" : "Fehler";
+                _resultMessage = restored.name.isEmpty() ? scan.code : restored.name;
+                display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
+                return;
+            }
+        }
 
         // Find item details BEFORE deciding to remove
         String removedName, removedBarcode, removedExpiry;
@@ -1625,8 +1593,10 @@ void App::proceedFromSorte() {
         workflow = WorkflowMode::TMPL_AMOUNT;
         display_obj.showAmountEntry(_pendingProduct.name, _pendingUnit, "");
     } else {
-        workflow = WorkflowMode::TMPL_MHD;
-        display_obj.showTemplateMHD(_pendingProduct.name, calcMHD(tmpl.shelfDays, _mhdOffset));
+        _pendingExpiryDate = calcMHD(tmpl.shelfDays, 0);
+        workflow = WorkflowMode::SAVING;
+        state.setState(AppState::SAVING);
+        finishStorageWorkflow();
     }
 }
 
@@ -1682,8 +1652,10 @@ void App::startTmplMHD() {
             workflow = WorkflowMode::TMPL_AMOUNT;
             display_obj.showAmountEntry(tmpl.name, tmpl.unit, "");
         } else {
-            workflow = WorkflowMode::TMPL_MHD;
-            display_obj.showTemplateMHD(tmpl.name, calcMHD(tmpl.shelfDays, 0));
+            _pendingExpiryDate = calcMHD(tmpl.shelfDays, 0);
+            workflow = WorkflowMode::SAVING;
+            state.setState(AppState::SAVING);
+            finishStorageWorkflow();
         }
     }
 }
