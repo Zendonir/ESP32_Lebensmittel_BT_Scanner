@@ -131,7 +131,8 @@ void Logger::log(LogLevel level, const char *module, const String &message) {
     if (_ringCount < RING_SIZE) _ringCount++;
     portEXIT_CRITICAL(&_mux);
 
-    if (_sdEnabled) {
+    // Only persist WARN/ERROR to SD — INFO/DEBUG would cause blocking I/O on every render cycle
+    if (_sdEnabled && level >= LogLevel::WARN) {
         char line[160];
         time_t now = time(nullptr);
         struct tm t;
