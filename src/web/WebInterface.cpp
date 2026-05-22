@@ -1863,23 +1863,43 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
-    // ---- OTA FILE UPLOAD (firmware) ----
+    // ---- OTA FILE UPLOAD (auto-detect: firmware vs. LittleFS filesystem) ----
+    // ESP32 firmware images always start with magic byte 0xE9.
+    // Anything else (e.g. littlefs.bin) is treated as a filesystem image.
     _server.on("/api/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             bool ok = !Update.hasError();
-            req->send(200, "application/json",
-                ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"Update failed\"}");
+            String body = ok ? "{\"ok\":true}"
+                             : String("{\"ok\":false,\"error\":\"") + Update.errorString() + "\"}";
+            req->send(200, "application/json", body);
             if (ok) { delay(200); WiFi.disconnect(true); WiFi.mode(WIFI_OFF); delay(300); esp_restart(); }
         },
         [](AsyncWebServerRequest *req, const String &filename,
            size_t index, uint8_t *data, size_t len, bool final) {
             if (!index) {
-                Logger::info("OTA", "Start: " + filename);
-                Update.begin(UPDATE_SIZE_UNKNOWN);
+                bool isFirmware = (len > 0 && data[0] == 0xE9);
+                Logger::info("OTA", String("Start: ") + filename
+                             + (isFirmware ? " [firmware]" : " [filesystem]"));
+                if (isFirmware) {
+                    Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+                } else {
+                    Update.abort();
+                    LittleFS.end();
+                    Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS);
+                }
             }
-            if (Update.isRunning()) Update.write(data, len);
-            if (final && !Update.end(true))
-                Logger::error("OTA", "end() failed");
+            if (Update.isRunning()) {
+                if (Update.write(data, len) != len)
+                    Logger::error("OTA", String("Write error at ") + index
+                                         + ": " + Update.errorString());
+            }
+            if (final) {
+                if (!Update.end(true))
+                    Logger::error("OTA", String("End failed (") + Update.getError()
+                                         + "): " + Update.errorString());
+                else
+                    Logger::info("OTA", "Done: " + String(index + len) + " bytes");
+            }
         });
 
     // ---- OTA FILE UPLOAD (LittleFS filesystem) ----
