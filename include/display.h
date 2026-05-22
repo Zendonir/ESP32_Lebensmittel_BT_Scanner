@@ -87,8 +87,6 @@ enum class OnscreenAction {
     CONFIRM_NO,
     // Label roll management
     NEW_ROLL,
-    // Undo last removal (shown on result screen after successful Auslagern)
-    RESULT_UNDO,
 };
 
 enum class UiTab {
@@ -129,7 +127,7 @@ public:
     void showFetchingProduct(const String &barcode);
     void showDateEntry(const ProductInfo &product, const String &dateDraft);
     void showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity);
-    void showResult(const String &title, const String &message, bool success, bool showPrintButtons = false, bool showUndo = false);
+    void showResult(const String &title, const String &message, bool success, bool showPrintButtons = false);
     void showInventoryList(const std::vector<InventoryItem> &items,
                            const String &filter = "",
                            const String &hhAbbr = "",

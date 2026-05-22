@@ -96,6 +96,24 @@ const InventoryItem *InventoryManager::findRecent(const String &barcode) const {
     return nullptr;
 }
 
+const InventoryItem *InventoryManager::findRecentByLabel(const String &labelBarcode) const {
+    for (const RemovedItem &ri : _recentlyRemoved)
+        if (ri.item.labelBarcode == labelBarcode) return &ri.item;
+    return nullptr;
+}
+
+bool InventoryManager::restoreByLabel(const String &labelBarcode, const InventoryItem &restored) {
+    for (auto it = _recentlyRemoved.begin(); it != _recentlyRemoved.end(); ++it) {
+        if (it->item.labelBarcode == labelBarcode) {
+            _recentlyRemoved.erase(it);
+            storage.saveRemoved(_recentlyRemoved);
+            break;
+        }
+    }
+    inventory.push_back(restored);
+    return storage.save(inventory);
+}
+
 void InventoryManager::pruneOldRemoved() {
     time_t now = time(nullptr);
     bool changed = false;

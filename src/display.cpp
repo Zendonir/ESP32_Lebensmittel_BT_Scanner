@@ -1001,11 +1001,11 @@ void Display::showQuantityEntry(const ProductInfo &product,
 //   Result dialog
 // ─────────────────────────────────────────────────────────
 
-void Display::showResult(const String &title, const String &message, bool success, bool showPrintButtons, bool showUndo) {
+void Display::showResult(const String &title, const String &message, bool success, bool showPrintButtons) {
     if (!_initialized) return;
     if (_homeState.valid) render_home(_homeState);
     else _spr.fillSprite(C_BG);
-    int dw = 400, dh = showPrintButtons ? 200 : (showUndo ? 190 : 160);
+    int dw = 400, dh = showPrintButtons ? 200 : 160;
     int dx = (SCR_W - dw) / 2, dy = (SCR_H - dh) / 2;
     _spr.fillRoundRect(dx, dy, dw, dh, 12, C_SURFACE);
     _spr.drawRoundRect(dx, dy, dw, dh, 12, C_BORDER);
@@ -1025,13 +1025,7 @@ void Display::showResult(const String &title, const String &message, bool succes
         _spr.drawString(msg.substring(44).c_str(),    dx + dw / 2, dy + 72);
     }
     clear_regions();
-    if (showUndo) {
-        int bw = 170, bh = 38, gap = 12;
-        int bx1 = dx + (dw - (2 * bw + gap)) / 2;
-        int by  = dy + dh - 56;
-        draw_button(bx1,           by, bw, bh, "Zurueckbuchen", C_ACCENT,   C_TEXT,    2, OnscreenAction::RESULT_UNDO);
-        draw_button(bx1 + bw + gap, by, bw, bh, "OK",           C_SURFACE2, C_SUBTEXT, 2, OnscreenAction::REFRESH);
-    } else if (showPrintButtons) {
+    if (showPrintButtons) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
         _spr.setTextFont(2);
         _spr.setTextDatum(TC_DATUM);

@@ -792,14 +792,6 @@ void App::processOnscreenAction(OnscreenAction action) {
     }
 
     if (action == OnscreenAction::FIFO_CONFIRM && workflow == WorkflowMode::FIFO_WARN) {
-        _lastRemovedValid = false;
-        for (const auto &it : inventory.items()) {
-            if (it.labelBarcode == _fifoLabelCode) {
-                _lastRemovedItem  = it;
-                _lastRemovedValid = true;
-                break;
-            }
-        }
         bool removed = inventory.removeByLabel(_fifoLabelCode);
         if (removed) {
             audio_obj.playCheckoutTone();
@@ -811,8 +803,6 @@ void App::processOnscreenAction(OnscreenAction action) {
             sdoc["timestamp"]    = (long)time(nullptr);
             String sp; serializeJson(sdoc, sp);
             sync_manager.enqueue("REMOVE_LABEL", sp);
-        } else {
-            _lastRemovedValid = false;
         }
         workflow = WorkflowMode::RESULT;
         _resultShownMs = millis();
@@ -821,7 +811,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         _resultMessage = removed
             ? (_fifoProductName.isEmpty() ? _fifoLabelCode : _fifoProductName)
             : "Label ist nicht im Inventar";
-        display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess, false, _lastRemovedValid);
+        display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
         return;
     }
 
@@ -945,25 +935,8 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
 
         case OnscreenAction::REFRESH:
-            _lastRemovedValid = false;
             workflow = WorkflowMode::HOME;
             renderActiveTab("Anzeige aktualisiert");
-            break;
-
-        case OnscreenAction::RESULT_UNDO:
-            if (workflow == WorkflowMode::RESULT && _lastRemovedValid) {
-                _lastRemovedValid = false;
-                bool ok = inventory.addItem(_lastRemovedItem);
-                audio_obj.playSuccessTone();
-                workflow       = WorkflowMode::RESULT;
-                _resultShownMs = millis();
-                _resultSuccess = ok;
-                _resultTitle   = ok ? "Zurueckgebucht" : "Fehler";
-                _resultMessage = _lastRemovedItem.name.isEmpty()
-                    ? _lastRemovedItem.labelBarcode
-                    : _lastRemovedItem.name;
-                display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
-            }
             break;
         case OnscreenAction::WIFI_SETUP:
             Logger::info("UI", "Touch action: WiFi setup");
@@ -1249,6 +1222,24 @@ void App::handleScan(const ScanResult &scan) {
     if (scan.type == BarcodeType::LABEL) {
         state.setState(AppState::RETRIEVE);
 
+        // Re-scan of a recently removed label → restore to inventory at current location
+        if (!inventory.hasLabel(scan.code)) {
+            const InventoryItem *recent = inventory.findRecentByLabel(scan.code);
+            if (recent) {
+                InventoryItem restored  = *recent;
+                restored.location       = device_config.getActiveLocation();
+                bool ok = inventory.restoreByLabel(scan.code, restored);
+                audio_obj.playSuccessTone();
+                workflow       = WorkflowMode::RESULT;
+                _resultShownMs = millis();
+                _resultSuccess = ok;
+                _resultTitle   = ok ? "Eingelagert" : "Fehler";
+                _resultMessage = restored.name.isEmpty() ? scan.code : restored.name;
+                display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
+                return;
+            }
+        }
+
         // Find item details BEFORE deciding to remove
         String removedName, removedBarcode, removedExpiry;
         for (const auto &it : inventory.items()) {
@@ -1275,14 +1266,6 @@ void App::handleScan(const ScanResult &scan) {
         }
 
         // No FIFO warning — proceed with removal
-        _lastRemovedValid = false;
-        for (const auto &it : inventory.items()) {
-            if (it.labelBarcode == scan.code) {
-                _lastRemovedItem  = it;
-                _lastRemovedValid = true;
-                break;
-            }
-        }
         bool removed = inventory.removeByLabel(scan.code);
         if (removed) {
             audio_obj.playCheckoutTone();
@@ -1296,7 +1279,6 @@ void App::handleScan(const ScanResult &scan) {
             sync_manager.enqueue("REMOVE_LABEL", sp);
         } else {
             audio_obj.playErrorTone();
-            _lastRemovedValid = false;
         }
         workflow = WorkflowMode::RESULT; _resultShownMs = millis();
         _resultSuccess = removed;
@@ -1304,7 +1286,7 @@ void App::handleScan(const ScanResult &scan) {
         _resultMessage = removed
             ? (removedName.isEmpty() ? scan.code : removedName)
             : "Label ist nicht im Inventar";
-        display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess, false, _lastRemovedValid);
+        display_obj.showResult(_resultTitle, _resultMessage, _resultSuccess);
         return;
     }
 
