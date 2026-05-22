@@ -1886,18 +1886,34 @@ void WebInterface::registerApiRoutes() {
     _server.on("/api/update-fs", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             bool ok = !Update.hasError();
-            req->send(200, "application/json",
-                ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"FS update failed\"}");
+            String body = ok ? "{\"ok\":true}"
+                             : String("{\"ok\":false,\"error\":\"") + Update.errorString() + "\"}";
+            req->send(200, "application/json", body);
             if (ok) { delay(200); WiFi.disconnect(true); WiFi.mode(WIFI_OFF); delay(300); esp_restart(); }
         },
         [](AsyncWebServerRequest *req, const String &filename,
            size_t index, uint8_t *data, size_t len, bool final) {
             if (!index) {
                 Logger::info("OTA", "FS start: " + filename);
-                Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS);
+                Update.abort();       // clear any leftover state from a previous attempt
+                LittleFS.end();       // unmount before overwriting the partition
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
+                    Logger::error("OTA", String("FS begin failed (") + Update.getError()
+                                         + "): " + Update.errorString());
+                    return;
+                }
             }
-            if (Update.isRunning()) Update.write(data, len);
-            if (final && !Update.end(true))
-                Logger::error("OTA", "FS end() failed");
+            if (Update.isRunning()) {
+                if (Update.write(data, len) != len)
+                    Logger::error("OTA", String("FS write error at offset ") + index
+                                         + ": " + Update.errorString());
+            }
+            if (final) {
+                if (!Update.end(true))
+                    Logger::error("OTA", String("FS end failed (") + Update.getError()
+                                         + "): " + Update.errorString());
+                else
+                    Logger::info("OTA", "FS done: " + String(index + len) + " bytes");
+            }
         });
 }
