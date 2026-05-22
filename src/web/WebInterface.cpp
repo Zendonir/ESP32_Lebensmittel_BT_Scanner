@@ -216,6 +216,7 @@ static uint32_t _scanUpdatedAt = 0;
 static String _scanSource;
 static WiFiScanEntry _scanCache[WIFI_SCAN_CACHE_MAX];
 static bool loadJson(const char *path, JsonDocument &doc, const char *fallback);
+static bool saveJson(const char *path, JsonDocument &doc);
 
 static void resetScanCache() {
     for (int i = 0; i < WIFI_SCAN_CACHE_MAX; i++) {
