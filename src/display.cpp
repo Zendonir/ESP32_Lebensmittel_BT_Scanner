@@ -18,6 +18,7 @@
 
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>
+#include "FreeSans22pt.h"  // GFX font covering ASCII + Latin-1 (German umlauts)
 #include <qrcode.h>
 #include <algorithm>
 #include <vector>
@@ -163,9 +164,30 @@ static HomeState _homeState;
 //   Low-level drawing helpers
 // ═════════════════════════════════════════════════════════
 
+// Convert UTF-8 → Latin-1 so TFT_eSPI GFX fonts render German umlauts correctly.
+// U+00C0..U+00FF are encoded in UTF-8 as C3 80..C3 BF; Latin-1 byte = second_byte + 0x40.
+static String utf8ToLatin1(const String &s) {
+    String out;
+    out.reserve(s.length());
+    const uint8_t *p = (const uint8_t *)s.c_str();
+    while (*p) {
+        if (*p < 0x80) {
+            out += (char)*p++;
+        } else if (*p == 0xC3 && p[1] >= 0x80 && p[1] <= 0xBF) {
+            out += (char)(p[1] + 0x40);   // U+00C0..U+00FF → Latin-1
+            p += 2;
+        } else if ((*p & 0xE0) == 0xC0) { p += 2; }  // skip other 2-byte
+        else if  ((*p & 0xF0) == 0xE0) { p += 3; }   // skip 3-byte
+        else if  ((*p & 0xF8) == 0xF0) { p += 4; }   // skip 4-byte
+        else                            { p++;    }
+    }
+    return out;
+}
+
 static String trunc(const String &s, int maxChars) {
-    if ((int)s.length() <= maxChars) return s;
-    return s.substring(0, maxChars - 1) + "~";
+    String conv = utf8ToLatin1(s);
+    if ((int)conv.length() <= maxChars) return conv;
+    return conv.substring(0, maxChars - 1) + "~";
 }
 
 static void draw_button(int x, int y, int w, int h,
@@ -1461,11 +1483,12 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
         // Left accent bar
         _spr.fillRoundRect(tx + 1, ty + 1, 5, TILE_H - 2, 9, accent);
 
-        // Category name — centered in tile (offset right of bar)
-        _spr.setTextFont(4);
+        // Category name — GFX FreeFont so Latin-1 chars (umlauts, ß) render correctly
+        _spr.setFreeFont(&FreeSans22pt);
         _spr.setTextColor(C_TEXT, C_SURFACE);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(categories[i], 20).c_str(), tx + 14, ty + TILE_H / 2);
+        _spr.drawString(trunc(categories[i], 16).c_str(), tx + 14, ty + TILE_H / 2);
+        _spr.setTextFont(4);  // restore bitmap font for rest of UI
 
         add_region(tx, ty, TILE_W, TILE_H, LIST_ACTIONS[i]);
     }
