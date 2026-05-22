@@ -52,7 +52,6 @@ void App::begin() {
     display_obj.init();
     display_obj.showSplash();
 
-    Logger::info("Touch", "Initializing FT6336");
     touch_obj.init(&i2c_bus);
     display_obj.startTouchTask(); // touch polling now runs on Core 0 independently
 
@@ -301,7 +300,6 @@ void App::loadDisplayConfig() {
 }
 
 void App::initI2C() {
-    Logger::info("I2C", String("SDA=") + TOUCH_SDA + " SCL=" + TOUCH_SCL);
     i2c_bus.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
 }
 
@@ -961,13 +959,11 @@ void App::processOnscreenAction(OnscreenAction action) {
             renderActiveTab("Anzeige aktualisiert");
             break;
         case OnscreenAction::WIFI_SETUP:
-            Logger::info("UI", "Touch action: WiFi setup");
             WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
             workflow = WorkflowMode::WIFI_SETUP_SCAN;
             display_obj.showWifiScan();
             break;
         case OnscreenAction::SCANNER_RECONNECT:
-            Logger::info("UI", "Touch action: scanner reconnect/disconnect");
             if (ble_scanner.isConnected() || ble_scanner.isConnecting()) {
                 ble_scanner.disconnect();
                 renderActiveTab("Scanner getrennt");
