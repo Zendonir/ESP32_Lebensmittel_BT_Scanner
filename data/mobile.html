@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Scanner">
@@ -81,7 +81,7 @@
   #wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
   #wifi-dot.ok { background: var(--green); }
   #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  #tabbar { display: flex; background: var(--surface); border-top: 1px solid var(--border); height: var(--tab-h); flex-shrink: 0; }
+  #tabbar { display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); flex-shrink: 0; }
   .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
   .tab-btn.active { color: var(--accent); }
   .tab-btn svg { width: 22px; height: 22px; }
@@ -110,7 +110,7 @@
 
   /* ── Inventory list ── */
   #inv-list { display: flex; flex-direction: column; gap: 6px; }
-  .inv-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+  .inv-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; display: flex; align-items: center; gap: 10px; }
   .inv-item.expiring { border-color: var(--yellow); }
   .inv-item.expired { border-color: var(--red); }
   .inv-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
@@ -150,7 +150,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── Toast ── */
-  #toast { position: fixed; bottom: calc(var(--tab-h) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }
+  #toast { position: fixed; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   /* ── Pull-to-refresh hint ── */
@@ -163,7 +163,7 @@
   .inv-group.solo .inv-group-head { border-radius: var(--radius) !important; }
   .inv-chevron { font-size: 18px; color: var(--sub); transition: transform .2s; flex-shrink: 0; padding-left: 4px; line-height: 1; }
   .inv-sub-list { background: var(--surface2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); }
-  .inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 34px; border-top: 1px solid var(--border); }
+  .inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 34px; border-top: 1px solid var(--border); }
   .inv-sub-item:first-child { border-top: none; }
   .inv-sub-item .inv-meta { font-size: 13px; color: var(--sub); }
   .inv-sub-item .inv-label { font-size: 11px; color: var(--sub); opacity: .7; }
@@ -172,9 +172,9 @@
 
   /* ── Swipe-to-delete ── */
   .swipe-wrap { position: relative; overflow: hidden; border-radius: inherit; }
-  .swipe-inner { transition: transform .2s; will-change: transform; }
+  .swipe-inner { position: relative; z-index: 1; transition: transform .2s; will-change: transform; }
   .swipe-del-btn {
-    position: absolute; right: 0; top: 0; bottom: 0;
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 0;
     width: 80px; background: var(--red);
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-size: 13px; font-weight: 600;
