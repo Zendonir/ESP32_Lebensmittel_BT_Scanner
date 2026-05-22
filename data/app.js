@@ -2375,6 +2375,37 @@ Pages.ota = {
     xhr.send(fd);
   },
 
+  async uploadFsFile(e) {
+    e.preventDefault();
+    const file = document.getElementById('otaFsFile').files[0];
+    if (!file) { Toast.warn('Datei wählen'); return; }
+    document.getElementById('otaProgressCard').hidden = false;
+    document.getElementById('otaProgress').style.width = '0%';
+    document.getElementById('otaProgressText').textContent = 'Filesystem hochladen…';
+    const fd = new FormData();
+    fd.append('filesystem', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/update-fs');
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round(ev.loaded / ev.total * 100);
+        document.getElementById('otaProgress').style.width = `${pct}%`;
+        document.getElementById('otaProgressText').textContent = `${pct}%`;
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        document.getElementById('otaProgress').style.width = '100%';
+        document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
+        Toast.success('Filesystem aktualisiert – Gerät startet neu');
+      } else {
+        Toast.error('Upload fehlgeschlagen: ' + xhr.statusText);
+      }
+    };
+    xhr.onerror = () => Toast.error('Upload-Fehler');
+    xhr.send(fd);
+  },
+
   // Manual fallback: URL
   async updateFromUrl(e) {
     e.preventDefault();

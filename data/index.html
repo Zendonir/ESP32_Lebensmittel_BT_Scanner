@@ -678,6 +678,18 @@
           <button type="submit" class="btn btn-sm btn-ok">Upload &amp; Flashen</button>
         </form>
         <hr style="border-color:var(--border);margin:8px 0">
+        <form id="otaFsFileForm" class="form-stack" onsubmit="Pages.ota.uploadFsFile(event)">
+          <div class="form-field">
+            <label>Web-Dateien / Filesystem (.bin)</label>
+            <div style="font-size:0.78rem;color:var(--subtext);margin-bottom:4px">
+              Datei: <code>.pio/build/esp32-s3-devkitc1-n16r8/littlefs.bin</code><br>
+              Bauen: <code>pio run -t buildfs</code>
+            </div>
+            <input type="file" id="otaFsFile" class="input" accept=".bin" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-ok">Filesystem flashen</button>
+        </form>
+        <hr style="border-color:var(--border);margin:8px 0">
         <form id="otaUrlForm" class="form-stack" onsubmit="Pages.ota.updateFromUrl(event)">
           <div class="form-field"><label>URL (HTTPS)</label>
             <input type="url" id="otaUrl" class="input" placeholder="https://…/firmware_ota.bin" required>

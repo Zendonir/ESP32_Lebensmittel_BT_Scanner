@@ -1863,7 +1863,7 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
-    // ---- OTA FILE UPLOAD ----
+    // ---- OTA FILE UPLOAD (firmware) ----
     _server.on("/api/update", HTTP_POST,
         [](AsyncWebServerRequest *req) {
             bool ok = !Update.hasError();
@@ -1880,5 +1880,24 @@ void WebInterface::registerApiRoutes() {
             if (Update.isRunning()) Update.write(data, len);
             if (final && !Update.end(true))
                 Logger::error("OTA", "end() failed");
+        });
+
+    // ---- OTA FILE UPLOAD (LittleFS filesystem) ----
+    _server.on("/api/update-fs", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            bool ok = !Update.hasError();
+            req->send(200, "application/json",
+                ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"FS update failed\"}");
+            if (ok) { delay(200); WiFi.disconnect(true); WiFi.mode(WIFI_OFF); delay(300); esp_restart(); }
+        },
+        [](AsyncWebServerRequest *req, const String &filename,
+           size_t index, uint8_t *data, size_t len, bool final) {
+            if (!index) {
+                Logger::info("OTA", "FS start: " + filename);
+                Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS);
+            }
+            if (Update.isRunning()) Update.write(data, len);
+            if (final && !Update.end(true))
+                Logger::error("OTA", "FS end() failed");
         });
 }
