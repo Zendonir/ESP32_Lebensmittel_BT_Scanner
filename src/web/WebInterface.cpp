@@ -1556,6 +1556,64 @@ void WebInterface::registerApiRoutes() {
         Logger::clearLog();
         req->send(200, "application/json", "{\"ok\":true}");
     });
+
+    // List SD log files
+    _server.on("/api/logs/sd", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (!AppFS::sdAvailable()) {
+            req->send(200, "application/json", "{\"error\":\"no_sd\",\"files\":[]}");
+            return;
+        }
+        String out = "{\"files\":[";
+        File dir = AppFS::sdFs().open("/scanner_log");
+        bool first = true;
+        if (dir && dir.isDirectory()) {
+            File f = dir.openNextFile();
+            while (f) {
+                if (!f.isDirectory()) {
+                    String name = f.name();
+                    int slash = name.lastIndexOf('/');
+                    if (slash >= 0) name = name.substring(slash + 1);
+                    if (name.endsWith(".log")) {
+                        if (!first) out += ',';
+                        out += "{\"name\":\"" + name + "\",\"size\":" + f.size() + "}";
+                        first = false;
+                    }
+                }
+                f.close();
+                f = dir.openNextFile();
+            }
+            dir.close();
+        }
+        out += "]}";
+        req->send(200, "application/json", out);
+    });
+
+    // Download a specific SD log file: GET /api/logs/sd/2026-05-22.log
+    _server.on("/api/logs/sd/*", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (!AppFS::sdAvailable()) {
+            req->send(503, "text/plain", "No SD card");
+            return;
+        }
+        String url = req->url();  // e.g. /api/logs/sd/2026-05-22.log
+        String filename = url.substring(url.lastIndexOf('/') + 1);
+        // Sanitize: only allow *.log, no path traversal
+        if (filename.isEmpty() || !filename.endsWith(".log")
+                || filename.indexOf('/') >= 0 || filename.indexOf("..") >= 0) {
+            req->send(400, "text/plain", "Bad filename");
+            return;
+        }
+        String path = String("/scanner_log/") + filename;
+        if (!AppFS::sdFs().exists(path.c_str())) {
+            req->send(404, "text/plain", "Not found");
+            return;
+        }
+        AsyncWebServerResponse *r =
+            req->beginResponse(AppFS::sdFs(), path, "text/plain");
+        r->addHeader("Content-Disposition",
+                     String("attachment; filename=\"") + filename + "\"");
+        req->send(r);
+    });
+
     _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
         portENTER_CRITICAL(&_bleScanMux);
         int state = _bleScanState;

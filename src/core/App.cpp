@@ -69,6 +69,8 @@ void App::begin() {
     loadDisplayConfig();
     device_config.begin();
     time_manager.begin(i2c_bus, device_config.getTimezone());
+    if (AppFS::sdAvailable())
+        Logger::enableSdLog(&AppFS::sdFs());
 
     // SD backup import prompt: show if SD has backup and internal storage is empty
     if (BackupManager::hasBackupOnSD() && BackupManager::internalIsEmpty()) {
@@ -194,6 +196,7 @@ void App::loop() {
     if (millis() - _lastBackupCheckMs >= BACKUP_CHECK_INTERVAL_MS) {
         _lastBackupCheckMs = millis();
         BackupManager::runDailyCheck();
+        Logger::rotateSdLogIfNeeded();  // roll to new day's file if midnight passed
     }
 
     // Ntfy push check every 6 hours
