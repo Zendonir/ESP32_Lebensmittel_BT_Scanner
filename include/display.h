@@ -142,6 +142,8 @@ public:
                            int scrollOffset = 0);
 
     int16_t getLastSwipePressY() const;  // Y coordinate of last swipe press start
+    int16_t getScrollDeltaPx()  const;  // live vertical drag delta (0 if not scrolling)
+    int16_t drainScrollCommit() const;  // final delta after finger lift, clears on read
 
     String getInvGroupName(int rowIdx) const;
 

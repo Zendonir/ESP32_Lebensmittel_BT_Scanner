@@ -294,6 +294,32 @@ void App::loop() {
         renderActiveTab("");
     }
 
+    // ── Live inventory scroll ──────────────────────────────
+    // Read finger delta while dragging; re-render with a temporary offset so
+    // the list moves in real-time. On lift, drainScrollCommit() returns the
+    // final delta and we update the permanent _invScrollOffset.
+    if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
+        static constexpr int INV_ROW_H = 40;   // must match ROW_H in display.cpp
+        static int16_t s_lastDeltaPx = 0;
+
+        int16_t liveDelta = display_obj.getScrollDeltaPx();
+        if (liveDelta != s_lastDeltaPx) {
+            s_lastDeltaPx = liveDelta;
+            int tempOff = _invScrollOffset - liveDelta / INV_ROW_H;
+            display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
+                device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff);
+        }
+
+        int16_t committed = display_obj.drainScrollCommit();
+        if (committed != 0) {
+            s_lastDeltaPx  = 0;
+            _invScrollOffset -= committed / INV_ROW_H;
+            if (_invScrollOffset < 0) _invScrollOffset = 0;
+            display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
+                device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+        }
+    }
+
     handleTouch();
     processWorkflow();
 

@@ -108,6 +108,11 @@ struct TouchState {
 };
 static TouchState _ts;
 
+// ─────────────────── scroll gesture state ────────────────
+static constexpr int16_t SCROLL_DEAD_PX = 8;  // px dead zone before scroll activates
+static bool    _inScrollGesture  = false;
+static int16_t _scrollCommitDelta = 0;   // final delta saved on finger-lift
+
 // ─────────────────── action queue (single-slot) ──────────
 static volatile OnscreenAction _pending_action  = OnscreenAction::NONE;
 static volatile char           _pending_kb_char = 0;
@@ -525,6 +530,15 @@ void Display::tick() {
         } else {
             _ts.lastX = tp.x;
             _ts.lastY = tp.y;
+            // Detect scroll gesture: mostly vertical, starts below header
+            int16_t absDx = abs(_ts.lastX - _ts.startX);
+            int16_t absDy = abs(_ts.lastY - _ts.startY);
+            if (!_inScrollGesture
+                && absDy > SCROLL_DEAD_PX
+                && absDx < SWIPE_MAX_OFFAX
+                && _ts.startY > HDR_H) {
+                _inScrollGesture = true;
+            }
         }
         return;
     }
@@ -532,6 +546,13 @@ void Display::tick() {
     // ── Finger lifted ─────────────────────────────────────────
     if (!_ts.active) return;
     _ts.active = false;
+
+    // If this was a scroll gesture, commit the delta and skip normal gesture detection
+    if (_inScrollGesture) {
+        _scrollCommitDelta = _ts.lastY - _ts.startY;
+        _inScrollGesture   = false;
+        return;   // don't emit any OnscreenAction
+    }
 
     int16_t  dx      = _ts.lastX - _ts.startX;
     int16_t  dy      = _ts.lastY - _ts.startY;
@@ -564,15 +585,24 @@ void Display::tick() {
                && _ts.startY > HDR_H) {
         // ── Horizontal swipe ─────────────────────────────────
         hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
-    } else if (absDy >= SWIPE_MIN_DIST && absDx <= SWIPE_MAX_OFFAX) {
-        // ── Vertical swipe ───────────────────────────────────
-        hit = (dy < 0) ? OnscreenAction::SWIPE_UP : OnscreenAction::SWIPE_DOWN;
     }
+    // Vertical swipes: handled entirely via scroll gesture path above
 
     if (hit != OnscreenAction::NONE) {
         _pending_kb_char = hit_char;
         _pending_action  = hit;
     }
+}
+
+int16_t Display::getScrollDeltaPx() const {
+    // Live delta while finger is still down (read from Core 1 — atomic on ARM)
+    return (_ts.active && _inScrollGesture) ? (_ts.lastY - _ts.startY) : 0;
+}
+
+int16_t Display::drainScrollCommit() const {
+    int16_t v = _scrollCommitDelta;
+    if (v != 0) _scrollCommitDelta = 0;
+    return v;
 }
 
 static void touch_task_fn(void * /*param*/) {
