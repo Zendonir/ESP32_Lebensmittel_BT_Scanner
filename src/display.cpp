@@ -277,7 +277,6 @@ static void draw_panel_store(const HomeState &s) {
     int pill_y = py + 72;
     uint16_t wifi_bg = s.wifiConnected ? C_GREEN : C_RED;
     bool ble_ok = (s.scannerStatus == "connected");
-    uint16_t ble_bg = ble_ok ? C_GREEN : C_SURFACE2;
 
     _spr.setTextFont(2);
     String wifi_pill = s.wifiConnected ? "WLAN OK" : "WLAN FEHLT";
