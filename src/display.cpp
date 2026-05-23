@@ -113,6 +113,7 @@ static constexpr int16_t SCROLL_DEAD_PX = 8;  // px dead zone before scroll acti
 static bool    _scrollEnabled    = false;  // true only when inventory list is visible
 static bool    _inScrollGesture  = false;
 static int16_t _scrollCommitDelta = 0;   // final delta saved on finger-lift
+static int     _lastInvGroupCount = 0;   // group count from last showInventoryList render
 
 // ─────────────────── action queue (single-slot) ──────────
 static volatile OnscreenAction _pending_action  = OnscreenAction::NONE;
@@ -642,6 +643,10 @@ OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {
 
 int16_t Display::getLastSwipePressY() const {
     return _ts.startY;
+}
+
+int Display::getInventoryGroupCount() const {
+    return _lastInvGroupCount;
 }
 
 char Display::drainKbChar() {
@@ -1405,6 +1410,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         // Columns:  Produkt 0..299 | MHD ..COL_MHD | Menge ..COL_MENGE
         static constexpr uint16_t STATUS_COL[3] = { C_ACCENT, C_YELLOW, C_RED };
         int totalGroups = (int)groups.size();
+        _lastInvGroupCount = totalGroups;   // expose for App.cpp clamping
         int maxOffset   = std::max(0, totalGroups - MAX_ROWS);
         int clampedOff  = std::max(0, std::min(scrollOffset, maxOffset));
 

@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
+#include <algorithm>
 #include <ArduinoJson.h>
 #include "../storage/AppFS.h"
 
@@ -306,17 +307,20 @@ void App::loop() {
     }
 
     // ── Live inventory scroll ──────────────────────────────
-    // Read finger delta while dragging; re-render with a temporary offset so
-    // the list moves in real-time. On lift, drainScrollCommit() returns the
-    // final delta and we update the permanent _invScrollOffset.
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
-        static constexpr int INV_ROW_H = 40;   // must match ROW_H in display.cpp
+        static constexpr int INV_ROW_H    = 40; // must match ROW_H in display.cpp
+        static constexpr int INV_MAX_ROWS = 5;  // must match MAX_ROWS in display.cpp
         static int16_t s_lastDeltaPx = 0;
 
         int16_t liveDelta = display_obj.getScrollDeltaPx();
-        if (liveDelta != s_lastDeltaPx) {
+
+        // Only re-render when delta actually changed AND finger is still down.
+        // Skipping liveDelta==0 avoids a one-frame flash back to the base offset
+        // when the finger lifts (commit handles that render instead).
+        if (liveDelta != 0 && liveDelta != s_lastDeltaPx) {
             s_lastDeltaPx   = liveDelta;
-            _lastActivityMs = millis();   // scrollen = Aktivität
+            _lastActivityMs = millis();
+            _lastUiRefreshMs = millis();   // suppress 2-s auto-refresh during drag
             int tempOff = _invScrollOffset - liveDelta / INV_ROW_H;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                 device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff);
@@ -324,10 +328,14 @@ void App::loop() {
 
         int16_t committed = display_obj.drainScrollCommit();
         if (committed != 0) {
-            s_lastDeltaPx   = 0;
-            _lastActivityMs = millis();   // scroll-Ende = Aktivität
+            s_lastDeltaPx    = 0;
+            _lastActivityMs  = millis();
+            _lastUiRefreshMs = millis();
             _invScrollOffset -= committed / INV_ROW_H;
-            if (_invScrollOffset < 0) _invScrollOffset = 0;
+            // Clamp to [0 .. maxOffset] using the last rendered group count
+            int maxOff = std::max(0, display_obj.getInventoryGroupCount() - INV_MAX_ROWS);
+            if (_invScrollOffset < 0)      _invScrollOffset = 0;
+            if (_invScrollOffset > maxOff) _invScrollOffset = maxOff;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                 device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         }

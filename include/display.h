@@ -141,9 +141,10 @@ public:
                            const String &expandedGroup = "",
                            int scrollOffset = 0);
 
-    int16_t getLastSwipePressY() const;  // Y coordinate of last swipe press start
-    int16_t getScrollDeltaPx()  const;  // live vertical drag delta (0 if not scrolling)
-    int16_t drainScrollCommit() const;  // final delta after finger lift, clears on read
+    int16_t getLastSwipePressY()    const;  // Y coordinate of last swipe press start
+    int16_t getScrollDeltaPx()      const;  // live vertical drag delta (0 if not scrolling)
+    int16_t drainScrollCommit()     const;  // final delta after finger lift, clears on read
+    int     getInventoryGroupCount() const; // number of groups in last inventory render
 
     String getInvGroupName(int rowIdx) const;
 
