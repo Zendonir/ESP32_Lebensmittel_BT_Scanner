@@ -88,15 +88,23 @@ static uint16_t hexToRgb565(const String &hex) {
     return ((uint16_t)(r >> 3) << 11) | ((uint16_t)(g >> 2) << 5) | (b >> 3);
 }
 
-// ─────────────────── touch debounce state ────────────────
-static bool     _touch_was_pressed  = false;
-static uint32_t _touch_press_ms     = 0;
-static int16_t  _touch_press_x      = 0;
-static int16_t  _touch_press_y      = 0;
-static int16_t  _touch_last_x       = 0;  // last tracked position while finger is down
-static int16_t  _touch_last_y       = 0;
-static int8_t   _touch_release_cnt  = 0;  // consecutive "not pressed" readings for debounce
-static constexpr int8_t RELEASE_DEBOUNCE = 3; // ~30 ms at 10 ms polling
+// ─────────────────── gesture detector state ──────────────
+// The FT6336 does NOT continuously report Contact events during movement.
+// It reports Press Down at start, possibly a brief "0 touches" glitch, then
+// another Press Down at the new position.  A simple pressed/released flip-flop
+// therefore sees dx=0 and never detects a swipe.
+//
+// Fix: treat any tp.pressed reading as an update to the ongoing gesture
+// (regardless of brief 0-touch gaps) and only finalise the gesture after
+// GESTURE_END_MS of continuous no-touch.
+static bool     _gest_active   = false;
+static uint32_t _gest_start_ms = 0;
+static int16_t  _gest_start_x  = 0;
+static int16_t  _gest_start_y  = 0;
+static int16_t  _gest_last_x   = 0;
+static int16_t  _gest_last_y   = 0;
+static uint32_t _gest_last_ms  = 0;   // millis() of the most recent tp.pressed sample
+static constexpr uint32_t GESTURE_END_MS = 60; // no-touch gap that closes a gesture
 
 // ─────────────────── action queue (single-slot) ──────────
 static volatile OnscreenAction _pending_action  = OnscreenAction::NONE;
@@ -501,71 +509,64 @@ void Display::tick() {
     if (!_initialized) return;
     TouchPoint tp = touch_obj.read();
 
+    uint32_t now = millis();
+
     if (tp.pressed) {
-        _touch_release_cnt = 0;  // finger is down — reset release debounce
-        if (!_touch_was_pressed) {
-            _touch_was_pressed = true;
-            _touch_press_ms    = millis();
-            _touch_press_x     = tp.x;
-            _touch_press_y     = tp.y;
-            _touch_last_x      = tp.x;
-            _touch_last_y      = tp.y;
+        if (!_gest_active) {
+            // New gesture starts
+            _gest_active   = true;
+            _gest_start_ms = now;
+            _gest_start_x  = tp.x;
+            _gest_start_y  = tp.y;
             Serial.printf("[Touch] raw(%u,%u) → cal(%u,%u)\n",
                 touch_obj.lastRawX, touch_obj.lastRawY, tp.x, tp.y);
-        } else {
-            // Track finger movement while pressed for swipe detection
-            _touch_last_x = tp.x;
-            _touch_last_y = tp.y;
         }
-    } else {
-        if (_touch_was_pressed) {
-            // FT6336 briefly reports 0 touches during a swipe — debounce before
-            // treating as a real release to avoid splitting swipes into tiny taps.
-            _touch_release_cnt++;
-            if (_touch_release_cnt < RELEASE_DEBOUNCE) return;
+        // Update end-point on every pressed sample (merges brief 0-touch glitches)
+        _gest_last_x  = tp.x;
+        _gest_last_y  = tp.y;
+        _gest_last_ms = now;
 
-            _touch_release_cnt = 0;
-            _touch_was_pressed = false;
+    } else if (_gest_active && (now - _gest_last_ms >= GESTURE_END_MS)) {
+        // Enough silence: gesture is over
+        _gest_active = false;
 
-            uint32_t held = millis() - _touch_press_ms;
-            if (held >= 50) {
-                int16_t px = _touch_press_x, py = _touch_press_y;
-                int16_t dx = _touch_last_x - px;
-                int16_t dy = _touch_last_y - py;
+        uint32_t held = now - _gest_start_ms;
+        if (held >= 50) {
+            int16_t px = _gest_start_x, py = _gest_start_y;
+            int16_t dx = _gest_last_x - px;
+            int16_t dy = _gest_last_y - py;
 
-                portENTER_CRITICAL(&_regions_mux);
-                int count = _region_count;
-                HitRegion snap[MAX_REGIONS];
-                memcpy(snap, _regions, count * sizeof(HitRegion));
-                portEXIT_CRITICAL(&_regions_mux);
+            portENTER_CRITICAL(&_regions_mux);
+            int count = _region_count;
+            HitRegion snap[MAX_REGIONS];
+            memcpy(snap, _regions, count * sizeof(HitRegion));
+            portEXIT_CRITICAL(&_regions_mux);
 
-                // Swipe detection
-                bool is_h_swipe = (abs(dx) > 80) && (abs(dx) > abs(dy) * 2);
-                bool is_v_swipe = (abs(dy) > 80) && (abs(dy) > abs(dx) * 2);
+            bool is_h_swipe = (abs(dx) > 80) && (abs(dx) > abs(dy) * 2);
+            bool is_v_swipe = (abs(dy) > 80) && (abs(dy) > abs(dx) * 2);
 
-                OnscreenAction hit = OnscreenAction::NONE;
-                char           hit_char = 0;
+            OnscreenAction hit      = OnscreenAction::NONE;
+            char           hit_char = 0;
 
-                if (is_h_swipe && py > HDR_H && py < SCR_H - TAB_H) {
-                    hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
-                } else if (is_v_swipe) {
-                    hit = (dy > 0) ? OnscreenAction::SWIPE_DOWN : OnscreenAction::SWIPE_UP;
-                } else {
-                    // Hit-test using press start coordinates
-                    for (int i = 0; i < count; i++) {
-                        if (px >= snap[i].x && px < snap[i].x + snap[i].w &&
-                            py >= snap[i].y && py < snap[i].y + snap[i].h) {
-                            hit      = snap[i].action;
-                            hit_char = snap[i].extra_char;
-                            break;
-                        }
+            if (is_h_swipe && py > HDR_H && py < SCR_H - TAB_H) {
+                hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
+            } else if (is_v_swipe) {
+                hit = (dy > 0) ? OnscreenAction::SWIPE_DOWN : OnscreenAction::SWIPE_UP;
+            } else {
+                // Tap: hit-test using gesture start coordinates
+                for (int i = 0; i < count; i++) {
+                    if (px >= snap[i].x && px < snap[i].x + snap[i].w &&
+                        py >= snap[i].y && py < snap[i].y + snap[i].h) {
+                        hit      = snap[i].action;
+                        hit_char = snap[i].extra_char;
+                        break;
                     }
                 }
+            }
 
-                if (hit != OnscreenAction::NONE) {
-                    _pending_kb_char = hit_char;
-                    _pending_action  = hit;
-                }
+            if (hit != OnscreenAction::NONE) {
+                _pending_kb_char = hit_char;
+                _pending_action  = hit;
             }
         }
     }
