@@ -590,7 +590,7 @@ OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {
 }
 
 int16_t Display::getLastSwipePressY() const {
-    return _touch_press_y;
+    return _gest_start_y;
 }
 
 char Display::drainKbChar() {
