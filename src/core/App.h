@@ -214,8 +214,11 @@ private:
     // Sorte deletion pending index (-1 = none pending)
     int      _pendingSorteDeleteIdx = -1;
 
-    // Inventory scroll offset
+    // Inventory scroll offset and date filter (0=all, 7=7-day, 3=3-day)
     int      _invScrollOffset = 0;
+    int      _invExpireDays   = 0;
+
+    std::vector<InventoryItem> inventoryDisplayItems() const;
 
     // Label roll entry state
     String   _rollDraft;

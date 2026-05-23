@@ -89,6 +89,9 @@ enum class OnscreenAction {
     CONFIRM_NO,
     // Label roll management
     NEW_ROLL,
+    // Inventory date filters (tapping stat cards on home screen)
+    INV_EXPIRING_7,   // show only items expiring within 7 days
+    INV_EXPIRING_3,   // show only items expiring within 3 days (critical)
 };
 
 enum class UiTab {
@@ -124,7 +127,8 @@ public:
                   const String &message = "",
                   bool sdMounted = false,
                   int rollRemaining = -1,
-                  int scannerBattery = -1);
+                  int scannerBattery = -1,
+                  int expiringSoon3 = 0);
 
     // Barcode workflow
     void showFetchingProduct(const String &barcode);

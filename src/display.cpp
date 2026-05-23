@@ -156,6 +156,7 @@ struct HomeState {
     String lastScan, lastType;
     size_t inventoryCount  = 0;
     int    expiringSoon    = 0;
+    int    expiringSoon3   = 0;   // items expiring in ≤3 days (critical)
     int    rollRemaining   = -1;  // -1 = no roll configured
     int    scannerBattery  = -1;  // 0-100, -1 = unknown
     String message;
@@ -245,16 +246,25 @@ static void draw_panel_store(const HomeState &s) {
 
     static const char   *stat_labels[4] = { "Produkte", "Ablaufend", "Kritisch", "Label-Rest" };
     static const uint16_t stat_colors[4] = { C_ACCENT, C_YELLOW, C_RED, C_GREEN };
+    static const OnscreenAction stat_actions[4] = {
+        OnscreenAction::TAB_INVENTORY,
+        OnscreenAction::INV_EXPIRING_7,
+        OnscreenAction::INV_EXPIRING_3,
+        OnscreenAction::NONE,
+    };
     int card_w = 115, card_h = 64;
     for (int i = 0; i < 4; i++) {
         int cx = 4 + i * (card_w + 4);
         int cy = py + 4;
         draw_card(cx, cy, card_w, card_h, C_SURFACE, stat_colors[i]);
         _spr.fillRect(cx + 1, cy + 1, 4, card_h - 2, stat_colors[i]);
+        if (stat_actions[i] != OnscreenAction::NONE)
+            add_region(cx, cy, card_w, card_h, stat_actions[i]);
         String count;
         if (i == 0)      count = String(s.inventoryCount);
-        else if (i == 3) count = (s.rollRemaining >= 0) ? String(s.rollRemaining) : "--";
-        else             count = "0";
+        else if (i == 1) count = String(s.expiringSoon);
+        else if (i == 2) count = String(s.expiringSoon3);
+        else             count = (s.rollRemaining >= 0) ? String(s.rollRemaining) : "--";
         _spr.setTextColor(stat_colors[i], C_SURFACE);
         _spr.setTextFont(4);
         _spr.setTextDatum(TL_DATUM);
@@ -273,7 +283,10 @@ static void draw_panel_store(const HomeState &s) {
     String wifi_pill = s.wifiConnected ? "WLAN OK" : "WLAN FEHLT";
     draw_pill(4, pill_y, wifi_pill.c_str(), wifi_bg);
     int pill_x2 = 4 + (int)_spr.textWidth(wifi_pill.c_str()) + 20;
-    draw_pill(pill_x2, pill_y, ble_ok ? "BLE OK" : "BLE ---", ble_ok ? C_GREEN : C_SURFACE2);
+    String ble_label = ble_ok
+        ? (s.scannerBattery >= 0 ? "BLE OK " + String(s.scannerBattery) + "%" : "BLE OK")
+        : "BLE ---";
+    draw_pill(pill_x2, pill_y, ble_label.c_str(), ble_ok ? C_GREEN : C_SURFACE2);
 
     // "Neue Rolle" button — right side of pills row
     static constexpr int ROLL_BTN_W = 116;
@@ -281,88 +294,18 @@ static void draw_panel_store(const HomeState &s) {
     draw_button(SCR_W - ROLL_BTN_W - 4, pill_y - 2, ROLL_BTN_W, ROLL_BTN_H,
                 "Neue Rolle", C_SURFACE2, C_TEXT, 2, OnscreenAction::NEW_ROLL);
 
-    int scan_y = py + 98;
-    draw_card(4, scan_y, 234, 72, C_SURFACE, C_ACCENT);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("LETZTER SCAN", 12, scan_y + 6);
-    String scan_code = s.lastScan.isEmpty() ? "Bereit zum Scannen" : trunc(s.lastScan, 26);
-    String scan_type = s.lastScan.isEmpty() ? "EAN scannen oder Label-QR" : trunc(s.lastType, 30);
-    _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.drawString(scan_code.c_str(), 12, scan_y + 26);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.drawString(scan_type.c_str(), 12, scan_y + 46);
-
-    draw_card(242, scan_y, 234, 72, C_SURFACE, C_YELLOW);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("BALD ABLAUFEND (7 Tage)", 250, scan_y + 6);
-    _spr.setTextColor(C_YELLOW, C_SURFACE);
-    if (s.expiringSoon > 0) {
-        _spr.setTextFont(6);
-        _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(String(s.expiringSoon).c_str(), 258, scan_y + 48);
-        _spr.setTextFont(2);
-        _spr.setTextDatum(TL_DATUM);
-        _spr.drawString("Artikel laufen ab", 258 + 30, scan_y + 40);
-    } else {
-        _spr.drawString("Alles im gruenen Bereich", 250, scan_y + 26);
-    }
-
-    int act_y = py + 178;
-    draw_card(4, act_y, SCR_W - 8, 40, C_SURFACE, C_ACCENT);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("LETZTE AKTIVITAET", 12, act_y + 4);
-    String msg = s.message.isEmpty() ? "System bereit" : trunc(s.message, 60);
-    _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.drawString(msg.c_str(), 12, act_y + 22);
-
-    // QR code linking to mobile web app — only if IP is known
-    if (s.wifiConnected && s.ip.length() > 0) {
-        static constexpr int QR_VER  = 2;   // 25×25 modules
-        static constexpr int QR_MOD  = 2;   // px per module
-        static constexpr int QR_SIZE = 25 * QR_MOD; // 50px
-        static constexpr int QR_PAD  = 3;   // quiet-zone padding (white border)
-        int qr_box_w = QR_SIZE + QR_PAD * 2;
-        int qr_box_h = QR_SIZE + QR_PAD * 2;
-        int qr_x = SCR_W - qr_box_w - 4;
-        int qr_y = act_y + 42;              // 2px gap below activity bar
-
-        // White background (quiet zone)
-        _spr.fillRect(qr_x, qr_y, qr_box_w, qr_box_h, TFT_WHITE);
-
-        String url = "http://" + s.ip + "/m";
-        QRCode qrcode;
-        uint8_t qrData[qrcode_getBufferSize(QR_VER)];
-        if (qrcode_initText(&qrcode, qrData, QR_VER, ECC_LOW, url.c_str()) == 0) {
-            for (int my = 0; my < qrcode.size; my++) {
-                for (int mx = 0; mx < qrcode.size; mx++) {
-                    uint16_t col = qrcode_getModule(&qrcode, mx, my) ? TFT_BLACK : TFT_WHITE;
-                    _spr.fillRect(qr_x + QR_PAD + mx * QR_MOD,
-                                  qr_y + QR_PAD + my * QR_MOD,
-                                  QR_MOD, QR_MOD, col);
-                }
-            }
-        }
-
-        // Label to the left of QR
-        int lbl_x = 8;
-        int lbl_y = qr_y;
-        _spr.setTextColor(C_SUBTEXT, C_BG);
-        _spr.setTextFont(2);
-        _spr.setTextDatum(TL_DATUM);
-        _spr.drawString("WEBINTERFACE", lbl_x, lbl_y + 4);
-        _spr.setTextColor(C_ACCENT, C_BG);
-        _spr.setTextFont(1);
-        _spr.drawString(url.c_str(), lbl_x, lbl_y + 24);
-        _spr.setTextColor(C_SUBTEXT, C_BG);
-        _spr.drawString("QR scannen zum Oeffnen", lbl_x, lbl_y + 36);
-    }
+    // Quick-access buttons
+    static constexpr int QA_BTN_H = 54;
+    static constexpr int QA_BTN_GAP = 5;
+    int btn_y = py + 100;
+    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
+                "Kategorie", C_ACCENT, C_BG, 4, OnscreenAction::TAB_MANUAL_PRODUCT);
+    btn_y += QA_BTN_H + QA_BTN_GAP;
+    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
+                "Manuelle Eingabe", C_GREEN, C_BG, 4, OnscreenAction::TAB_MANUAL_ENTRY);
+    btn_y += QA_BTN_H + QA_BTN_GAP;
+    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
+                "Inventar", C_YELLOW, C_BG, 4, OnscreenAction::TAB_INVENTORY);
 }
 
 static void draw_panel_inventory_empty(const HomeState &s) {
@@ -762,7 +705,8 @@ void Display::showHome(UiTab activeTab,
                        const String &lastScan, const String &lastType,
                        size_t inventoryCount, int expiringSoon,
                        const String &message, bool sdMounted,
-                       int rollRemaining, int scannerBattery) {
+                       int rollRemaining, int scannerBattery,
+                       int expiringSoon3) {
     if (!_initialized) return;
     _homeState.tab            = activeTab;
     _homeState.wifiConnected  = wifiConnected;
@@ -775,6 +719,7 @@ void Display::showHome(UiTab activeTab,
     _homeState.lastType       = lastType;
     _homeState.inventoryCount = inventoryCount;
     _homeState.expiringSoon   = expiringSoon;
+    _homeState.expiringSoon3  = expiringSoon3;
     _homeState.rollRemaining  = rollRemaining;
     _homeState.scannerBattery = scannerBattery;
     _homeState.message        = message;

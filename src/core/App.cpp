@@ -289,6 +289,11 @@ void App::loop() {
         }
     }
 
+    // Periodic home screen refresh every 2 s — picks up scanner connect/battery changes
+    if (workflow == WorkflowMode::HOME && millis() - _lastUiRefreshMs >= 2000) {
+        renderActiveTab("");
+    }
+
     handleTouch();
     processWorkflow();
 
@@ -414,6 +419,7 @@ uint32_t App::buildUiHash() const {
         barcode_manager.getLastScan() + "|" +
         barcode_manager.getLastType() + "|" +
         String(static_cast<unsigned>(inventory.items().size())) + "|" +
+        String(ble_scanner.getBatteryLevel()) + "|" +
         _statusMessage;
     return fnv1a(sig);
 }
@@ -432,7 +438,7 @@ void App::renderActiveTab(const String &message, bool force) {
 
     // INVENTORY tab always shows the live list, not the empty-placeholder panel
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
-        display_obj.showInventoryList(inventory.items(), _invFilter,
+        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
             device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         _lastUiHash = buildUiHash();
         _lastUiRefreshMs = millis();
@@ -467,7 +473,8 @@ void App::renderActiveTab(const String &message, bool force) {
         _statusMessage,
         AppFS::usingSD(),
         labelCounter.getRemaining(),
-        ble_scanner.getBatteryLevel());
+        ble_scanner.getBatteryLevel(),
+        countExpiringSoon(3));
     _lastUiHash = hash;
     _lastUiRefreshMs = millis();
 }
@@ -734,7 +741,7 @@ void App::processOnscreenAction(OnscreenAction action) {
     // Swipe-right collapses expanded inventory group before navigating
     if (action == OnscreenAction::SWIPE_RIGHT && !_invExpandedGroup.isEmpty()) {
         _invExpandedGroup = "";
-        display_obj.showInventoryList(inventory.items(), _invFilter,
+        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                                       device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         return;
     }
@@ -751,9 +758,10 @@ void App::processOnscreenAction(OnscreenAction action) {
         if (workflow == WorkflowMode::INV_SEARCH) {
             audio_obj.playSwipeTone();
             _invFilter = "";
+            _invExpireDays = 0;
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::INVENTORY;
-            display_obj.showInventoryList(inventory.items(), "",
+            display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
             return;
         }
@@ -835,7 +843,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                 _invExpandedGroup = "";   // collapse
             else
                 _invExpandedGroup = tapped;  // expand
-            display_obj.showInventoryList(inventory.items(), _invFilter,
+            display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                                           device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         }
         return;
@@ -987,13 +995,13 @@ void App::processOnscreenAction(OnscreenAction action) {
     // ── SWIPE_UP/DOWN: inventory list scroll ──────────────────────────────
     if (action == OnscreenAction::SWIPE_UP && _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
         _invScrollOffset++;
-        display_obj.showInventoryList(inventory.items(), _invFilter,
+        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                                       device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         return;
     }
     if (action == OnscreenAction::SWIPE_DOWN && _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
         if (_invScrollOffset > 0) _invScrollOffset--;
-        display_obj.showInventoryList(inventory.items(), _invFilter,
+        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                                       device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         return;
     }
@@ -1003,6 +1011,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::SWIPE_LEFT: {
             _kbConfirmPending = false;
             _pendingSorteDeleteIdx = -1;
+            _invExpireDays = 0;
             audio_obj.playSwipeTone();
             static const UiTab CYCLE[] = {
                 UiTab::STORE, UiTab::INVENTORY, UiTab::SYSTEM,
@@ -1047,8 +1056,33 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invFilter = "";
             _invExpandedGroup = "";
             _invScrollOffset = 0;
-            display_obj.showInventoryList(inventory.items(), "",
+            _invExpireDays = 0;
+            display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), _invExpandedGroup, 0);
+            _lastUiRefreshMs = millis();
+            break;
+
+        case OnscreenAction::INV_EXPIRING_7:
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::INVENTORY;
+            _invFilter = "";
+            _invExpandedGroup = "";
+            _invScrollOffset = 0;
+            _invExpireDays = 7;
+            display_obj.showInventoryList(inventoryDisplayItems(), "",
+                                          device_config.getHouseholdAbbr(), "", 0);
+            _lastUiRefreshMs = millis();
+            break;
+
+        case OnscreenAction::INV_EXPIRING_3:
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::INVENTORY;
+            _invFilter = "";
+            _invExpandedGroup = "";
+            _invScrollOffset = 0;
+            _invExpireDays = 3;
+            display_obj.showInventoryList(inventoryDisplayItems(), "",
+                                          device_config.getHouseholdAbbr(), "", 0);
             _lastUiRefreshMs = millis();
             break;
 
@@ -1917,6 +1951,26 @@ int App::countExpiringSoon(int days) const {
         }
     }
     return n;
+}
+
+std::vector<InventoryItem> App::inventoryDisplayItems() const {
+    if (_invExpireDays <= 0) return inventory.items();
+    auto isoToInt = [](const String &iso) -> long {
+        if (iso.length() < 10) return 0;
+        return iso.substring(0, 4).toInt() * 10000L
+             + iso.substring(5, 7).toInt() * 100L
+             + iso.substring(8, 10).toInt();
+    };
+    long todayInt = isoToInt(time_manager.today());
+    long limitInt = isoToInt(time_manager.addDays(_invExpireDays));
+    std::vector<InventoryItem> result;
+    for (const auto &item : inventory.items()) {
+        if (item.expiryDate.isEmpty()) continue;
+        long v = dmyToInt(item.expiryDate);
+        if (v > 0 && v >= todayInt && v <= limitInt)
+            result.push_back(item);
+    }
+    return result;
 }
 
 void App::showLocationSelect() {
