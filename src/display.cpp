@@ -89,12 +89,14 @@ static uint16_t hexToRgb565(const String &hex) {
 }
 
 // ─────────────────── touch debounce state ────────────────
-static bool     _touch_was_pressed = false;
-static uint32_t _touch_press_ms    = 0;
-static int16_t  _touch_press_x     = 0;
-static int16_t  _touch_press_y     = 0;
-static int16_t  _touch_last_x      = 0;  // last tracked position while finger is down
-static int16_t  _touch_last_y      = 0;
+static bool     _touch_was_pressed  = false;
+static uint32_t _touch_press_ms     = 0;
+static int16_t  _touch_press_x      = 0;
+static int16_t  _touch_press_y      = 0;
+static int16_t  _touch_last_x       = 0;  // last tracked position while finger is down
+static int16_t  _touch_last_y       = 0;
+static int8_t   _touch_release_cnt  = 0;  // consecutive "not pressed" readings for debounce
+static constexpr int8_t RELEASE_DEBOUNCE = 3; // ~30 ms at 10 ms polling
 
 // ─────────────────── action queue (single-slot) ──────────
 static volatile OnscreenAction _pending_action  = OnscreenAction::NONE;
@@ -500,6 +502,7 @@ void Display::tick() {
     TouchPoint tp = touch_obj.read();
 
     if (tp.pressed) {
+        _touch_release_cnt = 0;  // finger is down — reset release debounce
         if (!_touch_was_pressed) {
             _touch_was_pressed = true;
             _touch_press_ms    = millis();
@@ -516,6 +519,14 @@ void Display::tick() {
         }
     } else {
         if (_touch_was_pressed) {
+            // FT6336 briefly reports 0 touches during a swipe — debounce before
+            // treating as a real release to avoid splitting swipes into tiny taps.
+            _touch_release_cnt++;
+            if (_touch_release_cnt < RELEASE_DEBOUNCE) return;
+
+            _touch_release_cnt = 0;
+            _touch_was_pressed = false;
+
             uint32_t held = millis() - _touch_press_ms;
             if (held >= 50) {
                 int16_t px = _touch_press_x, py = _touch_press_y;
@@ -556,7 +567,6 @@ void Display::tick() {
                     _pending_action  = hit;
                 }
             }
-            _touch_was_pressed = false;
         }
     }
 }
