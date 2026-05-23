@@ -507,6 +507,14 @@ static long dmyToInt(const String &s) {
          + s.substring(0, 2).toInt();
 }
 
+// Converts "YYYY-MM-DD" (ISO, from TimeManager/web) → "DD.MM.YYYY".
+// Passes through anything that is already in DD.MM.YYYY or another format.
+static String isoToDMY(const String &iso) {
+    if (iso.length() == 10 && iso[4] == '-' && iso[7] == '-')
+        return iso.substring(8, 10) + "." + iso.substring(5, 7) + "." + iso.substring(0, 4);
+    return iso;
+}
+
 // Finds the earliest expiryDate among all items sharing the same product barcode,
 // excluding the item with the given labelBarcode. Returns "" if none found.
 static String findEarlierExpiry(const std::vector<InventoryItem> &items,
@@ -1524,7 +1532,7 @@ bool App::finishStorageWorkflow() {
                                 ? (_selectedCategory.isEmpty() ? "Vorlage" : _selectedCategory)
                                 : "Barcode";
         item.expiryDate   = _pendingExpiryDate;
-        item.addedDate    = time_manager.today();
+        item.addedDate    = isoToDMY(time_manager.today());
         item.quantity     = isTemplate ? _pendingAmount : 1;
         item.unit         = _pendingUnit;
         item.labelBarcode = labelCounter.nextLabel();
@@ -1649,7 +1657,7 @@ std::vector<ProductTemplate> App::templatesForCategory(const String &cat) const 
 }
 
 String App::calcMHD(int shelfDays, int offset) const {
-    return time_manager.addDays(shelfDays + offset);
+    return isoToDMY(time_manager.addDays(shelfDays + offset));
 }
 
 void App::showTmplCategories() {
@@ -1798,14 +1806,21 @@ String App::loadLocationColor(const String &name) const {
 }
 
 int App::countExpiringSoon(int days) const {
-    String today = time_manager.today();
-    String limit = time_manager.addDays(days);
+    // time_manager returns ISO (YYYY-MM-DD); convert to YYYYMMDD int for comparison
+    auto isoToInt = [](const String &iso) -> long {
+        if (iso.length() < 10) return 0;
+        return iso.substring(0, 4).toInt() * 10000L
+             + iso.substring(5, 7).toInt() * 100L
+             + iso.substring(8, 10).toInt();
+    };
+    long todayInt = isoToInt(time_manager.today());
+    long limitInt = isoToInt(time_manager.addDays(days));
     int n = 0;
     for (const auto &item : inventory.items()) {
-        if (!item.expiryDate.isEmpty()
-                && item.expiryDate >= today
-                && item.expiryDate <= limit)
-            n++;
+        if (!item.expiryDate.isEmpty()) {
+            long v = dmyToInt(item.expiryDate); // expiryDate is always DD.MM.YYYY
+            if (v > 0 && v >= todayInt && v <= limitInt) n++;
+        }
     }
     return n;
 }

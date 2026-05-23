@@ -2,6 +2,13 @@
 
 InventoryStorage::InventoryStorage(JsonStorage &jsonStorage) : json(jsonStorage) {}
 
+// Migrates any "YYYY-MM-DD" date strings to "DD.MM.YYYY" on first load.
+static String normDate(const String &s) {
+    if (s.length() == 10 && s[4] == '-' && s[7] == '-')
+        return s.substring(8, 10) + "." + s.substring(5, 7) + "." + s.substring(0, 4);
+    return s;
+}
+
 bool InventoryStorage::load(std::vector<InventoryItem> &items) {
     JsonDocument doc;
     bool ok = json.loadDocument("/inventory.json", doc, "[]");
@@ -13,8 +20,8 @@ bool InventoryStorage::load(std::vector<InventoryItem> &items) {
         item.name = obj["name"] | "";
         item.brand = obj["brand"] | "";
         item.category = obj["category"] | "";
-        item.expiryDate = obj["expiryDate"] | "";
-        item.addedDate = obj["addedDate"] | "";
+        item.expiryDate = normDate(obj["expiryDate"] | "");
+        item.addedDate  = normDate(obj["addedDate"]  | "");
         item.quantity     = obj["quantity"]     | 0;
         item.unit         = obj["unit"]         | "";
         item.labelBarcode = obj["labelBarcode"] | "";
@@ -55,8 +62,8 @@ bool InventoryStorage::loadRemoved(std::vector<RemovedItem> &items) {
         ri.item.name           = obj["name"]       | "";
         ri.item.brand          = obj["brand"]      | "";
         ri.item.category       = obj["category"]   | "";
-        ri.item.expiryDate     = obj["expiryDate"] | "";
-        ri.item.addedDate      = obj["addedDate"]  | "";
+        ri.item.expiryDate     = normDate(obj["expiryDate"] | "");
+        ri.item.addedDate      = normDate(obj["addedDate"]  | "");
         ri.item.quantity       = obj["quantity"]     | 0;
         ri.item.unit           = obj["unit"]         | "";
         ri.item.labelBarcode   = obj["labelBarcode"] | "";

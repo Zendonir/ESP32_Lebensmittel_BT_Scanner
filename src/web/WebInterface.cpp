@@ -498,6 +498,14 @@ void WebInterface::sendError(AsyncWebServerRequest *req, const char *msg, int co
 /* Global body buffer — rebuilt per-request by bodyCollect() */
 static String _body;
 
+// Converts "YYYY-MM-DD" (HTML date input) → "DD.MM.YYYY" (device storage format).
+// Passes through already-correct DD.MM.YYYY or empty strings unchanged.
+static String normDateDMY(const String &s) {
+    if (s.length() == 10 && s[4] == '-' && s[7] == '-')
+        return s.substring(8, 10) + "." + s.substring(5, 7) + "." + s.substring(0, 4);
+    return s;
+}
+
 // Input validation helpers
 static bool validStr(const String &s, size_t maxLen) {
     return s.length() <= maxLen;
@@ -762,8 +770,8 @@ void WebInterface::registerApiRoutes() {
             item.name         = body["name"]         | "";
             item.brand        = body["brand"]        | "";
             item.category     = body["category"]     | "";
-            item.expiryDate   = body["expiryDate"]   | "";
-            item.addedDate    = body["addedDate"]    | "";
+            item.expiryDate   = normDateDMY(body["expiryDate"]   | "");
+            item.addedDate    = normDateDMY(body["addedDate"]    | "");
             item.quantity     = body["quantity"]     | 1;
             item.unit         = body["unit"]         | "";
             item.labelBarcode = body["labelBarcode"] | "";

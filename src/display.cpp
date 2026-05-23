@@ -1158,12 +1158,19 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         std::vector<int> indices; // indices into items[] for expansion
     };
 
-    // Convert "DD.MM.YYYY" → comparable long YYYYMMDD (0 if empty/invalid)
+    // Convert date string → comparable long YYYYMMDD (0 if empty/invalid).
+    // Handles both "DD.MM.YYYY" (primary) and "YYYY-MM-DD" (fallback for old data).
     auto mhdKey = [](const String &s) -> long {
         if (s.length() != 10) return 0;
-        return s.substring(6).toInt() * 10000L
-             + s.substring(3, 5).toInt() * 100L
-             + s.substring(0, 2).toInt();
+        if (s[2] == '.' && s[5] == '.') // DD.MM.YYYY
+            return s.substring(6).toInt() * 10000L
+                 + s.substring(3, 5).toInt() * 100L
+                 + s.substring(0, 2).toInt();
+        if (s[4] == '-' && s[7] == '-') // YYYY-MM-DD (migration fallback)
+            return s.substring(0, 4).toInt() * 10000L
+                 + s.substring(5, 7).toInt() * 100L
+                 + s.substring(8, 10).toInt();
+        return 0;
     };
 
     // Compute today and warn threshold
