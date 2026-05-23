@@ -750,8 +750,10 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Swipe-right = always back to home screen (STORE tab)
-    if (action == OnscreenAction::SWIPE_RIGHT) {
+    // Any horizontal swipe → always back to home screen (STORE tab).
+    // Note: due to touch calibration rotation, physical left→right produces
+    // SWIPE_LEFT (dx<0) in software, so both directions are handled identically.
+    if (action == OnscreenAction::SWIPE_LEFT || action == OnscreenAction::SWIPE_RIGHT) {
         audio_obj.playSwipeTone();
         _invFilter = "";
         _invExpireDays = 0;
@@ -762,7 +764,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // All other swipe directions are ignored
+    // Vertical swipes are ignored
 
     // Inventory group tap (expand / collapse) — only when actually on inventory list, not location-select overlay
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME &&
