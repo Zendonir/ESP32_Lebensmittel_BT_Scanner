@@ -110,6 +110,7 @@ static TouchState _ts;
 
 // ─────────────────── scroll gesture state ────────────────
 static constexpr int16_t SCROLL_DEAD_PX = 8;  // px dead zone before scroll activates
+static bool    _scrollEnabled    = false;  // true only when inventory list is visible
 static bool    _inScrollGesture  = false;
 static int16_t _scrollCommitDelta = 0;   // final delta saved on finger-lift
 
@@ -530,14 +531,17 @@ void Display::tick() {
         } else {
             _ts.lastX = tp.x;
             _ts.lastY = tp.y;
-            // Detect scroll gesture: mostly vertical, starts below header
+            // Scroll only activates when inventory list is shown (_scrollEnabled)
             int16_t absDx = abs(_ts.lastX - _ts.startX);
             int16_t absDy = abs(_ts.lastY - _ts.startY);
             if (!_inScrollGesture
+                && _scrollEnabled
                 && absDy > SCROLL_DEAD_PX
                 && absDx < SWIPE_MAX_OFFAX
                 && _ts.startY > HDR_H) {
                 _inScrollGesture = true;
+                Serial.printf("[Scroll] START scrollEnabled=%d startXY=(%d,%d)\n",
+                    _scrollEnabled, (int)_ts.startX, (int)_ts.startY);
             }
         }
         return;
@@ -547,19 +551,24 @@ void Display::tick() {
     if (!_ts.active) return;
     _ts.active = false;
 
-    // If this was a scroll gesture, commit the delta and skip normal gesture detection
-    if (_inScrollGesture) {
-        _scrollCommitDelta = _ts.lastY - _ts.startY;
-        _inScrollGesture   = false;
-        return;   // don't emit any OnscreenAction
-    }
-
     int16_t  dx      = _ts.lastX - _ts.startX;
     int16_t  dy      = _ts.lastY - _ts.startY;
     int16_t  absDx   = abs(dx);
     int16_t  absDy   = abs(dy);
     uint32_t elapsed = millis() - _ts.startMs;
     int16_t  dist    = (int16_t)sqrtf((float)dx*dx + (float)dy*dy);
+
+    Serial.printf("[Touch] LIFT startXY=(%d,%d) lastXY=(%d,%d) dx=%d dy=%d dist=%d elapsed=%ums scroll=%d\n",
+        (int)_ts.startX, (int)_ts.startY, (int)_ts.lastX, (int)_ts.lastY,
+        (int)dx, (int)dy, (int)dist, (unsigned)elapsed, (int)_inScrollGesture);
+
+    // If this was a scroll gesture, commit the delta and skip normal gesture detection
+    if (_inScrollGesture) {
+        _scrollCommitDelta = dy;
+        _inScrollGesture   = false;
+        Serial.printf("[Scroll] COMMIT delta=%d px\n", (int)_scrollCommitDelta);
+        return;   // don't emit any OnscreenAction
+    }
 
     portENTER_CRITICAL(&_regions_mux);
     int count = _region_count;
@@ -581,12 +590,21 @@ void Display::tick() {
                 break;
             }
         }
+        Serial.printf("[Tap] dist=%d elapsed=%ums → action=%d at (%d,%d)\n",
+            (int)dist, (unsigned)elapsed, (int)hit, (int)_ts.startX, (int)_ts.startY);
     } else if (absDx >= SWIPE_MIN_DIST && absDy <= SWIPE_MAX_OFFAX
                && _ts.startY > HDR_H) {
         // ── Horizontal swipe ─────────────────────────────────
         hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
+        Serial.printf("[Swipe] %s dx=%d dy=%d\n", dx < 0 ? "LEFT" : "RIGHT", (int)dx, (int)dy);
+    } else if (absDy >= SWIPE_MIN_DIST && absDx <= SWIPE_MAX_OFFAX) {
+        // ── Vertical swipe (only when scroll mode is off) ────
+        hit = (dy < 0) ? OnscreenAction::SWIPE_UP : OnscreenAction::SWIPE_DOWN;
+        Serial.printf("[Swipe] %s dx=%d dy=%d\n", dy < 0 ? "UP" : "DOWN", (int)dx, (int)dy);
+    } else {
+        Serial.printf("[Touch] no gesture: dist=%d absDx=%d absDy=%d swipeMn=%d startY=%d hdrH=%d\n",
+            (int)dist, (int)absDx, (int)absDy, (int)SWIPE_MIN_DIST, (int)_ts.startY, HDR_H);
     }
-    // Vertical swipes: handled entirely via scroll gesture path above
 
     if (hit != OnscreenAction::NONE) {
         _pending_kb_char = hit_char;
@@ -750,6 +768,7 @@ void Display::showHome(UiTab activeTab,
                        int rollRemaining, int scannerBattery,
                        int expiringSoon3) {
     if (!_initialized) return;
+    _scrollEnabled = false;   // Scroll nur in Inventarliste aktiv
     _homeState.tab            = activeTab;
     _homeState.wifiConnected  = wifiConnected;
     _homeState.sdMounted      = sdMounted;
@@ -1166,6 +1185,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
                                 const String &filter, const String &hhAbbr,
                                 const String &expandedGroup, int scrollOffset) {
     if (!_initialized) return;
+    _scrollEnabled = true;   // Scroll-Gesten nur hier aktiv
     _spr.fillSprite(C_BG);
     clear_regions();
 
@@ -1485,6 +1505,7 @@ static const uint16_t TILE_ACCENTS[7] = {
 
 void Display::showCategoryTiles(const std::vector<String> &categories) {
     if (!_initialized) return;
+    _scrollEnabled = false;
     _spr.fillSprite(C_BG);
     clear_regions();
 
@@ -1919,6 +1940,7 @@ static String suggestion_suffix(const String &typed, const String &suggestion); 
 
 void Display::showKeyboardEntry(const String &title, const String &current, const String &suggestion) {
     if (!_initialized) return;
+    _scrollEnabled = false;
 
     _spr.fillSprite(C_BG);
     clear_regions();

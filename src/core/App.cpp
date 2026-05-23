@@ -807,7 +807,19 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Vertical swipes are ignored
+    // Wischen von oben nach unten → Lagerort-Auswahl öffnen
+    if (action == OnscreenAction::SWIPE_DOWN) {
+        bool onHome    = (workflow == WorkflowMode::HOME);
+        bool onCat     = (workflow == WorkflowMode::TMPL_CATEGORY);
+        bool onManual  = (workflow == WorkflowMode::KB_ENTRY &&
+                          _activeTab == UiTab::MANUAL_ENTRY);
+        if (onHome || onCat || onManual) {
+            audio_obj.playClickTone();
+            workflow = WorkflowMode::LOCATION_SELECT;
+            showLocationSelect();
+        }
+        return;
+    }
 
     // Inventory group tap (expand / collapse) — only when actually on inventory list, not location-select overlay
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME &&
