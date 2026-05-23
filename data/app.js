@@ -42,23 +42,30 @@ const API = (() => {
   return {
     get:  (ep)      => request('GET',  ep),
     post: (ep, data) => request('POST', ep, data),
-    slowPost: (ep, data) => {
+    slowPost: async (ep, data) => {
       // Like post() but 25 s timeout — for long-running server operations (setup wizard)
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 25000);
-      return fetch(ep, {
-        method: 'POST', signal: ctrl.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then(async res => {
-        clearTimeout(timer);
+      try {
+        const res = await fetch(ep, {
+          method: 'POST', signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(`HTTP ${res.status}${txt ? ': ' + txt.slice(0, 80) : ''}`);
+        }
         const text = await res.text();
-        return text ? JSON.parse(text) : {};
-      }).catch(e => {
-        clearTimeout(timer);
+        if (!text) return {};
+        try { return JSON.parse(text); }
+        catch { throw new Error('Ungültiges JSON von ' + ep); }
+      } catch(e) {
         if (e.name === 'AbortError') throw new Error('Timeout (25s) bei ' + ep);
         throw e;
-      });
+      } finally {
+        clearTimeout(timer);
+      }
     },
 
     async postForm(endpoint, formData) {
@@ -68,7 +75,9 @@ const API = (() => {
         const res = await fetch(endpoint, { method: 'POST', body: formData, signal: ctrl.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
-        return text ? JSON.parse(text) : {};
+        if (!text) return {};
+        try { return JSON.parse(text); }
+        catch { throw new Error('Ungültiges JSON von ' + endpoint); }
       } finally {
         clearTimeout(timer);
       }
@@ -193,6 +202,10 @@ const Router = (() => {
 
   function go(page) {
     if (current === page) return;
+    // Let current page stop any polling/timers before leaving
+    if (current && Pages[current] && typeof Pages[current].cleanup === 'function') {
+      Pages[current].cleanup();
+    }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-link, .bnav-item').forEach(l => l.classList.remove('active'));
 
@@ -645,6 +658,8 @@ Pages.inventory = {
   async _submitForm(original) {
     const name = document.getElementById('ifName').value.trim();
     if (!name) { Toast.warn('Name ist erforderlich'); return; }
+    const btn = document.querySelector('#modalFooter .btn-ok');
+    if (btn) btn.disabled = true;
     const data = {
       name,
       brand:      document.getElementById('ifBrand').value.trim(),
@@ -661,6 +676,7 @@ Pages.inventory = {
       this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
+      if (btn) btn.disabled = false;
     }
   },
 
@@ -813,6 +829,8 @@ Pages.templates = {
   async _submit(original) {
     const name = document.getElementById('tfName').value.trim();
     if (!name) { Toast.warn('Name erforderlich'); return; }
+    const btn = document.querySelector('#modalFooter .btn-ok');
+    if (btn) btn.disabled = true;
     const brands = this._brands.map(b => b.trim()).filter(b => b.length > 0);
     const askQty    = document.getElementById('tfAskQty').checked;
     const unit      = askQty ? document.getElementById('tfUnit').value : '';
@@ -839,6 +857,7 @@ Pages.templates = {
       this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
+      if (btn) btn.disabled = false;
     }
   },
 
@@ -929,6 +948,8 @@ Pages.categories = {
   async _submit(original) {
     const name = document.getElementById('cfName').value.trim();
     if (!name) { Toast.warn('Name erforderlich'); return; }
+    const btn = document.querySelector('#modalFooter .btn-ok');
+    if (btn) btn.disabled = true;
     const bg  = document.getElementById('cfBgNative').value;
     const txt = document.getElementById('cfTxtNative').value;
     try {
@@ -943,6 +964,7 @@ Pages.categories = {
       this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
+      if (btn) btn.disabled = false;
     }
   },
 
@@ -1024,6 +1046,8 @@ Pages.locations = {
     const name  = document.getElementById('lfName').value.trim();
     const color = document.getElementById('lfColor').value;
     if (!name) { Toast.warn('Name erforderlich'); return; }
+    const btn = document.querySelector('#modalFooter .btn-ok');
+    if (btn) btn.disabled = true;
     const data = original ? { oldName: original.name, name, color } : { name, color };
     try {
       await API.post('/api/locations', data);
@@ -1032,6 +1056,7 @@ Pages.locations = {
       this.load();
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
+      if (btn) btn.disabled = false;
     }
   },
 
@@ -1857,6 +1882,10 @@ Pages.scanner = {
       document.getElementById('scanTestResult').textContent = 'Test beendet';
     }, 30000);
   },
+
+  cleanup() {
+    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+  },
 };
 
 /* ---- MQTT ---- */
@@ -2312,11 +2341,13 @@ Pages.ota = {
           textEl.textContent = `${label}: ${p.pct}%`;
           if (p.done) {
             clearInterval(t);
+            this._progressInterval = null;
             if (p.ok) resolve();
             else reject(new Error(`${label} fehlgeschlagen`));
           }
         } catch {}
       }, 1500);
+      this._progressInterval = t;
     });
   },
 
@@ -2420,6 +2451,11 @@ Pages.ota = {
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
+  },
+
+  cleanup() {
+    if (this._pollTimer)        { clearInterval(this._pollTimer);        this._pollTimer        = null; }
+    if (this._progressInterval) { clearInterval(this._progressInterval); this._progressInterval = null; }
   },
 };
 
@@ -2541,8 +2577,12 @@ const App = {
     });
 
     window.addEventListener('beforeunload', () => {
+      const cur = Router.current();
+      if (cur && Pages[cur] && typeof Pages[cur].cleanup === 'function') Pages[cur].cleanup();
+      // Ensure logs and scanner are always stopped on unload (regardless of active page)
       Pages.logs.cleanup();
-      if (Pages.scanner._pollTimer) clearInterval(Pages.scanner._pollTimer);
+      Pages.scanner.cleanup();
+      Pages.ota.cleanup();
     });
 
     Router.init();

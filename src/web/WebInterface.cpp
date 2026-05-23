@@ -511,14 +511,17 @@ static bool validOptStr(const String &s, size_t maxLen = 256) {
     return validStr(s, maxLen);
 }
 
+static constexpr size_t MAX_BODY = 65536; // 64 KB — protects heap from oversized POST bodies
+
 static void bodyCollect(AsyncWebServerRequest *req, uint8_t *data, size_t len,
                         size_t index, size_t total) {
     if (index == 0) {
         _body = "";
-        _body.reserve(total > 0 ? total : 512);
+        if (total <= MAX_BODY) _body.reserve(total > 0 ? total : 512);
     }
-    _body += String(reinterpret_cast<char *>(data), len);
-    // If server doesn't send Content-Length (chunked), trigger manually on non-empty chunk
+    if (_body.length() + len <= MAX_BODY)
+        _body += String(reinterpret_cast<char *>(data), len);
+    // If oversized: body stays partial; JSON parse will fail cleanly
     (void)req; (void)total;
 }
 
