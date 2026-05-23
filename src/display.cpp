@@ -293,21 +293,17 @@ static void draw_panel_store(const HomeState &s) {
     draw_button(SCR_W - ROLL_BTN_W - 4, pill_y - 2, ROLL_BTN_W, ROLL_BTN_H,
                 "Neue Rolle", C_SURFACE2, C_TEXT, 2, OnscreenAction::NEW_ROLL);
 
-    // Quick-access buttons
-    static constexpr int QA_BTN_H = 40;
-    static constexpr int QA_BTN_GAP = 4;
-    int btn_y = py + 100;
-    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
-                "Kategorie", C_ACCENT, C_BG, 4, OnscreenAction::TAB_MANUAL_PRODUCT);
-    btn_y += QA_BTN_H + QA_BTN_GAP;
-    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
-                "Manuelle Eingabe", C_GREEN, C_BG, 4, OnscreenAction::TAB_MANUAL_ENTRY);
-    btn_y += QA_BTN_H + QA_BTN_GAP;
-    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
-                "Inventar", C_YELLOW, C_BG, 4, OnscreenAction::TAB_INVENTORY);
-    btn_y += QA_BTN_H + QA_BTN_GAP;
-    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
-                "System", C_SURFACE2, C_TEXT, 4, OnscreenAction::TAB_SYSTEM);
+    // Quick-access buttons — 2×2 grid
+    static constexpr int QA_GAP = 4;
+    int qa_top = py + 100;
+    int qa_w   = (SCR_W - 8 - QA_GAP) / 2;   // 234 px each column
+    int qa_h   = (SCR_H - qa_top - 4 - QA_GAP) / 2;  // fills to bottom
+    int qa_x2  = 4 + qa_w + QA_GAP;
+    int qa_y2  = qa_top + qa_h + QA_GAP;
+    draw_button(4,    qa_top, qa_w, qa_h, "Kategorie",       C_ACCENT,   C_BG,   4, OnscreenAction::TAB_MANUAL_PRODUCT);
+    draw_button(qa_x2,qa_top, qa_w, qa_h, "Manuelle Eingabe",C_GREEN,    C_BG,   4, OnscreenAction::TAB_MANUAL_ENTRY);
+    draw_button(4,    qa_y2,  qa_w, qa_h, "Inventar",         C_YELLOW,   C_BG,   4, OnscreenAction::TAB_INVENTORY);
+    draw_button(qa_x2,qa_y2,  qa_w, qa_h, "System",           C_SURFACE2, C_TEXT, 4, OnscreenAction::TAB_SYSTEM);
 }
 
 static void draw_panel_inventory_empty(const HomeState &s) {

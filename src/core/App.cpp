@@ -307,6 +307,18 @@ void App::loop() {
         setBacklight(false);
     }
 
+    // Auto-return to home screen after 3 minutes of inactivity
+    static constexpr uint32_t HOME_TIMEOUT_MS = 180000UL;
+    if (workflow != WorkflowMode::HOME && workflow != WorkflowMode::RESULT &&
+        millis() - _lastActivityMs >= HOME_TIMEOUT_MS) {
+        _invFilter = "";
+        _invExpireDays = 0;
+        _invExpandedGroup = "";
+        workflow = WorkflowMode::HOME;
+        _activeTab = UiTab::STORE;
+        renderActiveTab("");
+    }
+
     yield();
 }
 
@@ -738,24 +750,19 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Swipe-right collapses expanded inventory group before navigating
-    if (action == OnscreenAction::SWIPE_RIGHT && !_invExpandedGroup.isEmpty()) {
-        _invExpandedGroup = "";
-        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                                      device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
-        return;
-    }
-
     // Swipe-right = always back to home screen (STORE tab)
     if (action == OnscreenAction::SWIPE_RIGHT) {
         audio_obj.playSwipeTone();
         _invFilter = "";
         _invExpireDays = 0;
+        _invExpandedGroup = "";
         workflow = WorkflowMode::HOME;
         _activeTab = UiTab::STORE;
         renderActiveTab("");
         return;
     }
+
+    // All other swipe directions are ignored
 
     // Inventory group tap (expand / collapse) — only when actually on inventory list, not location-select overlay
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME &&
@@ -903,68 +910,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // ── SWIPE_LEFT in TMPL_SORTE: delete sorte by detecting swiped row ──────
-    if (action == OnscreenAction::SWIPE_LEFT && workflow == WorkflowMode::TMPL_SORTE) {
-        int pressY = display_obj.getLastSwipePressY();
-        int rowIdx = (pressY - 44) / 55; // 44 = HDR_H (header height), 55 = ITEM_H in showListScreen
-        auto products = templatesForCategory(_selectedCategory);
-        if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
-            const ProductTemplate &tmpl = products[_selectedTemplateIdx];
-            int sorteIdx = rowIdx - 1; // row 0 = "Neue Sorte erstellen"
-            if (sorteIdx >= 0 && sorteIdx < (int)tmpl.sorten.size()) {
-                _pendingSorteDeleteIdx = sorteIdx;
-                display_obj.showConfirmDialog("Sorte loeschen?",
-                    "\"" + tmpl.sorten[sorteIdx] + "\" entfernen?");
-                return;
-            }
-        }
-        return; // swipe on non-deletable row → ignore
-    }
-
-    // ── SWIPE_UP/DOWN: inventory list scroll ──────────────────────────────
-    if (action == OnscreenAction::SWIPE_UP && _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
-        _invScrollOffset++;
-        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                                      device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
-        return;
-    }
-    if (action == OnscreenAction::SWIPE_DOWN && _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
-        if (_invScrollOffset > 0) _invScrollOffset--;
-        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                                      device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
-        return;
-    }
-
     switch (action) {
-        // ── Tab navigation ──────────────────────────────────────────────────
-        case OnscreenAction::SWIPE_LEFT: {
-            _kbConfirmPending = false;
-            _pendingSorteDeleteIdx = -1;
-            _invExpireDays = 0;
-            audio_obj.playSwipeTone();
-            static const UiTab CYCLE[] = {
-                UiTab::STORE, UiTab::INVENTORY, UiTab::SYSTEM,
-                UiTab::MANUAL_PRODUCT, UiTab::MANUAL_ENTRY
-            };
-            static constexpr int NC = 5;
-            int ci = 0;
-            for (int i = 0; i < NC; i++) if (CYCLE[i] == _activeTab) { ci = i; break; }
-            action = static_cast<OnscreenAction>(
-                static_cast<int>(OnscreenAction::TAB_STORE) +
-                static_cast<int>(CYCLE[(ci + 1) % NC]));
-            processOnscreenAction(action);
-            return;
-        }
-        case OnscreenAction::SWIPE_RIGHT:
-            audio_obj.playSwipeTone();
-            workflow = WorkflowMode::HOME;
-            _activeTab = UiTab::STORE;
-            renderActiveTab("");
-            return;
-        case OnscreenAction::SWIPE_DOWN:
-            workflow = WorkflowMode::LOCATION_SELECT;
-            showLocationSelect();
-            return;
         case OnscreenAction::TAB_STORE:
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::STORE;
