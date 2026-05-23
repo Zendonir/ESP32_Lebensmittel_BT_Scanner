@@ -192,6 +192,41 @@ void App::loop() {
             doInventoryPull();
         }
     }
+
+    // WiFi reconnect watchdog — re-trigger connection if the link silently dropped.
+    // setAutoReconnect(true) is unreliable on IDF 5.x; we watch manually.
+    {
+        bool inSetup = (workflow == WorkflowMode::WIFI_SETUP_SCAN
+                     || workflow == WorkflowMode::WIFI_SETUP_LIST
+                     || workflow == WorkflowMode::WIFI_SETUP_PASS
+                     || workflow == WorkflowMode::WIFI_SETUP_CONFIRM
+                     || workflow == WorkflowMode::WIFI_SETUP_CONN);
+        uint32_t now = millis();
+        if (!inSetup && wifi_manager.hasCredentials()
+                && now - _lastWifiCheckMs >= WIFI_CHECK_MS) {
+            _lastWifiCheckMs = now;
+            if (!wifi_manager.isConnected()) {
+                if (_wifiDisconnectedSince == 0) {
+                    _wifiDisconnectedSince = now;
+                    _wifiLastReconnectMs   = 0;
+                    Logger::warn("WiFi", "Verbindung verloren – warte auf Reconnect");
+                }
+                uint32_t downFor    = now - _wifiDisconnectedSince;
+                uint32_t sinceLast  = _wifiLastReconnectMs ? (now - _wifiLastReconnectMs) : UINT32_MAX;
+                bool firstTry  = (_wifiLastReconnectMs == 0 && downFor >= WIFI_RECONNECT_MS);
+                bool retryDue  = (_wifiLastReconnectMs != 0 && sinceLast >= WIFI_RETRY_MS);
+                if (firstTry || retryDue) {
+                    _wifiLastReconnectMs = now;
+                    Logger::info("WiFi", String("Reconnect-Versuch (down ") + downFor / 1000 + "s)");
+                    wifi_manager.reconnect();
+                }
+            } else if (_wifiDisconnectedSince != 0) {
+                Logger::info("WiFi", "Wiederverbunden: " + WiFi.localIP().toString());
+                _wifiDisconnectedSince = 0;
+                _wifiLastReconnectMs   = 0;
+            }
+        }
+    }
     // Scanner battery — poll every 5 min; warn once when < 10 %
     if (ble_scanner.isConnected()
             && millis() - _lastBatteryPollMs >= BATTERY_POLL_MS) {

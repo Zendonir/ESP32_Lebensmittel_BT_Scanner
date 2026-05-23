@@ -216,6 +216,21 @@ void WiFiManager::disconnect() {
     current_mode = MODE_OFF;
 }
 
+void WiFiManager::reconnect() {
+    char ssid[64] = {}, pass[64] = {};
+    loadCredentials(ssid, sizeof(ssid), pass, sizeof(pass));
+    if (ssid[0] == '\0') return;
+    WiFi.setSleep(false);
+    WiFi.setAutoReconnect(false); // take manual control
+    WiFi.disconnect(false, false);
+    WiFi.begin(ssid, pass[0] ? pass : nullptr);
+    WiFi.setAutoReconnect(true);
+    current_ssid = ssid;
+    current_mode = MODE_STATION;
+    Serial.printf("[WiFi] Reconnect gestartet: %s\n", ssid);
+    Serial.flush();
+}
+
 WiFiMode WiFiManager::getCurrentMode() {
     return current_mode;
 }

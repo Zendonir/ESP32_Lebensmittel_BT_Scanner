@@ -28,6 +28,7 @@ public:
     void scan();
     String getSSID();
     void disconnect();
+    void reconnect();  // non-blocking: disconnect + begin with saved credentials
 
 private:
     Preferences prefs;
