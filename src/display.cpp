@@ -18,7 +18,8 @@
 
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>
-#include "FreeSans22pt.h"  // GFX font covering ASCII + Latin-1 (German umlauts)
+#include "FreeSans22pt.h"  // GFX font 22pt – category tiles
+#include "FreeSans16.h"    // GFX font 16px – Font 2 replacement with umlaut support
 #include <qrcode.h>
 #include <algorithm>
 #include <vector>
@@ -109,22 +110,24 @@ static TFT_eSprite _spr(&_tft);
 static void draw_location_badge(int x_right = SCR_W - 8) {
     if (_s_active_location.isEmpty()) return;
     String label = _s_active_location;
-    if (label.length() > 18) label = label.substring(0, 18);
+    if (label.length() > 16) label = label.substring(0, 16);
     uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
 
-    _spr.setTextFont(2);
-    _spr.setTextDatum(MR_DATUM);
-    _spr.setTextColor(col, C_SURFACE);
-    _spr.drawString(label.c_str(), x_right, HDR_H / 2);
+    _spr.setFreeFont(&FreeSans16);
+    int tw   = (int)_spr.textWidth(label.c_str());
+    int ph   = 26, pad_x = 10;
+    int pw   = tw + pad_x * 2;
+    int px   = x_right - pw;
+    int py   = (HDR_H - ph) / 2;
 
-    // Place dot just left of the text with a small gap
-    int tw      = (int)_spr.textWidth(label.c_str());
-    int dot_x   = x_right - tw - 10;
-    _spr.fillCircle(dot_x, HDR_H / 2, 5, col);
+    _spr.fillRoundRect(px, py, pw, ph, ph / 2, col);
+    _spr.setTextColor(C_TEXT, col);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString(label.c_str(), px + pw / 2, py + ph / 2);
+    _spr.setTextFont(4);
 
-    int badge_left = dot_x - 8;
-    if (badge_left < 0) badge_left = 0;
-    add_region(badge_left, 0, x_right - badge_left, HDR_H, OnscreenAction::LOCATION_BADGE);
+    int region_x = (px > 4) ? px - 4 : 0;
+    add_region(region_x, 0, x_right - region_x, HDR_H, OnscreenAction::LOCATION_BADGE);
 }
 
 // WiFi status shared across all screens (set once by showHome, read by draw_wifi_dot)
@@ -831,12 +834,13 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
     static constexpr int LP_W   = DIV_X - 1;
 
     // Product name
-    _spr.setTextFont(2);
+    _spr.setFreeFont(&FreeSans16);
     _spr.setTextColor(C_TEXT, C_BG);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(trunc(product.name,   24).c_str(), LP_PAD, HDR_H + 18);
     _spr.setTextColor(RGB(0x80,0x90,0xA0), C_BG);
     _spr.drawString(trunc(product.brand,  24).c_str(), LP_PAD, HDR_H + 38);
+    _spr.setTextFont(4);
 
     // Separator
     _spr.drawFastHLine(LP_PAD, HDR_H + 54, LP_W - LP_PAD * 2, C_BORDER);
@@ -996,13 +1000,14 @@ void Display::showQuantityEntry(const ProductInfo &product,
     // Header: product name + MHD
     _spr.fillRect(0, 0, SCR_W, HDR_H, C_SURFACE);
     _spr.drawFastHLine(0, HDR_H - 1, SCR_W, C_BORDER);
+    _spr.setFreeFont(&FreeSans16);
     _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString(trunc(product.name, 22).c_str(), 8, HDR_H / 2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
     _spr.setTextDatum(MR_DATUM);
     _spr.drawString(("MHD " + expiryDate).c_str(), SCR_W - 26, HDR_H / 2);
+    _spr.setTextFont(4);
     draw_wifi_dot();
 
     // Subheader hint
@@ -1029,25 +1034,50 @@ void Display::showResult(const String &title, const String &message, bool succes
     if (!_initialized) return;
     if (_homeState.valid) render_home(_homeState);
     else _spr.fillSprite(C_BG);
-    int dw = 400, dh = showPrintButtons ? 200 : 160;
+
+    bool showLocation = (success && !_s_active_location.isEmpty());
+    int dw = 400;
+    int dh = showPrintButtons ? 200 : (showLocation ? 195 : 160);
     int dx = (SCR_W - dw) / 2, dy = (SCR_H - dh) / 2;
     _spr.fillRoundRect(dx, dy, dw, dh, 12, C_SURFACE);
     _spr.drawRoundRect(dx, dy, dw, dh, 12, C_BORDER);
+
     uint16_t tc = success ? C_GREEN : C_RED;
     _spr.setTextColor(tc, C_SURFACE);
     _spr.setTextFont(4);
     _spr.setTextDatum(TC_DATUM);
     _spr.drawString(trunc(title, 28).c_str(), dx + dw / 2, dy + 14);
+
+    int msg_y;
+    if (showLocation && !showPrintButtons) {
+        // Location name in large text (FreeSans22pt)
+        String loc = _s_active_location;
+        if ((int)loc.length() > 20) loc = loc.substring(0, 20);
+        uint16_t lc = _s_location_color ? _s_location_color : C_ACCENT;
+        _spr.fillRoundRect(dx + 20, dy + 46, dw - 40, 50, 8, C_SURFACE2);
+        _spr.setFreeFont(&FreeSans22pt);
+        _spr.setTextColor(lc, C_SURFACE2);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(loc.c_str(), dx + dw / 2, dy + 71);
+        _spr.setTextFont(4);
+        msg_y = 110;
+    } else {
+        msg_y = showPrintButtons ? 54 : 58;
+    }
+
+    // Message in FreeSans16 for umlaut support
+    _spr.setFreeFont(&FreeSans16);
     _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
     String msg = message;
     if ((int)msg.length() <= 44) {
-        _spr.drawString(msg.c_str(), dx + dw / 2, dy + 58);
+        _spr.drawString(msg.c_str(), dx + dw / 2, dy + msg_y);
     } else {
-        _spr.drawString(msg.substring(0, 44).c_str(), dx + dw / 2, dy + 54);
-        _spr.drawString(msg.substring(44).c_str(),    dx + dw / 2, dy + 72);
+        _spr.drawString(msg.substring(0, 44).c_str(), dx + dw / 2, dy + msg_y);
+        _spr.drawString(msg.substring(44).c_str(),    dx + dw / 2, dy + msg_y + 20);
     }
+    _spr.setTextFont(4);
+
     clear_regions();
     if (showPrintButtons) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
@@ -1072,7 +1102,7 @@ void Display::showResult(const String &title, const String &message, bool succes
         draw_button(dx + dw / 2 - 36, dy + dh - 38, 72, 28,
                     "Ohne", C_SURFACE2, C_SUBTEXT, 2, OnscreenAction::REFRESH);
     } else {
-        draw_button(dx + dw / 2 - 60, dy + dh - 50, 120, 36,
+        draw_button(dx + dw / 2 - 60, dy + dh - 46, 120, 36,
                     "OK", C_ACCENT, C_TEXT, 2, OnscreenAction::REFRESH);
     }
     commit();
@@ -1292,11 +1322,12 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.fillRect(0, list_y, SCR_W, ROW_H, C_SURFACE);
         _spr.fillRect(0, list_y, 4, ROW_H, sc);
         _spr.setTextColor(sc, C_SURFACE);
-        _spr.setTextFont(2);
+        _spr.setFreeFont(&FreeSans16);
         _spr.setTextDatum(ML_DATUM);
         // Small up-pointing filled triangle (▲ = expanded, tap to collapse)
         _spr.fillTriangle(6, list_y+14, 14, list_y+14, 10, list_y+7, sc);
         _spr.drawString(trunc(eg.name, 21).c_str(), 20, list_y + 11);
+        _spr.setTextFont(4);
         if (eg.count > 1) {
             _spr.setTextColor(C_SUBTEXT, C_SURFACE);
             _spr.setTextFont(1);
@@ -1359,10 +1390,11 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
 
             // ▼ triangle + product name (col 1)
             _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
+            _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, row_bg);
-            _spr.setTextFont(2);
             _spr.setTextDatum(ML_DATUM);
             _spr.drawString(trunc(g.name, 17).c_str(), 20, ry + 11);
+            _spr.setTextFont(4);
 
             // Brand sub-line (col 1)
             if (!g.brand.isEmpty()) {
@@ -1894,7 +1926,7 @@ void Display::showKeyboardEntry(const String &title, const String &current, cons
     // ── Input bar ────────────────────────────────────────────────
     _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
     _spr.drawFastHLine(0, HDR_H + INP_H - 1, SCR_W, C_BORDER);
-    _spr.setTextFont(2);
+    _spr.setFreeFont(&FreeSans16);
     _spr.setTextDatum(ML_DATUM);
     if (current.isEmpty()) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
@@ -1905,13 +1937,14 @@ void Display::showKeyboardEntry(const String &title, const String &current, cons
         _spr.drawString(typed_cur.c_str(), 8, HDR_H + INP_H / 2);
         String suffix = suggestion_suffix(current, suggestion);
         if (!suffix.isEmpty()) {
-            int measured = (int)_spr.textWidth(typed_cur.c_str(), 2);
+            int measured = (int)_spr.textWidth(typed_cur.c_str());
             _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
             _spr.drawString(trunc(suffix, 20).c_str(), 8 + measured, HDR_H + INP_H / 2);
             // Tapping input bar accepts the suggestion
             add_region(0, HDR_H, SCR_W, INP_H, OnscreenAction::KB_SUGGEST);
         }
     }
+    _spr.setTextFont(4);
 
     // ── Helper lambda: draw one key ───────────────────────────────
     // hit_y_delta: shifts the registered hit region upward (negative) relative
@@ -2035,7 +2068,7 @@ void Display::showSearchEntry(const String &current, const String &suggestion) {
     // Tapping the bar accepts the suggestion
     add_region(0, HDR_H, SCR_W, INP_H, OnscreenAction::INV_SEARCH);
 
-    _spr.setTextFont(2);
+    _spr.setFreeFont(&FreeSans16);
     _spr.setTextDatum(ML_DATUM);
 
     if (current.isEmpty()) {
@@ -2050,12 +2083,13 @@ void Display::showSearchEntry(const String &current, const String &suggestion) {
         // Draw suggestion suffix starting right after typed+cursor
         String suffix = suggestion_suffix(current, suggestion);
         if (!suffix.isEmpty()) {
-            int measured = (int)_spr.textWidth(typed_cur.c_str(), 2);
+            int measured = (int)_spr.textWidth(typed_cur.c_str());
             String suf_trunc = trunc(suffix, 22);
             _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
             _spr.drawString(suf_trunc.c_str(), 8 + measured, HDR_H + INP_H / 2);
         }
     }
+    _spr.setTextFont(4);
 
     // ── Helper lambda: draw one key ───────────────────────────────
     auto draw_key = [&](int bx, int by, int w, int h,
