@@ -227,6 +227,17 @@ void App::loop() {
             }
         }
     }
+    // BLE verbunden → Display aufwecken
+    {
+        static bool s_bleWasConnected = false;
+        bool bleNow = ble_scanner.isConnected();
+        if (bleNow && !s_bleWasConnected) {
+            _lastActivityMs = millis();
+            if (!_displayOn) setBacklight(true);
+        }
+        s_bleWasConnected = bleNow;
+    }
+
     // Scanner battery — poll every 5 min; warn once when < 10 %
     if (ble_scanner.isConnected()
             && millis() - _lastBatteryPollMs >= BATTERY_POLL_MS) {
@@ -304,7 +315,8 @@ void App::loop() {
 
         int16_t liveDelta = display_obj.getScrollDeltaPx();
         if (liveDelta != s_lastDeltaPx) {
-            s_lastDeltaPx = liveDelta;
+            s_lastDeltaPx   = liveDelta;
+            _lastActivityMs = millis();   // scrollen = Aktivität
             int tempOff = _invScrollOffset - liveDelta / INV_ROW_H;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                 device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff);
@@ -312,7 +324,8 @@ void App::loop() {
 
         int16_t committed = display_obj.drainScrollCommit();
         if (committed != 0) {
-            s_lastDeltaPx  = 0;
+            s_lastDeltaPx   = 0;
+            _lastActivityMs = millis();   // scroll-Ende = Aktivität
             _invScrollOffset -= committed / INV_ROW_H;
             if (_invScrollOffset < 0) _invScrollOffset = 0;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
@@ -376,10 +389,10 @@ void App::loadDisplayConfig() {
         File f = AppFS::fs().open("/display_config.json", "r");
         if (f) { deserializeJson(doc, f); f.close(); }
     }
-    uint32_t secs = doc["standby_sec"] | 0;
+    uint32_t secs = doc["standby_sec"] | 300;   // Standardwert: 5 Minuten
     _standbyMs = secs * 1000UL;
     _lastActivityMs = millis();
-    Logger::info("Display", String("Standby: ") + (secs ? String(secs) + "s" : "nie"));
+    Logger::info("Display", String("Standby: ") + secs + "s");
 }
 
 void App::initI2C() {
@@ -521,11 +534,15 @@ void App::handleTouch() {
     OnscreenAction action = display_obj.hitTest(0, 0);
     if (action == OnscreenAction::NONE) return;
 
-    // Any touch resets the standby timer; if the display was off, just wake it
     _lastActivityMs = millis();
+
     if (!_displayOn) {
         setBacklight(true);
-        return;  // swallow the touch — don't trigger accidental actions
+        // Swipes wake AND navigate; taps are swallowed to prevent accidental actions
+        if (action == OnscreenAction::SWIPE_LEFT || action == OnscreenAction::SWIPE_RIGHT) {
+            processOnscreenAction(action);
+        }
+        return;
     }
 
     processOnscreenAction(action);
