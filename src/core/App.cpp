@@ -316,7 +316,7 @@ void App::loop() {
         _invExpandedGroup = "";
         workflow = WorkflowMode::HOME;
         _activeTab = UiTab::STORE;
-        renderActiveTab("");
+        renderActiveTab("", true);   // force=true: immer neu zeichnen
     }
 
     yield();
@@ -760,7 +760,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         _invExpandedGroup = "";
         workflow = WorkflowMode::HOME;
         _activeTab = UiTab::STORE;
-        renderActiveTab("");
+        renderActiveTab("", true);   // force=true: Hash-Cache überspringen → immer neu zeichnen
         return;
     }
 
