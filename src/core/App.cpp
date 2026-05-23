@@ -977,7 +977,7 @@ void App::processOnscreenAction(OnscreenAction action) {
     // ── SWIPE_LEFT in TMPL_SORTE: delete sorte by detecting swiped row ──────
     if (action == OnscreenAction::SWIPE_LEFT && workflow == WorkflowMode::TMPL_SORTE) {
         int pressY = display_obj.getLastSwipePressY();
-        int rowIdx = (pressY - HDR_H) / 55; // ITEM_H = 55px in showListScreen
+        int rowIdx = (pressY - 44) / 55; // 44 = HDR_H (header height), 55 = ITEM_H in showListScreen
         auto products = templatesForCategory(_selectedCategory);
         if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
             const ProductTemplate &tmpl = products[_selectedTemplateIdx];
