@@ -151,7 +151,8 @@ void App::loop() {
                 if (!dup) _wifiNets.push_back(s);
             }
             WiFi.scanDelete();
-            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets);
+            _listScrollOffset = 0;
+            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, 0);
             workflow = WorkflowMode::WIFI_SETUP_LIST;
         }
     }
@@ -333,11 +334,46 @@ void App::loop() {
             _lastUiRefreshMs = millis();
             _invScrollOffset -= committed / INV_ROW_H;
             // Clamp to [0 .. maxOffset] using the last rendered group count
-            int maxOff = std::max(0, display_obj.getInventoryGroupCount() - INV_MAX_ROWS);
+            int maxOff = std::max(0, display_obj.getScrollableCount() - INV_MAX_ROWS);
             if (_invScrollOffset < 0)      _invScrollOffset = 0;
             if (_invScrollOffset > maxOff) _invScrollOffset = maxOff;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
                 device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+        }
+    }
+
+    // ── Live list scroll (Vorlagen-Listen) ────────────────
+    {
+        static constexpr int LIST_ROW_H    = 55; // must match ITEM_H in display.cpp
+        static constexpr int LIST_MAX_ROWS = 5;
+        static int16_t s_listLastDelta = 0;
+        bool isListScreen = (workflow == WorkflowMode::TMPL_PRODUCT  ||
+                             workflow == WorkflowMode::TMPL_BRAND    ||
+                             workflow == WorkflowMode::TMPL_SORTE    ||
+                             workflow == WorkflowMode::WIFI_SETUP_LIST);
+        if (isListScreen) {
+            int16_t liveDelta = display_obj.getScrollDeltaPx();
+            if (liveDelta != 0 && liveDelta != s_listLastDelta) {
+                s_listLastDelta  = liveDelta;
+                _lastActivityMs  = millis();
+                _lastUiRefreshMs = millis();
+                int tempOff = _listScrollOffset - liveDelta / LIST_ROW_H;
+                // re-render with live offset (showListScreen accepts it)
+                _redrawListScreen(tempOff);
+            }
+            int16_t committed = display_obj.drainScrollCommit();
+            if (committed != 0) {
+                s_listLastDelta  = 0;
+                _lastActivityMs  = millis();
+                _lastUiRefreshMs = millis();
+                _listScrollOffset -= committed / LIST_ROW_H;
+                int maxOff = std::max(0, display_obj.getScrollableCount() - LIST_MAX_ROWS);
+                if (_listScrollOffset < 0)      _listScrollOffset = 0;
+                if (_listScrollOffset > maxOff) _listScrollOffset = maxOff;
+                _redrawListScreen(_listScrollOffset);
+            }
+        } else {
+            s_listLastDelta = 0;  // Zustand zurücksetzen wenn kein Listen-Screen
         }
     }
 
@@ -852,7 +888,9 @@ void App::processOnscreenAction(OnscreenAction action) {
 
     // Template list selection
     if (action >= OnscreenAction::LIST_ITEM_0 && action <= OnscreenAction::LIST_ITEM_6) {
-        int idx = static_cast<int>(action) - static_cast<int>(OnscreenAction::LIST_ITEM_0);
+        // Adjust visual row index by scroll offset to get actual item index
+        int row = static_cast<int>(action) - static_cast<int>(OnscreenAction::LIST_ITEM_0);
+        int idx = row + _listScrollOffset;   // actual item index in the source list
         if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
             if (idx >= 0 && idx < (int)_wifiNets.size()) {
                 _selectedSsid = _wifiNets[idx];
@@ -863,9 +901,10 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             return;
         } else if (workflow == WorkflowMode::TMPL_CATEGORY) {
+            // Category tiles don't scroll via list, use raw row index
             auto cats = templateCategories();
-            if (idx < (int)cats.size()) {
-                _selectedCategory   = cats[idx];
+            if (row < (int)cats.size()) {
+                _selectedCategory   = cats[row];
                 workflow            = WorkflowMode::TMPL_PRODUCT;
                 showTmplProducts();
             }
@@ -900,7 +939,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
                 const ProductTemplate &tmpl = products[_selectedTemplateIdx];
                 if (idx == 0) {
-                    // "Neu erstellen" — open keyboard
+                    // "Neu erstellen" — open keyboard (idx==0 is always row 0, no offset)
                     _creatingNewSorte = true;
                     _kbText = "";
                     display_obj.kbReset();
@@ -1699,28 +1738,58 @@ void App::showTmplCategories() {
 }
 
 void App::showTmplProducts() {
+    _listScrollOffset = 0;   // reset when entering a new list
     auto products = templatesForCategory(_selectedCategory);
     std::vector<String> items;
     for (const auto &p : products)
         items.push_back(p.name + " (" + String(p.shelfDays) + " Tage)");
-    display_obj.showListScreen(_selectedCategory.c_str(), items);
+    display_obj.showListScreen(_selectedCategory.c_str(), items, 0);
 }
 
 void App::showTmplBrands() {
+    _listScrollOffset = 0;
     auto products = templatesForCategory(_selectedCategory);
     if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
     const ProductTemplate &tmpl = products[_selectedTemplateIdx];
-    display_obj.showListScreen(tmpl.name.c_str(), tmpl.brands);
+    display_obj.showListScreen(tmpl.name.c_str(), tmpl.brands, 0);
 }
 
 void App::showTmplSorten() {
+    _listScrollOffset = 0;
     auto products = templatesForCategory(_selectedCategory);
     if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
     const ProductTemplate &tmpl = products[_selectedTemplateIdx];
     std::vector<String> items;
     items.push_back("\x1B Neue Sorte erstellen...");  // ESC char as visual marker
     for (const auto &s : tmpl.sorten) items.push_back(s);
-    display_obj.showListScreen(("SORTE: " + tmpl.name).c_str(), items);
+    display_obj.showListScreen(("SORTE: " + tmpl.name).c_str(), items, 0);
+}
+
+// Redraws the current list screen at the given scroll offset.
+// Used by live scroll and scroll-commit handlers.
+void App::_redrawListScreen(int offset) {
+    if (workflow == WorkflowMode::TMPL_PRODUCT) {
+        auto products = templatesForCategory(_selectedCategory);
+        std::vector<String> items;
+        for (const auto &p : products)
+            items.push_back(p.name + " (" + String(p.shelfDays) + " Tage)");
+        display_obj.showListScreen(_selectedCategory.c_str(), items, offset);
+    } else if (workflow == WorkflowMode::TMPL_BRAND) {
+        auto products = templatesForCategory(_selectedCategory);
+        if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
+        display_obj.showListScreen(products[_selectedTemplateIdx].name.c_str(),
+                                   products[_selectedTemplateIdx].brands, offset);
+    } else if (workflow == WorkflowMode::TMPL_SORTE) {
+        auto products = templatesForCategory(_selectedCategory);
+        if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return;
+        const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+        std::vector<String> items;
+        items.push_back("\x1B Neue Sorte erstellen...");
+        for (const auto &s : tmpl.sorten) items.push_back(s);
+        display_obj.showListScreen(("SORTE: " + tmpl.name).c_str(), items, offset);
+    } else if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
+        display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, offset);
+    }
 }
 
 void App::proceedFromSorte() {

@@ -97,6 +97,7 @@ private:
     void showTmplProducts();
     void showTmplBrands();
     void showTmplSorten();
+    void _redrawListScreen(int offset);   // re-render current list screen at given scroll offset
     void proceedFromSorte();
     void addSorteToTemplate(const String &templateId, const String &sorte);
     void removeSorteFromTemplate(const String &templateId, int sorteIdx);
@@ -215,8 +216,11 @@ private:
     int      _pendingSorteDeleteIdx = -1;
 
     // Inventory scroll offset and date filter (0=all, 7=7-day, 3=3-day)
-    int      _invScrollOffset = 0;
-    int      _invExpireDays   = 0;
+    int      _invScrollOffset  = 0;
+    int      _invExpireDays    = 0;
+
+    // List-screen scroll offset (shared by template product/brand/sorte/wifi lists)
+    int      _listScrollOffset = 0;
 
     std::vector<InventoryItem> inventoryDisplayItems() const;
 

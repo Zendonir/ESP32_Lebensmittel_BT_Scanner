@@ -113,7 +113,7 @@ static constexpr int16_t SCROLL_DEAD_PX = 8;  // px dead zone before scroll acti
 static bool    _scrollEnabled    = false;  // true only when inventory list is visible
 static bool    _inScrollGesture  = false;
 static int16_t _scrollCommitDelta = 0;   // final delta saved on finger-lift
-static int     _lastInvGroupCount = 0;   // group count from last showInventoryList render
+static int     _lastScrollableCount = 0;   // group count from last showInventoryList render
 
 // ─────────────────── action queue (single-slot) ──────────
 static volatile OnscreenAction _pending_action  = OnscreenAction::NONE;
@@ -645,8 +645,8 @@ int16_t Display::getLastSwipePressY() const {
     return _ts.startY;
 }
 
-int Display::getInventoryGroupCount() const {
-    return _lastInvGroupCount;
+int Display::getScrollableCount() const {
+    return _lastScrollableCount;
 }
 
 char Display::drainKbChar() {
@@ -1410,7 +1410,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         // Columns:  Produkt 0..299 | MHD ..COL_MHD | Menge ..COL_MENGE
         static constexpr uint16_t STATUS_COL[3] = { C_ACCENT, C_YELLOW, C_RED };
         int totalGroups = (int)groups.size();
-        _lastInvGroupCount = totalGroups;   // expose for App.cpp clamping
+        _lastScrollableCount = totalGroups;   // expose for App.cpp clamping
         int maxOffset   = std::max(0, totalGroups - MAX_ROWS);
         int clampedOff  = std::max(0, std::min(scrollOffset, maxOffset));
 
@@ -1577,8 +1577,10 @@ void Display::showCategoryTiles(const std::vector<String> &categories) {
 // ─────────────────────────────────────────────────────────
 
 void Display::showListScreen(const char *title,
-                              const std::vector<String> &items) {
+                              const std::vector<String> &items,
+                              int scrollOffset) {
     if (!_initialized) return;
+    _scrollEnabled = true;   // vertikales Wischen scrollt die Liste
     _spr.fillSprite(C_BG);
     clear_regions();
 
@@ -1595,11 +1597,18 @@ void Display::showListScreen(const char *title,
     // Taller rows for comfortable finger tapping and larger text
     static constexpr int ITEM_H   = 55;  // 5 rows × 55px = 275px ≈ 276px content
     static constexpr int MAX_SHOW = 5;
+
+    int totalItems = (int)items.size();
+    int maxOffset  = std::max(0, totalItems - MAX_SHOW);
+    int clampedOff = std::max(0, std::min(scrollOffset, maxOffset));
+    _lastScrollableCount = totalItems;   // expose for App.cpp clamping
+
     int list_y = HDR_H;
-    int shown  = (int)items.size() < MAX_SHOW ? (int)items.size() : MAX_SHOW;
+    int shown  = std::min(totalItems - clampedOff, MAX_SHOW);
 
     for (int i = 0; i < shown; i++) {
-        int iy = list_y + i * ITEM_H;
+        int srcIdx = clampedOff + i;
+        int iy     = list_y + i * ITEM_H;
         uint16_t bg = (i % 2 == 0) ? C_SURFACE : C_SURFACE2;
         _spr.fillRect(0, iy, SCR_W, ITEM_H, bg);
 
@@ -1609,7 +1618,7 @@ void Display::showListScreen(const char *title,
         _spr.setTextColor(C_TEXT, bg);
         _spr.setTextFont(4);
         _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(items[i], 38).c_str(), 12, iy + ITEM_H / 2);
+        _spr.drawString(trunc(items[srcIdx], 38).c_str(), 12, iy + ITEM_H / 2);
 
         // Chevron
         _spr.setTextColor(C_ACCENT, bg);
@@ -1617,6 +1626,17 @@ void Display::showListScreen(const char *title,
         _spr.drawString(">", SCR_W - 12, iy + ITEM_H / 2);
         _spr.drawFastHLine(0, iy + ITEM_H - 1, SCR_W, C_BORDER);
         add_region(0, iy, SCR_W, ITEM_H, LIST_ACTIONS[i]);
+    }
+
+    // Scroll arrows
+    if (clampedOff > 0) {
+        int ax = SCR_W - 20, ay = list_y + 4;
+        _spr.fillTriangle(ax + 8, ay, ax, ay + 14, ax + 16, ay + 14, C_SUBTEXT);
+    }
+    if (clampedOff < maxOffset) {
+        int ay = list_y + shown * ITEM_H - 18;
+        int ax = SCR_W - 20;
+        _spr.fillTriangle(ax, ay, ax + 16, ay, ax + 8, ay + 14, C_SUBTEXT);
     }
 
     if (items.empty()) {

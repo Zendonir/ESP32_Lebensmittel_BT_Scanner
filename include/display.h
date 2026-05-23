@@ -144,7 +144,7 @@ public:
     int16_t getLastSwipePressY()    const;  // Y coordinate of last swipe press start
     int16_t getScrollDeltaPx()      const;  // live vertical drag delta (0 if not scrolling)
     int16_t drainScrollCommit()     const;  // final delta after finger lift, clears on read
-    int     getInventoryGroupCount() const; // number of groups in last inventory render
+    int     getScrollableCount()     const; // item/group count from last scrollable render
 
     String getInvGroupName(int rowIdx) const;
 
@@ -154,7 +154,8 @@ public:
 
     // Template workflow
     void showCategoryTiles(const std::vector<String> &categories);
-    void showListScreen(const char *title, const std::vector<String> &items);
+    void showListScreen(const char *title, const std::vector<String> &items,
+                        int scrollOffset = 0);
     void showTemplateMHD(const String &productName, const String &mhd);
     void showAmountEntry(const String &productName, const String &unit, const String &draft);
     void showNewRollEntry(const String &draft);
