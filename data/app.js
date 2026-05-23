@@ -2394,15 +2394,21 @@ Pages.ota = {
       }
     };
     xhr.onload = () => {
-      if (xhr.status === 200) {
-        document.getElementById('otaProgress').style.width = '100%';
-        document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
-        Toast.success('Update erfolgreich – Gerät startet neu');
-      } else {
+      try {
+        const resp = JSON.parse(xhr.responseText);
+        if (resp.ok) {
+          document.getElementById('otaProgress').style.width = '100%';
+          document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
+          Toast.success('Update erfolgreich – Gerät startet neu');
+        } else {
+          document.getElementById('otaProgressText').textContent = 'Fehler';
+          Toast.error('OTA fehlgeschlagen: ' + (resp.error || 'Unbekannter Fehler'));
+        }
+      } catch(_) {
         Toast.error('Upload fehlgeschlagen: ' + xhr.statusText);
       }
     };
-    xhr.onerror = () => Toast.error('Upload-Fehler');
+    xhr.onerror = () => Toast.error('Upload-Fehler (Verbindung unterbrochen)');
     xhr.send(fd);
   },
 
@@ -2425,15 +2431,21 @@ Pages.ota = {
       }
     };
     xhr.onload = () => {
-      if (xhr.status === 200) {
-        document.getElementById('otaProgress').style.width = '100%';
-        document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
-        Toast.success('Filesystem aktualisiert – Gerät startet neu');
-      } else {
+      try {
+        const resp = JSON.parse(xhr.responseText);
+        if (resp.ok) {
+          document.getElementById('otaProgress').style.width = '100%';
+          document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
+          Toast.success('Filesystem aktualisiert – Gerät startet neu');
+        } else {
+          document.getElementById('otaProgressText').textContent = 'Fehler';
+          Toast.error('FS-OTA fehlgeschlagen: ' + (resp.error || 'Unbekannter Fehler'));
+        }
+      } catch(_) {
         Toast.error('Upload fehlgeschlagen: ' + xhr.statusText);
       }
     };
-    xhr.onerror = () => Toast.error('Upload-Fehler');
+    xhr.onerror = () => Toast.error('Upload-Fehler (Verbindung unterbrochen)');
     xhr.send(fd);
   },
 

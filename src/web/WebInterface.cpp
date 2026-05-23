@@ -1891,10 +1891,10 @@ void WebInterface::registerApiRoutes() {
                 bool isFirmware = (len > 0 && data[0] == 0xE9);
                 Logger::info("OTA", String("Start: ") + filename
                              + (isFirmware ? " [firmware]" : " [filesystem]"));
+                Update.abort(); // clear any leftover state from a previous attempt
                 if (isFirmware) {
                     Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
                 } else {
-                    Update.abort();
                     LittleFS.end();
                     Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS);
                 }
