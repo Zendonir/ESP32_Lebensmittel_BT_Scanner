@@ -88,13 +88,25 @@ static uint16_t hexToRgb565(const String &hex) {
     return ((uint16_t)(r >> 3) << 11) | ((uint16_t)(g >> 2) << 5) | (b >> 3);
 }
 
-// ─────────────────── touch state ─────────────────────────
-static bool     _touch_was_pressed = false;
-static uint32_t _touch_press_ms    = 0;
-static int16_t  _touch_press_x     = 0;
-static int16_t  _touch_press_y     = 0;
-static int16_t  _touch_last_x      = 0;  // last tracked position while finger is down
-static int16_t  _touch_last_y      = 0;
+// ─────────────────── gesture detection ───────────────────
+// Based on coordinate delta at release — not the FT6336 gesture register
+// (which returns 0x00 on most modules in practice).
+//
+// Tuned for 480×320 px (3.5")
+static constexpr int16_t  SWIPE_MIN_DIST   = 60;   // px minimum travel
+static constexpr int16_t  SWIPE_MAX_OFFAX  = 40;   // px max perpendicular deviation
+static constexpr uint32_t TAP_MAX_MS       = 250;  // ms max duration for a tap
+static constexpr int16_t  TAP_MAX_DIST     = 15;   // px max movement for a tap
+
+struct TouchState {
+    bool     active   = false;
+    int16_t  startX   = 0;
+    int16_t  startY   = 0;
+    int16_t  lastX    = 0;
+    int16_t  lastY    = 0;
+    uint32_t startMs  = 0;
+};
+static TouchState _ts;
 
 // ─────────────────── action queue (single-slot) ──────────
 static volatile OnscreenAction _pending_action  = OnscreenAction::NONE;
@@ -499,64 +511,67 @@ void Display::tick() {
     if (!_initialized) return;
     TouchPoint tp = touch_obj.read();
 
+    // ── Finger down / moving ──────────────────────────────────
     if (tp.pressed) {
-        if (!_touch_was_pressed) {
-            _touch_was_pressed = true;
-            _touch_press_ms    = millis();
-            _touch_press_x     = tp.x;
-            _touch_press_y     = tp.y;
-            _touch_last_x      = tp.x;
-            _touch_last_y      = tp.y;
+        if (!_ts.active) {
+            _ts.active  = true;
+            _ts.startX  = tp.x;
+            _ts.startY  = tp.y;
+            _ts.lastX   = tp.x;
+            _ts.lastY   = tp.y;
+            _ts.startMs = millis();
             Serial.printf("[Touch] raw(%u,%u) → cal(%u,%u)\n",
                 touch_obj.lastRawX, touch_obj.lastRawY, tp.x, tp.y);
         } else {
-            // Track finger movement while pressed for swipe detection
-            _touch_last_x = tp.x;
-            _touch_last_y = tp.y;
+            _ts.lastX = tp.x;
+            _ts.lastY = tp.y;
         }
-    } else {
-        if (_touch_was_pressed) {
-            uint32_t held = millis() - _touch_press_ms;
-            if (held >= 50) {
-                int16_t px = _touch_press_x, py = _touch_press_y;
-                int16_t dx = _touch_last_x - px;
-                int16_t dy = _touch_last_y - py;
+        return;
+    }
 
-                portENTER_CRITICAL(&_regions_mux);
-                int count = _region_count;
-                HitRegion snap[MAX_REGIONS];
-                memcpy(snap, _regions, count * sizeof(HitRegion));
-                portEXIT_CRITICAL(&_regions_mux);
+    // ── Finger lifted ─────────────────────────────────────────
+    if (!_ts.active) return;
+    _ts.active = false;
 
-                bool is_h_swipe = (abs(dx) > 80) && (abs(dx) > abs(dy) * 2);
-                bool is_v_swipe = (abs(dy) > 80) && (abs(dy) > abs(dx) * 2);
+    int16_t  dx      = _ts.lastX - _ts.startX;
+    int16_t  dy      = _ts.lastY - _ts.startY;
+    int16_t  absDx   = abs(dx);
+    int16_t  absDy   = abs(dy);
+    uint32_t elapsed = millis() - _ts.startMs;
+    int16_t  dist    = (int16_t)sqrtf((float)dx*dx + (float)dy*dy);
 
-                OnscreenAction hit      = OnscreenAction::NONE;
-                char           hit_char = 0;
+    portENTER_CRITICAL(&_regions_mux);
+    int count = _region_count;
+    HitRegion snap[MAX_REGIONS];
+    memcpy(snap, _regions, count * sizeof(HitRegion));
+    portEXIT_CRITICAL(&_regions_mux);
 
-                if (is_h_swipe && py > HDR_H && py < SCR_H - TAB_H) {
-                    hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
-                } else if (is_v_swipe) {
-                    hit = (dy > 0) ? OnscreenAction::SWIPE_DOWN : OnscreenAction::SWIPE_UP;
-                } else {
-                    // Hit-test using press start coordinates
-                    for (int i = 0; i < count; i++) {
-                        if (px >= snap[i].x && px < snap[i].x + snap[i].w &&
-                            py >= snap[i].y && py < snap[i].y + snap[i].h) {
-                            hit      = snap[i].action;
-                            hit_char = snap[i].extra_char;
-                            break;
-                        }
-                    }
-                }
+    OnscreenAction hit      = OnscreenAction::NONE;
+    char           hit_char = 0;
 
-                if (hit != OnscreenAction::NONE) {
-                    _pending_kb_char = hit_char;
-                    _pending_action  = hit;
-                }
+    if (dist <= TAP_MAX_DIST && elapsed <= TAP_MAX_MS) {
+        // ── Tap: hit-test at press start ─────────────────────
+        for (int i = 0; i < count; i++) {
+            int16_t px = _ts.startX, py = _ts.startY;
+            if (px >= snap[i].x && px < snap[i].x + snap[i].w &&
+                py >= snap[i].y && py < snap[i].y + snap[i].h) {
+                hit      = snap[i].action;
+                hit_char = snap[i].extra_char;
+                break;
             }
-            _touch_was_pressed = false;
         }
+    } else if (absDx >= SWIPE_MIN_DIST && absDy <= SWIPE_MAX_OFFAX
+               && _ts.startY > HDR_H) {
+        // ── Horizontal swipe ─────────────────────────────────
+        hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
+    } else if (absDy >= SWIPE_MIN_DIST && absDx <= SWIPE_MAX_OFFAX) {
+        // ── Vertical swipe ───────────────────────────────────
+        hit = (dy < 0) ? OnscreenAction::SWIPE_UP : OnscreenAction::SWIPE_DOWN;
+    }
+
+    if (hit != OnscreenAction::NONE) {
+        _pending_kb_char = hit_char;
+        _pending_action  = hit;
     }
 }
 
@@ -578,7 +593,7 @@ OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {
 }
 
 int16_t Display::getLastSwipePressY() const {
-    return _touch_press_y;
+    return _ts.startY;
 }
 
 char Display::drainKbChar() {
