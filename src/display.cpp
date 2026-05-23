@@ -1854,7 +1854,9 @@ void Display::kbToggleCaps() {
     _kbShift = _kbCaps;
 }
 
-void Display::showKeyboardEntry(const String &title, const String &current) {
+static String suggestion_suffix(const String &typed, const String &suggestion);  // defined below
+
+void Display::showKeyboardEntry(const String &title, const String &current, const String &suggestion) {
     if (!_initialized) return;
 
     _spr.fillSprite(C_BG);
@@ -1885,11 +1887,24 @@ void Display::showKeyboardEntry(const String &title, const String &current) {
     // ── Input bar ────────────────────────────────────────────────
     _spr.fillRect(0, HDR_H, SCR_W, INP_H, C_SURFACE2);
     _spr.drawFastHLine(0, HDR_H + INP_H - 1, SCR_W, C_BORDER);
-    String disp = current.isEmpty() ? "_ _ _" : (trunc(current, 38) + "_");
-    _spr.setTextColor(C_TEXT, C_SURFACE2);
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
-    _spr.drawString(disp.c_str(), 8, HDR_H + INP_H / 2);
+    if (current.isEmpty()) {
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
+        _spr.drawString("_ _ _", 8, HDR_H + INP_H / 2);
+    } else {
+        String typed_cur = trunc(current, 38) + "_";
+        _spr.setTextColor(C_TEXT, C_SURFACE2);
+        _spr.drawString(typed_cur.c_str(), 8, HDR_H + INP_H / 2);
+        String suffix = suggestion_suffix(current, suggestion);
+        if (!suffix.isEmpty()) {
+            int measured = (int)_spr.textWidth(typed_cur.c_str(), 2);
+            _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
+            _spr.drawString(trunc(suffix, 20).c_str(), 8 + measured, HDR_H + INP_H / 2);
+            // Tapping input bar accepts the suggestion
+            add_region(0, HDR_H, SCR_W, INP_H, OnscreenAction::KB_SUGGEST);
+        }
+    }
 
     // ── Helper lambda: draw one key ───────────────────────────────
     // hit_y_delta: shifts the registered hit region upward (negative) relative

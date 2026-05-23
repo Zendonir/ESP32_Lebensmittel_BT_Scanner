@@ -93,6 +93,7 @@ void App::begin() {
     }
     labelCounter.begin();
     inventory.begin();
+    loadManualNames();
     printer.begin();
     sync_manager.begin();
 
@@ -524,6 +525,67 @@ String App::bestMatchForSearch(const String &query) const {
     return "";
 }
 
+void App::loadManualNames() {
+    _manualNames.clear();
+    File f = AppFS::fs().open("/manual_names.json", "r");
+    if (!f) return;
+    JsonDocument doc;
+    if (deserializeJson(doc, f) == DeserializationError::Ok) {
+        for (JsonVariant v : doc.as<JsonArray>())
+            _manualNames.push_back(v.as<String>());
+    }
+    f.close();
+}
+
+void App::saveManualName(const String &name) {
+    if (name.isEmpty()) return;
+    for (const auto &n : _manualNames)
+        if (n.equalsIgnoreCase(name)) return;
+    _manualNames.push_back(name);
+    while (_manualNames.size() > 200)
+        _manualNames.erase(_manualNames.begin());
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (const auto &n : _manualNames) arr.add(n);
+    File f = AppFS::fs().open("/manual_names.json", "w");
+    if (f) { serializeJson(doc, f); f.close(); }
+}
+
+String App::bestMatchForName(const String &query) const {
+    if (query.isEmpty()) return "";
+    String q = normalizeSearch(query);
+    for (const auto &n : _manualNames)
+        if (normalizeSearch(n).indexOf(q) >= 0) return n;
+    for (const auto &n : _manualNames)
+        if (isSubseq(q, normalizeSearch(n))) return n;
+    return "";
+}
+
+String App::bestMatchForSorte(const String &query) const {
+    if (query.isEmpty()) return "";
+    auto products = templatesForCategory(_selectedCategory);
+    if (_selectedTemplateIdx < 0 || _selectedTemplateIdx >= (int)products.size()) return "";
+    const auto &sorten = products[_selectedTemplateIdx].sorten;
+    String q = normalizeSearch(query);
+    for (const auto &s : sorten)
+        if (normalizeSearch(s).indexOf(q) >= 0) return s;
+    for (const auto &s : sorten)
+        if (isSubseq(q, normalizeSearch(s))) return s;
+    return "";
+}
+
+String App::kbEntryTitle() const {
+    if (!_creatingNewSorte) return "PRODUKTNAME";
+    auto products = templatesForCategory(_selectedCategory);
+    if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size())
+        return "NEUE SORTE: " + products[_selectedTemplateIdx].name;
+    return "NEUE SORTE";
+}
+
+String App::kbEntrySuggestion() const {
+    return _creatingNewSorte ? bestMatchForSorte(_kbText) : bestMatchForName(_kbText);
+}
+
 void App::processOnscreenAction(OnscreenAction action) {
     char digit = digitForAction(action);
     if (digit && workflow == WorkflowMode::ENTER_DATE) {
@@ -563,6 +625,17 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
+    // Accept autocomplete suggestion by tapping input bar
+    if (action == OnscreenAction::KB_SUGGEST && workflow == WorkflowMode::KB_ENTRY) {
+        String sug = kbEntrySuggestion();
+        if (!sug.isEmpty()) {
+            audio_obj.playClickTone();
+            _kbText = sug;
+            display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, "");
+        }
+        return;
+    }
+
     // Keyboard entry: char input (KB_ENTRY, WIFI_SETUP_PASS, INV_SEARCH share the keyboard)
     if (action == OnscreenAction::KB_CHAR &&
             (workflow == WorkflowMode::KB_ENTRY || workflow == WorkflowMode::WIFI_SETUP_PASS
@@ -577,7 +650,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                 display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
             } else {
                 display_obj.kbAutoShift(c);
-                display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
+                display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, kbEntrySuggestion());
             }
         }
         return;
@@ -593,7 +666,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         else if (workflow == WorkflowMode::INV_SEARCH)
             display_obj.showSearchEntry(_kbText, bestMatchForSearch(_kbText));
         else
-            display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
+            display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, kbEntrySuggestion());
         return;
     }
 
@@ -1199,6 +1272,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                     proceedFromSorte();
                     break;
                 }
+                saveManualName(_kbText);
                 _pendingProduct.name    = _kbText;
                 _pendingProduct.brand   = "";
                 _pendingProduct.barcode = "";
@@ -1216,7 +1290,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                 audio_obj.playClickTone();
                 _kbText.remove(_kbText.length() - 1);
                 if (_kbText.isEmpty()) display_obj.kbAutoShift(' '); // treat empty as after-space
-                display_obj.showKeyboardEntry("PRODUKTNAME", _kbText);
+                display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, kbEntrySuggestion());
             }
             break;
 

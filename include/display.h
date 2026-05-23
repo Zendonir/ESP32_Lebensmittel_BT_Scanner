@@ -68,6 +68,7 @@ enum class OnscreenAction {
     KB_BACKSPACE,
     KB_CAPS,       // toggle caps-lock
     KB_CONFIRM,
+    KB_SUGGEST,    // tap input bar to accept suggestion
     // Location badge (tapping the top-right location pill opens location select)
     LOCATION_BADGE,
     // Result screen — label print count
@@ -163,7 +164,7 @@ public:
     void showFifoWarning(const String &productName, const String &olderExpiry);
 
     // Keyboard entry
-    void showKeyboardEntry(const String &title, const String &current);
+    void showKeyboardEntry(const String &title, const String &current, const String &suggestion = "");
     void showSearchEntry(const String &current, const String &suggestion);
     char drainKbChar();  // returns pending keyboard char, 0 if none
     void kbAutoShift(char lastChar);   // call after each typed char

@@ -111,6 +111,14 @@ private:
     // Inventory search helper
     String bestMatchForSearch(const String &query) const;
 
+    // Manual name autocomplete
+    void   loadManualNames();
+    void   saveManualName(const String &name);
+    String bestMatchForName(const String &query) const;
+    String bestMatchForSorte(const String &query) const;
+    String kbEntryTitle() const;
+    String kbEntrySuggestion() const;
+
     TwoWire         i2c_bus;
     AppStateManager state;
     TimeManager     time_manager;
@@ -159,6 +167,9 @@ private:
     String   _pendingUnit;               // unit from template (e.g. "g", "St.") – empty = no amount step
     String   _pendingAmountDraft;        // digits typed on TMPL_AMOUNT numpad
     int      _pendingAmount       = 1;   // confirmed food amount (pairs with _pendingUnit)
+
+    // Manual name autocomplete
+    std::vector<String> _manualNames;
 
     // Keyboard entry state
     String   _kbText;                    // current keyboard input text
