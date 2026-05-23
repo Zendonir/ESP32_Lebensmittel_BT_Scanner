@@ -12,3 +12,10 @@ CONFIG_ESP_IPC_TASK_STACK_SIZE=2048
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y
+
+# Disable hardware AES acceleration. The ESP32-S3 hardware AES engine requires
+# DMA-capable internal SRAM for its working buffers, which is exhausted when
+# BLE + WiFi are both active, causing "esp-aes: Failed to allocate memory"
+# during HTTPS OTA downloads. Software AES uses the mbedtls platform allocator
+# which is already redirected to PSRAM for OTA tasks (_ota_ssl_use_psram).
+CONFIG_MBEDTLS_HARDWARE_AES=n
