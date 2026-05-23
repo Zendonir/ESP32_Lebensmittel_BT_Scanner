@@ -294,8 +294,8 @@ static void draw_panel_store(const HomeState &s) {
                 "Neue Rolle", C_SURFACE2, C_TEXT, 2, OnscreenAction::NEW_ROLL);
 
     // Quick-access buttons
-    static constexpr int QA_BTN_H = 54;
-    static constexpr int QA_BTN_GAP = 5;
+    static constexpr int QA_BTN_H = 40;
+    static constexpr int QA_BTN_GAP = 4;
     int btn_y = py + 100;
     draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
                 "Kategorie", C_ACCENT, C_BG, 4, OnscreenAction::TAB_MANUAL_PRODUCT);
@@ -305,6 +305,9 @@ static void draw_panel_store(const HomeState &s) {
     btn_y += QA_BTN_H + QA_BTN_GAP;
     draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
                 "Inventar", C_YELLOW, C_BG, 4, OnscreenAction::TAB_INVENTORY);
+    btn_y += QA_BTN_H + QA_BTN_GAP;
+    draw_button(4, btn_y, SCR_W - 8, QA_BTN_H,
+                "System", C_SURFACE2, C_TEXT, 4, OnscreenAction::TAB_SYSTEM);
 }
 
 static void draw_panel_inventory_empty(const HomeState &s) {

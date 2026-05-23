@@ -746,86 +746,15 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
-    // Swipe-right = back inside WiFi setup, template workflow, inventory search, or qty entry
+    // Swipe-right = always back to home screen (STORE tab)
     if (action == OnscreenAction::SWIPE_RIGHT) {
-        if (workflow == WorkflowMode::ENTER_QTY) {
-            audio_obj.playSwipeTone();
-            workflow = WorkflowMode::ENTER_DATE;
-            state.setState(AppState::ENTER_DATE);
-            display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
-            return;
-        }
-        if (workflow == WorkflowMode::INV_SEARCH) {
-            audio_obj.playSwipeTone();
-            _invFilter = "";
-            _invExpireDays = 0;
-            workflow = WorkflowMode::HOME;
-            _activeTab = UiTab::INVENTORY;
-            display_obj.showInventoryList(inventoryDisplayItems(), "",
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
-            return;
-        }
-        if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
-            display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets);
-            workflow = WorkflowMode::WIFI_SETUP_LIST;
-            return;
-        }
-        if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
-            WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
-            workflow = WorkflowMode::WIFI_SETUP_SCAN;
-            display_obj.showWifiScan();
-            return;
-        }
-        if (workflow == WorkflowMode::TMPL_PRODUCT) {
-            audio_obj.playSwipeTone();
-            workflow = WorkflowMode::TMPL_CATEGORY;
-            showTmplCategories();
-            return;
-        }
-        if (workflow == WorkflowMode::TMPL_BRAND) {
-            audio_obj.playSwipeTone();
-            workflow = WorkflowMode::TMPL_PRODUCT;
-            showTmplProducts();
-            return;
-        }
-        if (workflow == WorkflowMode::TMPL_SORTE) {
-            audio_obj.playSwipeTone();
-            auto products = templatesForCategory(_selectedCategory);
-            if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                    && products[_selectedTemplateIdx].brands.size() > 1) {
-                workflow = WorkflowMode::TMPL_BRAND;
-                showTmplBrands();
-            } else {
-                workflow = WorkflowMode::TMPL_PRODUCT;
-                showTmplProducts();
-            }
-            return;
-        }
-        if (workflow == WorkflowMode::TMPL_AMOUNT) {
-            audio_obj.playSwipeTone();
-            auto products = templatesForCategory(_selectedCategory);
-            bool hasSorten = _selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                && products[_selectedTemplateIdx].useSorten;
-            if (hasSorten) {
-                workflow = WorkflowMode::TMPL_SORTE;
-                showTmplSorten();
-            } else if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()
-                    && products[_selectedTemplateIdx].brands.size() > 1) {
-                workflow = WorkflowMode::TMPL_BRAND;
-                showTmplBrands();
-            } else {
-                workflow = WorkflowMode::TMPL_PRODUCT;
-                showTmplProducts();
-            }
-            return;
-        }
-        if (workflow == WorkflowMode::NEW_ROLL_ENTRY
-                || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
-            audio_obj.playSwipeTone();
-            workflow = WorkflowMode::HOME;
-            renderActiveTab("");
-            return;
-        }
+        audio_obj.playSwipeTone();
+        _invFilter = "";
+        _invExpireDays = 0;
+        workflow = WorkflowMode::HOME;
+        _activeTab = UiTab::STORE;
+        renderActiveTab("");
+        return;
     }
 
     // Inventory group tap (expand / collapse) — only when actually on inventory list, not location-select overlay
@@ -1026,21 +955,12 @@ void App::processOnscreenAction(OnscreenAction action) {
             processOnscreenAction(action);
             return;
         }
-        case OnscreenAction::SWIPE_RIGHT: {
+        case OnscreenAction::SWIPE_RIGHT:
             audio_obj.playSwipeTone();
-            static const UiTab CYCLE[] = {
-                UiTab::STORE, UiTab::INVENTORY, UiTab::SYSTEM,
-                UiTab::MANUAL_PRODUCT, UiTab::MANUAL_ENTRY
-            };
-            static constexpr int NC = 5;
-            int ci = 0;
-            for (int i = 0; i < NC; i++) if (CYCLE[i] == _activeTab) { ci = i; break; }
-            action = static_cast<OnscreenAction>(
-                static_cast<int>(OnscreenAction::TAB_STORE) +
-                static_cast<int>(CYCLE[(ci + NC - 1) % NC]));
-            processOnscreenAction(action);
+            workflow = WorkflowMode::HOME;
+            _activeTab = UiTab::STORE;
+            renderActiveTab("");
             return;
-        }
         case OnscreenAction::SWIPE_DOWN:
             workflow = WorkflowMode::LOCATION_SELECT;
             showLocationSelect();
