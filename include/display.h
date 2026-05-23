@@ -18,9 +18,10 @@ enum class OnscreenAction {
     TAB_MANUAL_PRODUCT,
     TAB_MANUAL_ENTRY,
     // Swipe gestures
-    SWIPE_LEFT,   // next tab
+    SWIPE_LEFT,   // next tab / swipe-to-delete
     SWIPE_RIGHT,  // prev tab
-    SWIPE_DOWN,   // open location select
+    SWIPE_UP,     // scroll up (inventory)
+    SWIPE_DOWN,   // scroll down (inventory) / open location select
     // General
     REFRESH,
     WIFI_SETUP,
@@ -133,7 +134,10 @@ public:
     void showInventoryList(const std::vector<InventoryItem> &items,
                            const String &filter = "",
                            const String &hhAbbr = "",
-                           const String &expandedGroup = "");
+                           const String &expandedGroup = "",
+                           int scrollOffset = 0);
+
+    int16_t getLastSwipePressY() const;  // Y coordinate of last swipe press start
 
     String getInvGroupName(int rowIdx) const;
 

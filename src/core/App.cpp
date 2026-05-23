@@ -279,6 +279,10 @@ void App::loop() {
             _kbText  = "";
             display_obj.kbReset();
             display_obj.showKeyboardEntry("PRODUKTNAME", "");
+        } else if (_activeTab == UiTab::MANUAL_PRODUCT) {
+            // Skip intermediate "Produkt auswaehlen" screen — go straight to category picker
+            workflow = WorkflowMode::TMPL_CATEGORY;
+            showTmplCategories();
         } else {
             workflow = WorkflowMode::HOME;
             renderActiveTab("");
@@ -429,7 +433,7 @@ void App::renderActiveTab(const String &message, bool force) {
     // INVENTORY tab always shows the live list, not the empty-placeholder panel
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
         display_obj.showInventoryList(inventory.items(), _invFilter,
-            device_config.getHouseholdAbbr(), _invExpandedGroup);
+            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         _lastUiHash = buildUiHash();
         _lastUiRefreshMs = millis();
         return;
@@ -639,6 +643,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         if (_pendingDateDraft.length() == 6) {
             // Auto-confirm once all 6 digits are entered
             if (formatDateDraft(_pendingExpiryDate)) {
+                _pendingQuantity = 0;  // reset so first tap selects, second confirms
                 workflow = WorkflowMode::ENTER_QTY;
                 state.setState(AppState::ENTER_QTY);
                 display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
@@ -730,7 +735,7 @@ void App::processOnscreenAction(OnscreenAction action) {
     if (action == OnscreenAction::SWIPE_RIGHT && !_invExpandedGroup.isEmpty()) {
         _invExpandedGroup = "";
         display_obj.showInventoryList(inventory.items(), _invFilter,
-                                      device_config.getHouseholdAbbr(), _invExpandedGroup);
+                                      device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         return;
     }
 
@@ -749,7 +754,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             workflow = WorkflowMode::HOME;
             _activeTab = UiTab::INVENTORY;
             display_obj.showInventoryList(inventory.items(), "",
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup);
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
             return;
         }
         if (workflow == WorkflowMode::WIFI_SETUP_PASS) {
@@ -815,8 +820,8 @@ void App::processOnscreenAction(OnscreenAction action) {
         }
     }
 
-    // Inventory group tap (expand / collapse)
-    if (_activeTab == UiTab::INVENTORY &&
+    // Inventory group tap (expand / collapse) — only when actually on inventory list, not location-select overlay
+    if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME &&
         (action == OnscreenAction::LIST_ITEM_0 || action == OnscreenAction::LIST_ITEM_1 ||
          action == OnscreenAction::LIST_ITEM_2 || action == OnscreenAction::LIST_ITEM_3 ||
          action == OnscreenAction::LIST_ITEM_4)) {
@@ -831,7 +836,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             else
                 _invExpandedGroup = tapped;  // expand
             display_obj.showInventoryList(inventory.items(), _invFilter,
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup);
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
         }
         return;
     }
@@ -961,9 +966,43 @@ void App::processOnscreenAction(OnscreenAction action) {
         return;
     }
 
+    // ── SWIPE_LEFT in TMPL_SORTE: delete sorte by detecting swiped row ──────
+    if (action == OnscreenAction::SWIPE_LEFT && workflow == WorkflowMode::TMPL_SORTE) {
+        int pressY = display_obj.getLastSwipePressY();
+        int rowIdx = (pressY - HDR_H) / 55; // ITEM_H = 55px in showListScreen
+        auto products = templatesForCategory(_selectedCategory);
+        if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
+            const ProductTemplate &tmpl = products[_selectedTemplateIdx];
+            int sorteIdx = rowIdx - 1; // row 0 = "Neue Sorte erstellen"
+            if (sorteIdx >= 0 && sorteIdx < (int)tmpl.sorten.size()) {
+                _pendingSorteDeleteIdx = sorteIdx;
+                display_obj.showConfirmDialog("Sorte loeschen?",
+                    "\"" + tmpl.sorten[sorteIdx] + "\" entfernen?");
+                return;
+            }
+        }
+        return; // swipe on non-deletable row → ignore
+    }
+
+    // ── SWIPE_UP/DOWN: inventory list scroll ──────────────────────────────
+    if (action == OnscreenAction::SWIPE_UP && _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
+        _invScrollOffset++;
+        display_obj.showInventoryList(inventory.items(), _invFilter,
+                                      device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+        return;
+    }
+    if (action == OnscreenAction::SWIPE_DOWN && _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
+        if (_invScrollOffset > 0) _invScrollOffset--;
+        display_obj.showInventoryList(inventory.items(), _invFilter,
+                                      device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+        return;
+    }
+
     switch (action) {
         // ── Tab navigation ──────────────────────────────────────────────────
         case OnscreenAction::SWIPE_LEFT: {
+            _kbConfirmPending = false;
+            _pendingSorteDeleteIdx = -1;
             audio_obj.playSwipeTone();
             static const UiTab CYCLE[] = {
                 UiTab::STORE, UiTab::INVENTORY, UiTab::SYSTEM,
@@ -1007,8 +1046,9 @@ void App::processOnscreenAction(OnscreenAction action) {
             _activeTab = UiTab::INVENTORY;
             _invFilter = "";
             _invExpandedGroup = "";
+            _invScrollOffset = 0;
             display_obj.showInventoryList(inventory.items(), "",
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup);
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup, 0);
             _lastUiRefreshMs = millis();
             break;
 
@@ -1071,8 +1111,13 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
 
         case OnscreenAction::REFRESH:
-            workflow = WorkflowMode::HOME;
-            renderActiveTab("Anzeige aktualisiert");
+            if (workflow == WorkflowMode::RESULT && _activeTab == UiTab::MANUAL_PRODUCT) {
+                workflow = WorkflowMode::TMPL_CATEGORY;
+                showTmplCategories();
+            } else {
+                workflow = WorkflowMode::HOME;
+                renderActiveTab("Anzeige aktualisiert");
+            }
             break;
         case OnscreenAction::WIFI_SETUP:
             WiFi.scanNetworks(/*async=*/true, /*hidden=*/true);
@@ -1104,6 +1149,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::DATE_CONFIRM:
             if (workflow == WorkflowMode::ENTER_DATE && formatDateDraft(_pendingExpiryDate)) {
+                _pendingQuantity = 0;  // reset so first tap selects, second confirms
                 workflow = WorkflowMode::ENTER_QTY;
                 state.setState(AppState::ENTER_QTY);
                 display_obj.showQuantityEntry(_pendingProduct, _pendingExpiryDate, _pendingQuantity);
@@ -1246,7 +1292,27 @@ void App::processOnscreenAction(OnscreenAction action) {
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
         case OnscreenAction::CONFIRM_YES:
-            if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
+            if (_kbConfirmPending) {
+                _kbConfirmPending = false;
+                saveManualName(_kbText);
+                _pendingProduct.name    = _kbText;
+                _pendingProduct.brand   = "";
+                _pendingProduct.barcode = "";
+                _pendingDateDraft       = "";
+                _pendingExpiryDate      = "";
+                _pendingQuantity        = 1;
+                _pendingUnit            = "";
+                workflow = WorkflowMode::ENTER_DATE;
+                state.setState(AppState::ENTER_DATE);
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            } else if (_pendingSorteDeleteIdx >= 0 && workflow == WorkflowMode::TMPL_SORTE) {
+                auto products = templatesForCategory(_selectedCategory);
+                if (_selectedTemplateIdx >= 0 && _selectedTemplateIdx < (int)products.size()) {
+                    removeSorteFromTemplate(products[_selectedTemplateIdx].id, _pendingSorteDeleteIdx);
+                }
+                _pendingSorteDeleteIdx = -1;
+                showTmplSorten();
+            } else if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
                 wifi_manager.saveCredentials(_selectedSsid.c_str(), _kbText.c_str());
                 wifi_manager.connectToWiFi(_selectedSsid.c_str(), _kbText.c_str());
                 _wifiConnectStartMs = millis();
@@ -1259,7 +1325,14 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             break;
         case OnscreenAction::CONFIRM_NO:
-            if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
+            if (_kbConfirmPending) {
+                _kbConfirmPending = false;
+                // Return to keyboard with text still intact
+                display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, kbEntrySuggestion());
+            } else if (_pendingSorteDeleteIdx >= 0 && workflow == WorkflowMode::TMPL_SORTE) {
+                _pendingSorteDeleteIdx = -1;
+                showTmplSorten();
+            } else if (workflow == WorkflowMode::WIFI_SETUP_CONFIRM) {
                 workflow = WorkflowMode::WIFI_SETUP_PASS;
                 display_obj.showKeyboardEntry("PASSWORT: " + _selectedSsid, _kbText);
             } else if (workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
@@ -1294,8 +1367,9 @@ void App::processOnscreenAction(OnscreenAction action) {
                         }
                     }
                     _invExpandedGroup = "";
+                    _invScrollOffset = 0;
                     display_obj.showInventoryList(filtered, _invFilter,
-                                                  device_config.getHouseholdAbbr(), _invExpandedGroup);
+                                                  device_config.getHouseholdAbbr(), _invExpandedGroup, 0);
                 }
                 break;
             }
@@ -1315,17 +1389,9 @@ void App::processOnscreenAction(OnscreenAction action) {
                     proceedFromSorte();
                     break;
                 }
-                saveManualName(_kbText);
-                _pendingProduct.name    = _kbText;
-                _pendingProduct.brand   = "";
-                _pendingProduct.barcode = "";
-                _pendingDateDraft       = "";
-                _pendingExpiryDate      = "";
-                _pendingQuantity        = 1;
-                _pendingUnit            = "";
-                workflow = WorkflowMode::ENTER_DATE;
-                state.setState(AppState::ENTER_DATE);
-                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+                // Show confirmation dialog before proceeding
+                _kbConfirmPending = true;
+                display_obj.showConfirmDialog("Produktname bestaetigen?", _kbText);
             }
             break;
         case OnscreenAction::KB_BACKSPACE:
@@ -1514,7 +1580,7 @@ bool App::formatDateDraft(String &formatted) const {
 bool App::finishStorageWorkflow() {
     state.setState(AppState::PRINTING);
 
-    const int qty  = _pendingQuantity;
+    const int qty  = (_pendingQuantity > 0) ? _pendingQuantity : 1;
     const String name = _pendingProduct.name.isEmpty() ? "Lebensmittel" : _pendingProduct.name;
     int storedCount = 0;
 
@@ -1730,6 +1796,34 @@ void App::addSorteToTemplate(const String &templateId, const String &sorte) {
     if (found) {
         json.saveDocument("/custom_products.json", doc);
         loadTemplates();  // refresh in-memory list with new sorte
+    }
+}
+
+void App::removeSorteFromTemplate(const String &templateId, int sorteIdx) {
+    JsonDocument doc;
+    if (!json.loadDocument("/custom_products.json", doc, "[]")) return;
+    bool changed = false;
+    for (JsonObject obj : doc.as<JsonArray>()) {
+        if (obj["id"].as<String>() == templateId) {
+            if (!obj["sorten"].is<JsonArray>()) break;
+            JsonArray arr = obj["sorten"].as<JsonArray>();
+            int n = (int)arr.size();
+            if (sorteIdx < 0 || sorteIdx >= n) break;
+            // Rebuild array without the deleted element
+            std::vector<String> kept;
+            for (int i = 0; i < n; i++) {
+                if (i != sorteIdx) kept.push_back(arr[i] | "");
+            }
+            obj.remove("sorten");
+            JsonArray newArr = obj["sorten"].to<JsonArray>();
+            for (const auto &s : kept) newArr.add(s);
+            changed = true;
+            break;
+        }
+    }
+    if (changed) {
+        json.saveDocument("/custom_products.json", doc);
+        loadTemplates();
     }
 }
 

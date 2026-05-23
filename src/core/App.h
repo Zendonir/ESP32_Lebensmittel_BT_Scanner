@@ -99,6 +99,7 @@ private:
     void showTmplSorten();
     void proceedFromSorte();
     void addSorteToTemplate(const String &templateId, const String &sorte);
+    void removeSorteFromTemplate(const String &templateId, int sorteIdx);
     void startTmplMHD();
     String calcMHD(int shelfDays, int offset) const;
 
@@ -206,6 +207,15 @@ private:
     static constexpr uint32_t RESULT_AUTO_DISMISS_MS = 5000;
 
     int countExpiringSoon(int days = 7) const;
+
+    // KB confirm-before-entry (manual product name confirmation dialog)
+    bool     _kbConfirmPending = false;
+
+    // Sorte deletion pending index (-1 = none pending)
+    int      _pendingSorteDeleteIdx = -1;
+
+    // Inventory scroll offset
+    int      _invScrollOffset = 0;
 
     // Label roll entry state
     String   _rollDraft;

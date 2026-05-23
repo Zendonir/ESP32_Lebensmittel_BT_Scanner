@@ -589,15 +589,15 @@ void Display::tick() {
 
                 // Swipe detection
                 bool is_h_swipe = (abs(dx) > 80) && (abs(dx) > abs(dy) * 2);
-                bool is_v_swipe_down = (dy > 80) && (dy > abs(dx) * 2);
+                bool is_v_swipe = (abs(dy) > 80) && (abs(dy) > abs(dx) * 2);
 
                 OnscreenAction hit = OnscreenAction::NONE;
                 char           hit_char = 0;
 
                 if (is_h_swipe && py > HDR_H && py < SCR_H - TAB_H) {
                     hit = (dx < 0) ? OnscreenAction::SWIPE_LEFT : OnscreenAction::SWIPE_RIGHT;
-                } else if (is_v_swipe_down && py < HDR_H + 60) {
-                    hit = OnscreenAction::SWIPE_DOWN;
+                } else if (is_v_swipe) {
+                    hit = (dy > 0) ? OnscreenAction::SWIPE_DOWN : OnscreenAction::SWIPE_UP;
                 } else {
                     // Hit-test using press start coordinates
                     for (int i = 0; i < count; i++) {
@@ -635,6 +635,10 @@ OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {
     OnscreenAction a = _pending_action;
     _pending_action  = OnscreenAction::NONE;
     return a;
+}
+
+int16_t Display::getLastSwipePressY() const {
+    return _touch_press_y;
 }
 
 char Display::drainKbChar() {
@@ -1014,7 +1018,7 @@ void Display::showQuantityEntry(const ProductInfo &product,
     _spr.setTextColor(C_SUBTEXT, C_BG);
     _spr.setTextFont(2);
     _spr.setTextDatum(TC_DATUM);
-    _spr.drawString("Menge 2x antippen = Einlagern", SCR_W / 2, HDR_H + 6);
+    _spr.drawString("1x = auswaehlen  |  gleiche Zahl nochmal = Einlagern", SCR_W / 2, HDR_H + 6);
 
     // 4×3 quantity grid — taller buttons fill the available space
     // Available: SCR_H - HDR_H - 28(hint) = 248px for 3 rows + 2 gaps (6px)
@@ -1173,7 +1177,7 @@ static const OnscreenAction LIST_ACTIONS[7] = {
 
 void Display::showInventoryList(const std::vector<InventoryItem> &items,
                                 const String &filter, const String &hhAbbr,
-                                const String &expandedGroup) {
+                                const String &expandedGroup, int scrollOffset) {
     if (!_initialized) return;
     _spr.fillSprite(C_BG);
     clear_regions();
@@ -1263,7 +1267,22 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("INVENTAR", 12, HDR_H / 2);
     draw_wifi_dot();
-    draw_location_badge(SCR_W - 22);
+    // Location badge is drawn without a tap region on the inventory list page
+    // to avoid conflicts with swipe-scroll gestures
+    if (!_s_active_location.isEmpty()) {
+        String lbl = _s_active_location;
+        if (lbl.length() > 16) lbl = lbl.substring(0, 16);
+        uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
+        _spr.setFreeFont(&FreeSans16);
+        int tw = (int)_spr.textWidth(lbl.c_str());
+        int ph = 26, pad_x = 8, pw = tw + pad_x * 2;
+        int px = SCR_W - 22 - pw, py = (HDR_H - ph) / 2;
+        _spr.fillRoundRect(px, py, pw, ph, ph / 2, col);
+        _spr.setTextColor(C_TEXT, col);
+        _spr.setTextDatum(MC_DATUM);
+        _spr.drawString(lbl.c_str(), px + pw / 2, py + ph / 2);
+        _spr.setTextFont(4);
+    }
 
     // ── Search bar ──────────────────────────────────────────
     static constexpr int SEARCH_H = 30;
@@ -1375,12 +1394,15 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.drawFastHLine(0, ry + SUB_H - 1, SCR_W, C_BORDER);
         }
     } else {
-        // ── Collapsed group list ─────────────────────────────
+        // ── Collapsed group list (ascending MHD — soonest expiry at top) ──
         // Columns:  Produkt 0..299 | MHD ..COL_MHD | Menge ..COL_MENGE
         static constexpr uint16_t STATUS_COL[3] = { C_ACCENT, C_YELLOW, C_RED };
+        int totalGroups = (int)groups.size();
+        int maxOffset   = std::max(0, totalGroups - MAX_ROWS);
+        int clampedOff  = std::max(0, std::min(scrollOffset, maxOffset));
+
         int shown = 0;
-        int start = (int)groups.size() - 1;
-        for (int i = start; i >= 0 && shown < MAX_ROWS; i--, shown++) {
+        for (int i = clampedOff; i < totalGroups && shown < MAX_ROWS; i++, shown++) {
             const DispGroup &g = groups[i];
             int ry = list_y + shown * ROW_H;
             uint16_t row_bg = (shown % 2 == 0) ? C_SURFACE : C_SURFACE2;
@@ -1420,6 +1442,19 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
             add_region(0, ry, SCR_W, ROW_H, LIST_ACTIONS[shown]);
             _s_inv_group_names[shown] = g.name;
+        }
+
+        // Scroll arrows (right edge, 20×18 px strip below the rows)
+        if (clampedOff > 0) {
+            // ▲ more items above
+            int ax = SCR_W - 20, ay = list_y + 4;
+            _spr.fillTriangle(ax + 8, ay, ax, ay + 14, ax + 16, ay + 14, C_SUBTEXT);
+        }
+        if (clampedOff < maxOffset) {
+            // ▼ more items below
+            int ay = list_y + shown * ROW_H - 18;
+            int ax = SCR_W - 20;
+            _spr.fillTriangle(ax, ay, ax + 16, ay, ax + 8, ay + 14, C_SUBTEXT);
         }
     }
 
