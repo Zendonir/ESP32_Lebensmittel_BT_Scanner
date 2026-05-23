@@ -854,14 +854,14 @@ void Display::showDateEntry(const ProductInfo &product, const String &dateDraft)
         valid = 0x000F;
     } else if (pos == 1) {                   // day units
         char d0 = dateDraft[0];
-        if      (d0 == '0') valid = 0x01FE;  // 1-9  (no 00)
+        if      (d0 == '0') valid = 0x03FE;  // 1-9  (no 00)
         else if (d0 == '3') valid = 0x0003;  // 0,1  (30,31)
         else                valid = 0x03FF;  // 0-9
     } else if (pos == 2) {                   // month tens: 0-1
         valid = 0x0003;
     } else if (pos == 3) {                   // month units
         char d2 = dateDraft[2];
-        if (d2 == '0') valid = 0x01FE;       // 1-9  (no month 00)
+        if (d2 == '0') valid = 0x03FE;       // 1-9  (no month 00)
         else           valid = 0x0007;       // 0,1,2 (10,11,12)
     }
     // positions 4,5 (year): all digits valid
