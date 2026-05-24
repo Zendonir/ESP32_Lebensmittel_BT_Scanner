@@ -163,7 +163,7 @@
   .inv-group.solo .inv-group-head { border-radius: var(--radius) !important; }
   .inv-chevron { font-size: 18px; color: var(--sub); transition: transform .2s; flex-shrink: 0; padding-left: 4px; line-height: 1; }
   .inv-sub-list { background: var(--surface2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); }
-  .inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 34px; border-top: 1px solid var(--border); }
+  .inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 34px; border-top: 1px solid var(--border); background: var(--surface2); }
   .inv-sub-item:first-child { border-top: none; }
   .inv-sub-item .inv-meta { font-size: 13px; color: var(--sub); }
   .inv-sub-item .inv-label { font-size: 11px; color: var(--sub); opacity: .7; }
@@ -519,11 +519,12 @@ function renderInventory() {
       const exp    = getExpiry(it);
       const subCls = expiryClass(exp);
       const lb     = esc(it.labelBarcode || '');
+      const locStr = it.location ? `<span style="opacity:.7"> · ${esc(it.location)}</span>` : '';
       return `<div class="swipe-wrap">
         <div class="swipe-inner inv-sub-item ${subCls}" data-lb="${lb}">
           <div class="inv-dot"></div>
           <div class="inv-info">
-            <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}</div>
+            <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}${locStr}</div>
           </div>
         </div>
         <div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>
