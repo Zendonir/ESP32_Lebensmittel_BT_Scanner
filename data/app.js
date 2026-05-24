@@ -558,18 +558,17 @@ Pages.inventory = {
       const days   = daysUntil(group.earliest);
       const dClass = days < 0 ? 'danger' : days < 7 ? 'warn' : 'ok';
       const dLabel = days < 0 ? `${Math.abs(days)}d abg.` : days === 0 ? 'Heute' : `${days}d`;
-      const cat    = group.members[0].category || '';
-      const brand  = group.members[0].brand || '';
+      // Location: for solo items use their own; for groups show first member's location
+      const loc0   = group.members[0].location || '';
 
-      // Group header row (always shown)
+      // Group header row (always shown) – 4 cols: Produkt | MHD | Menge | Aktionen
       html += `<tr class="inv-group-head" onclick="Pages.inventory.toggleGroup(${gi})" style="cursor:pointer">
-        <td>
-          <div style="font-weight:600">${esc(group.name)}
+        <td style="width:50%">
+          <div style="font-weight:600;font-size:1rem">${esc(group.name)}
             ${!isSolo ? `<span class="badge" style="background:var(--accent);color:#000;margin-left:6px">${group.members.length}×</span>` : ''}
           </div>
-          ${brand ? `<div style="font-size:.75rem;color:var(--subtext)">${esc(brand)}</div>` : ''}
+          ${loc0 ? `<div style="font-size:.9rem;color:var(--subtext);margin-top:2px">📍 ${esc(loc0)}</div>` : ''}
         </td>
-        <td>${cat ? `<span class="badge badge-info">${esc(cat)}</span>` : '—'}</td>
         <td><span class="badge badge-${dClass}">${dLabel}</span><div style="font-size:.75rem;color:var(--subtext)">${esc(group.earliest)}</div></td>
         <td style="text-align:center">${group.members.length}</td>
         <td>${isSolo ? (() => { const si = Pages.inventory._itemIndex(group.members[0]); return `
@@ -583,22 +582,34 @@ Pages.inventory = {
       // Expanded sub-rows (hidden by default for groups with >1 item)
       if (!isSolo) {
         html += `<tr id="inv-group-${gi}" class="inv-sub-rows" hidden>
-          <td colspan="5" style="padding:0">
-            <table style="width:100%;border-collapse:collapse">`;
+          <td colspan="4" style="padding:0">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr style="background:var(--surface2)">
+                  <th style="padding:6px 12px;text-align:left;font-size:.73rem;font-weight:600;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em">Lagerort</th>
+                  <th style="padding:6px 12px;text-align:left;font-size:.73rem;font-weight:600;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em">Marke</th>
+                  <th style="padding:6px 12px;text-align:left;font-size:.73rem;font-weight:600;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em">Haushalt</th>
+                  <th style="padding:6px 12px;text-align:left;font-size:.73rem;font-weight:600;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em">MHD</th>
+                  <th style="padding:6px 12px;text-align:center;font-size:.73rem;font-weight:600;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em">Menge</th>
+                  <th style="padding:6px 12px;text-align:left;font-size:.73rem;font-weight:600;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em">Aktionen</th>
+                </tr>
+              </thead>
+              <tbody>`;
         group.members.forEach(m => {
-          const mIdx = Pages.inventory._itemIndex(m);
-          const md = daysUntil(getExpiry(m));
-          const mc = md < 0 ? 'danger' : md < 7 ? 'warn' : 'ok';
-          const ml = md < 0 ? `${Math.abs(md)}d abg.` : md === 0 ? 'Heute' : `${md}d`;
-          const locBadge = m.location ? `<span class="badge" style="background:var(--surface2);color:var(--subtext)">📍 ${esc(m.location)}</span>` : '';
+          const mIdx  = Pages.inventory._itemIndex(m);
+          const md    = daysUntil(getExpiry(m));
+          const mc    = md < 0 ? 'danger' : md < 7 ? 'warn' : 'ok';
+          const ml    = md < 0 ? `${Math.abs(md)}d abg.` : md === 0 ? 'Heute' : `${md}d`;
+          const mLoc  = m.location  || '—';
+          const mBrnd = m.brand     || '—';
+          const mHH   = m.household || hhAbbr || '—';
           html += `<tr style="border-top:1px solid var(--border)">
-            <td style="padding:6px 12px;width:40%">
-              <span style="font-size:.8rem;color:var(--subtext)">${locBadge} ${esc(m.labelBarcode || '')}</span>
-            </td>
-            <td style="padding:6px 12px"></td>
-            <td style="padding:6px 12px"><span class="badge badge-${mc}">${ml}</span> <span style="font-size:.8rem;color:var(--subtext)">${esc(getExpiry(m))}</span></td>
-            <td style="padding:6px 12px;text-align:center">1</td>
-            <td style="padding:6px 12px">
+            <td style="padding:8px 12px;font-size:1.1rem">📍 ${esc(mLoc)}</td>
+            <td style="padding:8px 12px;font-size:.875rem">${esc(mBrnd)}</td>
+            <td style="padding:8px 12px;font-size:.875rem">${esc(mHH)}</td>
+            <td style="padding:8px 12px"><span class="badge badge-${mc}">${ml}</span> <span style="font-size:.8rem;color:var(--subtext)">${esc(getExpiry(m))}</span></td>
+            <td style="padding:8px 12px;text-align:center">1</td>
+            <td style="padding:8px 12px">
               <div class="btn-group">
                 <button class="btn btn-sm" onclick="Pages.inventory.edit(${mIdx})">Bearb.</button>
                 <button class="btn btn-sm btn-danger" onclick="Pages.inventory.remove(${mIdx})">Löschen</button>
@@ -606,16 +617,27 @@ Pages.inventory = {
             </td>
           </tr>`;
         });
-        html += `</table></td></tr>`;
+        html += `</tbody></table></td></tr>`;
       }
     });
 
     tbody.innerHTML = html;
   },
 
+  // Track which group index is currently expanded (-1 = none)
+  _expandedGroup: -1,
+
   toggleGroup(gi) {
     const row = document.getElementById(`inv-group-${gi}`);
-    if (row) row.hidden = !row.hidden;
+    if (!row) return;
+    const expanding = row.hidden;
+    // Collapse any previously expanded group first
+    if (this._expandedGroup !== -1 && this._expandedGroup !== gi) {
+      const prev = document.getElementById(`inv-group-${this._expandedGroup}`);
+      if (prev) prev.hidden = true;
+    }
+    row.hidden = !expanding;
+    this._expandedGroup = expanding ? gi : -1;
   },
 
   _itemIndex(item) {
