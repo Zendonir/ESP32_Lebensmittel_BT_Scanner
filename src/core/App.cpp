@@ -150,14 +150,11 @@ void App::loop() {
         static uint32_t s_otaRenderMs = 0;
         if (millis() - s_otaRenderMs > 600) {
             s_otaRenderMs = millis();
-            int pct = web.otaPct();
-            String msg = String(web.otaPhase());
-            // Fortschrittsbalken als einfache ASCII-Grafik
-            int bars = pct / 5;  // 0-20 Balken
-            String bar = "[";
-            for (int i = 0; i < 20; i++) bar += (i < bars ? '#' : '.');
-            bar += "] " + String(pct) + "%";
-            display_obj.showResult("OTA Update", msg + "\n" + bar, true);
+            display_obj.showOtaStatus(
+                web.otaPhase(),
+                web.otaPct(),
+                web.otaTargetVersion()
+            );
         }
         return;
     }

@@ -222,7 +222,8 @@ struct OtaComboState {
     volatile bool done   = false;   // fertig (ok oder fehler)
     volatile bool ok     = false;   // Erfolg
     volatile int  pct    = 0;       // Fortschritt 0-100
-    char          phase[64] = {};   // aktueller Phasenstatus für Display
+    char          phase[64]         = {};  // aktueller Phasenstatus für Display
+    char          targetVersion[32] = {};  // Ziel-Versionsstring (z.B. "v1.2.3")
 };
 static OtaComboState _otaCombo;
 
@@ -320,18 +321,20 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
     return false;
 }
 
-struct OtaCombinedUrls { String fw, fs; };
+struct OtaCombinedUrls { String fw, fs, version; };
 
 static void otaCombinedTask(void *param) {
     OtaCombinedUrls *urls = static_cast<OtaCombinedUrls *>(param);
-    String fwUrl = urls->fw;
-    String fsUrl = urls->fs;
+    String fwUrl   = urls->fw;
+    String fsUrl   = urls->fs;
+    String version = urls->version;
     delete urls;
 
     _otaCombo.active = true;
     _otaCombo.done   = false;
     _otaCombo.ok     = false;
     _otaCombo.pct    = 0;
+    strncpy(_otaCombo.targetVersion, version.c_str(), sizeof(_otaCombo.targetVersion) - 1);
 
     // ── Schritt 1: BLE trennen → internen SRAM freigeben ─────────────
     strncpy(_otaCombo.phase, "BLE trennen...", sizeof(_otaCombo.phase) - 1);
@@ -1950,20 +1953,22 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
                 return;
             }
-            String fwUrl = doc["fw"] | "";
-            String fsUrl = doc["fs"] | "";
+            String fwUrl   = doc["fw"]      | "";
+            String fsUrl   = doc["fs"]      | "";
+            String version = doc["version"] | "";
             if (fwUrl.isEmpty()) {
                 req->send(400, "application/json", "{\"ok\":false,\"error\":\"fw URL fehlt\"}");
                 return;
             }
-            Logger::info("OTA", "FW-URL erhalten (" + String(fwUrl.length()) + " Zeichen), FS-URL: " + String(fsUrl.length()) + " Zeichen");
+            Logger::info("OTA", "FW-URL erhalten (" + String(fwUrl.length()) + " Zeichen), FS-URL: " + String(fsUrl.length()) + " Zeichen, Version: " + version);
             // Reset state
             _otaCombo.active = false;
             _otaCombo.done   = false;
             _otaCombo.ok     = false;
             _otaCombo.pct    = 0;
-            strncpy(_otaCombo.phase, "Starte...", sizeof(_otaCombo.phase) - 1);
-            OtaCombinedUrls *urls = new OtaCombinedUrls{fwUrl, fsUrl};
+            strncpy(_otaCombo.phase,         "Starte...", sizeof(_otaCombo.phase) - 1);
+            strncpy(_otaCombo.targetVersion, version.c_str(), sizeof(_otaCombo.targetVersion) - 1);
+            OtaCombinedUrls *urls = new OtaCombinedUrls{fwUrl, fsUrl, version};
             if (!urls) {
                 Logger::error("OTA", "Heap erschoepft: OtaCombinedUrls alloc failed");
                 strncpy(_otaCombo.phase, "Fehler: kein Heap", sizeof(_otaCombo.phase) - 1);
@@ -2198,6 +2203,7 @@ void WebInterface::registerApiRoutes() {
         });
 }
 
-bool WebInterface::isOtaActive() const { return _otaCombo.active && !_otaCombo.done; }
-int  WebInterface::otaPct()      const { return _otaCombo.pct; }
-const char *WebInterface::otaPhase() const { return _otaCombo.phase; }
+bool WebInterface::isOtaActive()          const { return _otaCombo.active && !_otaCombo.done; }
+int  WebInterface::otaPct()               const { return _otaCombo.pct; }
+const char *WebInterface::otaPhase()      const { return _otaCombo.phase; }
+const char *WebInterface::otaTargetVersion() const { return _otaCombo.targetVersion; }

@@ -2284,12 +2284,21 @@ Pages.ota = {
         return;
       }
       for (const rel of this._releases) {
-        const label = rel.prerelease
-          ? `[Vorab] ${rel.tag_name}`
-          : rel.tag_name;
+        // Format published_at (ISO 8601 UTC) → "DD.MM.YYYY HH:MM"
+        let dateStr = '';
+        if (rel.published_at) {
+          const d = new Date(rel.published_at);
+          const dd = String(d.getUTCDate()).padStart(2, '0');
+          const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const yyyy = d.getUTCFullYear();
+          const hh = String(d.getUTCHours()).padStart(2, '0');
+          const mi = String(d.getUTCMinutes()).padStart(2, '0');
+          dateStr = ` · ${dd}.${mm}.${yyyy} ${hh}:${mi}`;
+        }
+        const prefix = rel.prerelease ? '[Vorab] ' : '';
         const opt = document.createElement('option');
         opt.value = rel.tag_name;
-        opt.textContent = label;
+        opt.textContent = `${prefix}${rel.tag_name}${dateStr}`;
         sel.appendChild(opt);
       }
       btn.disabled = false;
@@ -2338,8 +2347,9 @@ Pages.ota = {
     try {
       // Kombinierter Task auf dem Gerät: BLE trennen → FS → FW → Neustart
       const r = await API.post('/api/ota-combined', {
-        fw: fwAsset.browser_download_url,
-        fs: fsAsset ? fsAsset.browser_download_url : '',
+        fw:      fwAsset.browser_download_url,
+        fs:      fsAsset ? fsAsset.browser_download_url : '',
+        version: rel.tag_name,
       });
       if (!r.ok) throw new Error(r.error || 'OTA konnte nicht gestartet werden');
       this._pollCombinedProgress();

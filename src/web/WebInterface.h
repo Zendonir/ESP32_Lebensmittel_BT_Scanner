@@ -22,9 +22,10 @@ public:
     void primeWiFiScanCache(int scanResult);
 
     // OTA combined status – abgefragt von App::loop() für Display-Anzeige
-    bool        isOtaActive() const;
-    int         otaPct()      const;
-    const char *otaPhase()    const;
+    bool        isOtaActive()          const;
+    int         otaPct()               const;
+    const char *otaPhase()             const;
+    const char *otaTargetVersion()     const;
 
 private:
     AsyncWebServer   _server;

@@ -1124,6 +1124,71 @@ void Display::showResult(const String &title, const String &message, bool succes
 }
 
 // ─────────────────────────────────────────────────────────
+//   OTA Update Status screen
+//   • kein Lagerort-Badge
+//   • zeigt Ziel-Version + Fortschrittsbalken
+// ─────────────────────────────────────────────────────────
+
+void Display::showOtaStatus(const String &phase, int pct, const String &targetVersion) {
+    if (!_initialized) return;
+    _spr.fillSprite(C_BG);
+    clear_regions();
+
+    // Dialog box (kein Hintergrund-Home-Screen — nur einfarbig)
+    int dw = 420, dh = 190;
+    int dx = (SCR_W - dw) / 2, dy = (SCR_H - dh) / 2;
+    _spr.fillRoundRect(dx, dy, dw, dh, 12, C_SURFACE);
+    _spr.drawRoundRect(dx, dy, dw, dh, 12, C_BORDER);
+
+    // Title
+    _spr.setTextColor(C_ACCENT, C_SURFACE);
+    _spr.setTextFont(4);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("OTA Update", dx + dw / 2, dy + 12);
+
+    // Version badge (if provided)
+    if (!targetVersion.isEmpty()) {
+        String v = targetVersion;
+        if (v.length() > 18) v = v.substring(0, 18);
+        _spr.setFreeFont(&FreeSans16);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextDatum(TC_DATUM);
+        _spr.drawString(v.c_str(), dx + dw / 2, dy + 42);
+        _spr.setTextFont(4);
+    }
+
+    // Phase text (FreeSans16 for umlaut support)
+    _spr.setFreeFont(&FreeSans16);
+    _spr.setTextColor(C_TEXT, C_SURFACE);
+    _spr.setTextDatum(TC_DATUM);
+    String ph = phase;
+    if (ph.length() > 38) ph = ph.substring(0, 38);
+    _spr.drawString(ph.c_str(), dx + dw / 2, dy + 75);
+    _spr.setTextFont(4);
+
+    // Graphical progress bar
+    int bar_x = dx + 20, bar_y = dy + 110;
+    int bar_w = dw - 40, bar_h = 22;
+    _spr.drawRoundRect(bar_x, bar_y, bar_w, bar_h, bar_h / 2, C_BORDER);
+    int fill_w = (int)((long)bar_w * pct / 100);
+    if (fill_w > 2) {
+        _spr.fillRoundRect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2, bar_h / 2 - 1, C_ACCENT);
+    }
+    // Percentage text centred on bar
+    _spr.setTextColor(C_TEXT, C_SURFACE);
+    _spr.setTextFont(2);
+    _spr.setTextDatum(MC_DATUM);
+    _spr.drawString((String(pct) + "%").c_str(), bar_x + bar_w / 2, bar_y + bar_h / 2);
+
+    // Note at bottom
+    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+    _spr.setTextDatum(TC_DATUM);
+    _spr.drawString("Bitte nicht trennen...", dx + dw / 2, dy + dh - 22);
+
+    commit();
+}
+
+// ─────────────────────────────────────────────────────────
 //   Inventory list
 // ─────────────────────────────────────────────────────────
 //   SD Backup import prompt
@@ -1198,6 +1263,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     struct DispGroup {
         String name;
         String brand;
+        String location;  // location of first item (shown in collapsed row)
         String mhd;      // earliest MHD
         int    count  = 0;
         int    status = 0;  // 0=ok, 1=warn (<7d), 2=expired
@@ -1257,9 +1323,10 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         }
         if (!found) {
             DispGroup ng;
-            ng.name    = item.name;
-            ng.brand   = item.brand;
-            ng.mhd     = item.expiryDate;
+            ng.name     = item.name;
+            ng.brand    = item.brand;
+            ng.location = item.location;
+            ng.mhd      = item.expiryDate;
             ng.count   = 1;
             ng.status  = st;
             ng.indices.push_back(ii);
@@ -1283,16 +1350,16 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     // to avoid conflicts with swipe-scroll gestures
     if (!_s_active_location.isEmpty()) {
         String lbl = _s_active_location;
-        if (lbl.length() > 16) lbl = lbl.substring(0, 16);
+        if (lbl.length() > 10) lbl = lbl.substring(0, 10);   // FreeSans22pt ist breiter
         uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
-        _spr.setFreeFont(&FreeSans16);
+        _spr.setFreeFont(&FreeSans22pt);   // ~50% größer als vorher (FreeSans16)
         int tw = (int)_spr.textWidth(lbl.c_str());
-        int ph = 26, pad_x = 8, pw = tw + pad_x * 2;
+        int ph = 34, pad_x = 10, pw = tw + pad_x * 2;
         int px = SCR_W - 22 - pw, py = (HDR_H - ph) / 2;
         _spr.fillRoundRect(px, py, pw, ph, ph / 2, col);
         _spr.setTextColor(C_TEXT, col);
         _spr.setTextDatum(MC_DATUM);
-        _spr.drawString(lbl.c_str(), px + pw / 2, py + ph / 2);
+        _spr.drawString(lbl.c_str(), px + pw / 2, py + ph / 2 + 1);
         _spr.setTextFont(4);
     }
 
@@ -1314,20 +1381,36 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.drawFastHLine(0, sb_y + SEARCH_H - 1, SCR_W, C_BORDER);
     add_region(0, sb_y, SCR_W, SEARCH_H, OnscreenAction::INV_SEARCH);
 
+    // ── Determine if any group is expanded (needed for column header) ──
+    int expandedIdx = -1;
+    for (int gi = 0; gi < (int)groups.size(); gi++) {
+        if (groups[gi].name == expandedGroup) { expandedIdx = gi; break; }
+    }
+
     // ── Column headers ──────────────────────────────────────
-    // Layout (SCR_W=480):  Produkt 0..299 | MHD 300..409 | Menge 410..479
+    // Layout (SCR_W=480): columns adapt to expanded/collapsed state
     static constexpr int COL_H    = 24;
-    static constexpr int COL_MHD  = 410;   // right edge of MHD column
-    static constexpr int COL_MENGE= 472;   // right edge of Menge column
+    static constexpr int COL_MHD  = 445;   // right edge of MHD column
+    static constexpr int COL_MENGE= 475;   // right edge of Menge column
     int col_y = HDR_H + SEARCH_H;
     _spr.fillRect(0, col_y, SCR_W, COL_H, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
     _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("Produkt", 8, col_y + 5);
-    _spr.setTextDatum(TR_DATUM);
-    _spr.drawString("MHD",   COL_MHD,   col_y + 5);
-    _spr.drawString("Menge", COL_MENGE, col_y + 5);
+    if (expandedIdx >= 0) {
+        // Expanded view: Lagerort | Marke/HH | MHD
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("Lagerort", 8, col_y + 5);
+        _spr.setTextDatum(TR_DATUM);
+        _spr.drawString("Marke/HH", 290, col_y + 5);
+        _spr.drawString("MHD", COL_MHD, col_y + 5);
+    } else {
+        // Collapsed view: Produkt | MHD | Menge
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("Produkt", 8, col_y + 5);
+        _spr.setTextDatum(TR_DATUM);
+        _spr.drawString("MHD",   COL_MHD,   col_y + 5);
+        _spr.drawString("Menge", COL_MENGE, col_y + 5);
+    }
     _spr.drawFastHLine(0, col_y + COL_H - 1, SCR_W, C_BORDER);
 
     // ── Group rows ──────────────────────────────────────────
@@ -1336,12 +1419,6 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
 
     // Clear group name cache
     for (int r = 0; r < 5; r++) _s_inv_group_names[r] = "";
-
-    // Check for expanded group
-    int expandedIdx = -1;
-    for (int gi = 0; gi < (int)groups.size(); gi++) {
-        if (groups[gi].name == expandedGroup) { expandedIdx = gi; break; }
-    }
 
     if (expandedIdx >= 0) {
         // ── Expanded view: header + individual items ─────────
@@ -1383,25 +1460,34 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             uint16_t mc = (k > 0 && k < today) ? C_RED : (k > 0 && k <= warnDay) ? C_YELLOW : C_GREEN;
             _spr.fillRect(0, ry, 4, SUB_H, mc);
 
-            // MHD – top line left
+            // Lagerort – top line left, big (FreeSans16)
+            String locLabel = it.location.isEmpty() ? "-" : it.location;
+            _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, rb);
-            _spr.setTextFont(2);
             _spr.setTextDatum(ML_DATUM);
-            String mhdLabel = it.expiryDate.isEmpty() ? "Kein MHD" : it.expiryDate;
-            _spr.drawString(mhdLabel.c_str(), 10, ry + 13);
+            _spr.drawString(trunc(locLabel, 18).c_str(), 10, ry + 13);
+            _spr.setTextFont(4);
 
-            // Haushalt · Lagerort – second line left
+            // Marke · Haushalt – second line left, small
             String meta;
-            if (!hhAbbr.isEmpty()) meta = hhAbbr;
-            if (!it.location.isEmpty()) {
+            if (!it.brand.isEmpty()) meta = it.brand;
+            if (!hhAbbr.isEmpty()) {
                 if (!meta.isEmpty()) meta += " \xB7 ";
-                meta += it.location;
+                meta += hhAbbr;
             }
             if (!meta.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, rb);
                 _spr.setTextFont(1);
-                _spr.drawString(trunc(meta, 30).c_str(), 10, ry + 30);
+                _spr.setTextDatum(ML_DATUM);
+                _spr.drawString(trunc(meta, 28).c_str(), 10, ry + 30);
             }
+
+            // MHD – right-aligned (colour-coded)
+            String mhdLabel = it.expiryDate.isEmpty() ? "kein MHD" : it.expiryDate;
+            _spr.setTextColor(mc, rb);
+            _spr.setTextFont(2);
+            _spr.setTextDatum(MR_DATUM);
+            _spr.drawString(mhdLabel.c_str(), SCR_W - 8, ry + SUB_H / 2);
 
             _spr.drawFastHLine(0, ry + SUB_H - 1, SCR_W, C_BORDER);
         }
@@ -1423,19 +1509,20 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
             _spr.fillRect(0, ry, 4, ROW_H, sc);
 
-            // ▼ triangle + product name (col 1)
+            // ▼ triangle + product name (col 1) — longer truncation, no brand
             _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
             _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, row_bg);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(g.name, 17).c_str(), 20, ry + 11);
+            _spr.drawString(trunc(g.name, 24).c_str(), 20, ry + 11);
             _spr.setTextFont(4);
 
-            // Brand sub-line (col 1)
-            if (!g.brand.isEmpty()) {
+            // Location sub-line (col 1) — replaces brand
+            if (!g.location.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, row_bg);
-                _spr.setTextFont(1);
-                _spr.drawString(trunc(g.brand, 22).c_str(), 20, ry + 27);
+                _spr.setTextFont(2);
+                _spr.setTextDatum(ML_DATUM);
+                _spr.drawString(trunc(g.location, 22).c_str(), 20, ry + 27);
             }
 
             // MHD – right-aligned to COL_MHD (col 2)

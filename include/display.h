@@ -135,6 +135,7 @@ public:
     void showDateEntry(const ProductInfo &product, const String &dateDraft);
     void showQuantityEntry(const ProductInfo &product, const String &expiryDate, int quantity);
     void showResult(const String &title, const String &message, bool success, bool showPrintButtons = false);
+    void showOtaStatus(const String &phase, int pct, const String &targetVersion);
     void showInventoryList(const std::vector<InventoryItem> &items,
                            const String &filter = "",
                            const String &hhAbbr = "",
