@@ -38,7 +38,12 @@ void App::begin() {
     Logger::begin(115200);
     // Suppress ESP-IDF internal log output on UART0 (GPIO43 = printer TX).
     // esp_log uses UART0 by default; only errors are critical enough to keep.
-    esp_log_level_set("*", ESP_LOG_ERROR);
+    // Suppress ALL ESP-IDF / Arduino-framework internal log output on the serial port.
+    // Our own Logger class uses Serial.printf() directly and is not affected.
+    // Without ESP_LOG_NONE the Arduino NetworkClient/WiFiClientSecure stack spams
+    // dozens of "[E][NetworkClient.cpp:325] setSocketOption(): fail on 0, errno: 9"
+    // messages on every failed TLS connection, drowning out our diagnostics.
+    esp_log_level_set("*", ESP_LOG_NONE);
     Logger::info("App", "ESP32-S3 Lebensmittel-Scanner booting");
     state.begin(AppState::BOOTING);
 

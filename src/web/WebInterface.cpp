@@ -54,9 +54,15 @@ static void otaUrlTask(void *param) {
 
     _ota_ssl_use_psram();  // route SSL heap to PSRAM before any WiFiClientSecure
 
+    // Heap snapshot before connecting
+    size_t freeTotal    = esp_get_free_heap_size();
+    size_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    Logger::info("OTA", String("Heap vor TLS: ") + freeTotal +
+                        " bytes total, " + freeInternal + " internal");
+
     // ── Step 1: follow redirects until we reach the real download URL ────────
     for (int hop = 0; hop < 4; hop++) {
-        Logger::info("OTA", String("GET ") + currentUrl);
+        Logger::info("OTA", String("GET [") + hop + "] " + currentUrl);
         WiFiClientSecure probe;
         probe.setInsecure();
         probe.setTimeout(20);
@@ -70,6 +76,11 @@ static void otaUrlTask(void *param) {
         }
         int code = http.GET();
         Logger::info("OTA", String("HTTP ") + code);
+        if (code <= 0) {
+            Logger::error("OTA", String("TLS/Verbindungsfehler: ") + code +
+                          " | free internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+            http.end(); _otaUrlDone = true; vTaskDelete(nullptr); return;
+        }
         if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
             String loc = http.getLocation();
             http.end();
@@ -135,8 +146,14 @@ static void otaFsUrlTask(void *param) {
 
     _ota_ssl_use_psram();  // route SSL heap to PSRAM before any WiFiClientSecure
 
+    // Heap snapshot before connecting
+    size_t freeTotal    = esp_get_free_heap_size();
+    size_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    Logger::info("OTA", String("FS Heap vor TLS: ") + freeTotal +
+                        " bytes total, " + freeInternal + " internal");
+
     for (int hop = 0; hop < 4; hop++) {
-        Logger::info("OTA", String("FS GET ") + currentUrl);
+        Logger::info("OTA", String("FS GET [") + hop + "] " + currentUrl);
         WiFiClientSecure probe;
         probe.setInsecure();
         probe.setTimeout(20);
@@ -150,6 +167,11 @@ static void otaFsUrlTask(void *param) {
         }
         int code = http.GET();
         Logger::info("OTA", String("FS HTTP ") + code);
+        if (code <= 0) {
+            Logger::error("OTA", String("FS TLS/Verbindungsfehler: ") + code +
+                          " | free internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+            http.end(); _otaFsDone = true; vTaskDelete(nullptr); return;
+        }
         if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
             String loc = http.getLocation();
             http.end();
