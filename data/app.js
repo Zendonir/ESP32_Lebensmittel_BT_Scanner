@@ -1802,14 +1802,16 @@ Pages.scanner = {
         res = await raw.json();
         break;
       }
-      this._bleDevices = Array.isArray(res) ? res : [];
+      // Nur HID-Geräte anzeigen (Barcode-Scanner, Tastaturen usw.)
+      const all = Array.isArray(res) ? res : [];
+      this._bleDevices = all.filter(d => d.hid);
       box.innerHTML = this._bleDevices.length
         ? this._bleDevices.map((d, idx) => `
           <div class="scan-result-item" onclick="Pages.scanner.bleConnect(${idx})">
             <span>${esc(d.name || d.address)}</span>
-            <span class="scan-rssi">${d.rssi} dBm ${d.hid ? 'HID' : ''}</span>
+            <span class="scan-rssi">${d.rssi} dBm HID</span>
           </div>`).join('')
-        : '<div class="muted" style="padding:8px">Keine Bluetooth-Geräte gefunden</div>';
+        : '<div class="muted" style="padding:8px">Keine HID-Geräte gefunden</div>';
     } catch(e) {
       Toast.error('Bluetooth-Scan: ' + e.message);
       box.hidden = true;
