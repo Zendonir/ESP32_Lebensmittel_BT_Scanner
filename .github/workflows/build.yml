@@ -99,9 +99,9 @@ jobs:
             esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
             ```
 
-      # ── Stabiles Release bei v*-Tags ──────────────────────────────────────
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # ── Stabiles Release bei v*-Tags (ohne -pre) ──────────────────────────
+      - name: Create stable Release
+        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-pre')
         uses: softprops/action-gh-release@v2
         with:
           make_latest: true
@@ -117,6 +117,40 @@ jobs:
             | `firmware_ota.bin` | OTA-Update über Web-Interface |
             | `firmware_full_flash.bin` | Erstmaliges Flashen per USB (`esptool`) |
             | `littlefs.bin` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+
+            ### USB-Flash Befehl
+            ```
+            esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
+            ```
+
+      # ── Vorabrelease bei v*-pre*-Tags ─────────────────────────────────────
+      - name: Create pre-Release
+        if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-pre')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          make_latest: false
+          files: |
+            firmware_ota.bin
+            firmware_full_flash.bin
+            littlefs.bin
+          body: |
+            ## Vorabversion ${{ github.ref_name }}
+
+            > ⚠️ Dies ist eine Vorabversion zum Testen. Für den Produktiveinsatz eine stabile Version verwenden.
+
+            | Datei | Verwendung |
+            |-------|-----------|
+            | `firmware_ota.bin` | OTA-Update über Web-Interface |
+            | `firmware_full_flash.bin` | Erstmaliges Flashen per USB (`esptool`) |
+            | `littlefs.bin` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+
+            ### Änderungen
+            - Display-Inventar: Lagerort statt Marke in Hauptzeile, Spaltenköpfe dynamisch
+            - OTA-Statusscreen: Versionsnummer, echter Fortschrittsbalken, kein Lagerort-Badge
+            - Web-UI: Release-Datum im OTA-Dropdown
+            - Mobile: Swipe-to-delete in Gruppenzeilen gefixt, Lagerort in Unterzeilen
+            - Display-Standby: Standardwert 5 Min, in mobiler UI einstellbar
 
             ### USB-Flash Befehl
             ```
