@@ -2352,14 +2352,27 @@ Pages.ota = {
 
   _pollCombinedProgress() {
     if (this._pollTimer) clearInterval(this._pollTimer);
+    let noActivityCount = 0;
     this._pollTimer = setInterval(async () => {
       try {
         const p = await API.get('/api/ota-combined-progress');
         const progress = document.getElementById('otaProgress');
         const progText = document.getElementById('otaProgressText');
-        if (p.active || p.done) {
-          progress.style.width = `${p.pct}%`;
-          progText.textContent = p.phase || `${p.pct}%`;
+        // Immer Phase + Fortschritt anzeigen sobald phase nicht leer ist
+        if (p.phase) {
+          progText.textContent = p.phase;
+          progress.style.width = `${p.pct || 0}%`;
+          noActivityCount = 0;
+        } else {
+          noActivityCount++;
+          // Nach 10 s ohne Aktivität (keine Phase) Timeout melden
+          if (noActivityCount > 6) {
+            clearInterval(this._pollTimer); this._pollTimer = null;
+            progText.textContent = 'Fehler: keine Antwort vom Gerät';
+            Toast.error('OTA: Gerät antwortet nicht – Task-Start fehlgeschlagen?');
+            document.getElementById('otaInstallBtn').disabled = false;
+            return;
+          }
         }
         if (p.done) {
           clearInterval(this._pollTimer); this._pollTimer = null;
@@ -2374,9 +2387,10 @@ Pages.ota = {
           }
         }
       } catch(e) {
-        // Netzwerkfehler während Neustart ist normal – kurz warten dann neu laden
+        // Netzwerkfehler = Gerät bootet neu – Seite nach Pause neu laden
         clearInterval(this._pollTimer); this._pollTimer = null;
-        setTimeout(() => location.reload(), 8000);
+        document.getElementById('otaProgressText').textContent = 'Neustart – Seite lädt neu…';
+        setTimeout(() => location.reload(), 10000);
       }
     }, 1500);
   },

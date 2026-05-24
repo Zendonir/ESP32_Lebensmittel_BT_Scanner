@@ -1925,12 +1925,14 @@ void WebInterface::registerApiRoutes() {
     // ── Kombiniertes OTA (FS + Firmware) ─────────────────────────────
     _server.on("/api/ota-combined", HTTP_POST,
         [](AsyncWebServerRequest *req) {
+            Logger::info("OTA", "Combined-Endpoint aufgerufen");
             if (_otaCombo.active && !_otaCombo.done) {
                 req->send(409, "application/json", "{\"ok\":false,\"error\":\"OTA laeuft bereits\"}");
                 return;
             }
             JsonDocument doc;
             if (deserializeJson(doc, _body) != DeserializationError::Ok) {
+                Logger::error("OTA", "Combined: JSON-Parsing fehlgeschlagen, bodyLen=" + String(_body.length()));
                 req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
                 return;
             }
@@ -1940,6 +1942,7 @@ void WebInterface::registerApiRoutes() {
                 req->send(400, "application/json", "{\"ok\":false,\"error\":\"fw URL fehlt\"}");
                 return;
             }
+            Logger::info("OTA", "FW-URL erhalten (" + String(fwUrl.length()) + " Zeichen), FS-URL: " + String(fsUrl.length()) + " Zeichen");
             // Reset state
             _otaCombo.active = false;
             _otaCombo.done   = false;
@@ -1947,7 +1950,26 @@ void WebInterface::registerApiRoutes() {
             _otaCombo.pct    = 0;
             strncpy(_otaCombo.phase, "Starte...", sizeof(_otaCombo.phase) - 1);
             OtaCombinedUrls *urls = new OtaCombinedUrls{fwUrl, fsUrl};
-            xTaskCreate(otaCombinedTask, "ota_comb", 40960, urls, 3, nullptr);
+            if (!urls) {
+                Logger::error("OTA", "Heap erschoepft: OtaCombinedUrls alloc failed");
+                strncpy(_otaCombo.phase, "Fehler: kein Heap", sizeof(_otaCombo.phase) - 1);
+                _otaCombo.done = true;
+                req->send(500, "application/json", "{\"ok\":false,\"error\":\"Heap erschoepft\"}");
+                return;
+            }
+            // Stack 32768 = gleiche Groesse wie die Einzel-Tasks (in internal SRAM)
+            BaseType_t rc = xTaskCreate(otaCombinedTask, "ota_comb", 32768, urls, 3, nullptr);
+            if (rc != pdPASS) {
+                Logger::error("OTA", "xTaskCreate fehlgeschlagen! rc=" + String(rc)
+                    + " freeHeap=" + String(esp_get_free_heap_size())
+                    + " internal=" + String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+                delete urls;
+                strncpy(_otaCombo.phase, "Fehler: Task-Start", sizeof(_otaCombo.phase) - 1);
+                _otaCombo.done = true;
+                req->send(500, "application/json", "{\"ok\":false,\"error\":\"Task-Start fehlgeschlagen\"}");
+                return;
+            }
+            Logger::info("OTA", "Task gestartet");
             req->send(202, "application/json", "{\"ok\":true}");
         }, nullptr, bodyCollect);
 
