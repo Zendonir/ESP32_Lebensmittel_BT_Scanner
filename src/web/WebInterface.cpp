@@ -233,6 +233,15 @@ static OtaComboState _otaCombo;
 // label: Präfix für die phase-Meldung (z.B. "Web-UI" / "Firmware").
 static bool _otaDownloadFlash(const String &startUrl, int slot,
                               const char *label, int pctBase, int pctRange) {
+    // Download-Puffer im PSRAM statt auf dem Stack (spart ~4 KB Task-Stack)
+    static constexpr size_t BUF_SZ = 4096;
+    uint8_t *buf = (uint8_t *)heap_caps_malloc(BUF_SZ, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = (uint8_t *)malloc(BUF_SZ);
+    if (!buf) {
+        Logger::error("OTA", String(label) + " kein Puffer-Heap");
+        return false;
+    }
+
     String url = startUrl;
     for (int hop = 0; hop < 4; hop++) {
         Logger::info("OTA", String(label) + " GET [" + hop + "] " + url);
@@ -249,6 +258,7 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
             http.setUserAgent("ESP32-OTA/1.0");
             if (!http.begin(client, url)) {
                 Logger::error("OTA", String(label) + " http.begin failed");
+                free(buf);
                 return false;
             }
             int code = http.GET();
@@ -257,6 +267,7 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
                 Logger::error("OTA", String(label) + " TLS Fehler: " + code +
                     " | internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
                 http.end();
+                free(buf);
                 return false;
             }
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
@@ -266,6 +277,7 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
             } else if (code != 200) {
                 Logger::error("OTA", String(label) + " HTTP " + code);
                 http.end();
+                free(buf);
                 return false;
             } else {
                 int total = http.getSize();
@@ -274,15 +286,15 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
                 if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, slot)) {
                     Logger::error("OTA", String(label) + " Update.begin failed");
                     http.end();
+                    free(buf);
                     return false;
                 }
                 WiFiClient *stream = http.getStreamPtr();
-                uint8_t buf[4096];
                 int received = 0;
                 while (http.connected() && (total < 0 || received < total)) {
                     int avail = stream->available();
                     if (!avail) { delay(5); continue; }
-                    int n = stream->readBytes(buf, min(avail, (int)sizeof(buf)));
+                    int n = stream->readBytes(buf, min(avail, (int)BUF_SZ));
                     if (n > 0) {
                         Update.write(buf, n);
                         received += n;
@@ -300,8 +312,10 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
             }
         } // WiFiClientSecure und HTTPClient werden hier zerstört → TLS-Speicher frei
         if (redirect) continue;
+        free(buf);
         return success;
     }
+    free(buf);
     Logger::error("OTA", String(label) + " zu viele Redirects");
     return false;
 }
@@ -1957,12 +1971,15 @@ void WebInterface::registerApiRoutes() {
                 req->send(500, "application/json", "{\"ok\":false,\"error\":\"Heap erschoepft\"}");
                 return;
             }
-            // Stack 32768 = gleiche Groesse wie die Einzel-Tasks (in internal SRAM)
-            BaseType_t rc = xTaskCreate(otaCombinedTask, "ota_comb", 32768, urls, 3, nullptr);
+            // Stack 8192: buf[4096] läuft im PSRAM-Heap (nicht Stack), daher reichen 8 KB.
+            // FreeRTOS allokiert den Stack aus internem SRAM; bei Fragmentierung scheitert
+            // ein zu großer Stack – 8 KB passt auch bei knappem internen SRAM.
+            BaseType_t rc = xTaskCreate(otaCombinedTask, "ota_comb", 8192, urls, 3, nullptr);
             if (rc != pdPASS) {
                 Logger::error("OTA", "xTaskCreate fehlgeschlagen! rc=" + String(rc)
                     + " freeHeap=" + String(esp_get_free_heap_size())
-                    + " internal=" + String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+                    + " internal=" + String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL))
+                    + " largestBlock=" + String(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
                 delete urls;
                 strncpy(_otaCombo.phase, "Fehler: Task-Start", sizeof(_otaCombo.phase) - 1);
                 _otaCombo.done = true;
