@@ -215,6 +215,154 @@ static void otaFsUrlTask(void *param) {
     vTaskDelete(nullptr);
 }
 
+/* ── Kombiniertes OTA (FS + Firmware in einem Task) ──────────── */
+// Status-Struct: wird von App::loop() abgefragt für Display-Anzeige
+struct OtaComboState {
+    volatile bool active = false;   // OTA läuft gerade
+    volatile bool done   = false;   // fertig (ok oder fehler)
+    volatile bool ok     = false;   // Erfolg
+    volatile int  pct    = 0;       // Fortschritt 0-100
+    char          phase[64] = {};   // aktueller Phasenstatus für Display
+};
+static OtaComboState _otaCombo;
+
+// Lädt eine URL via HTTPS (folgt bis zu 3 Redirects) und flasht das
+// Ergebnis in den angegebenen OTA-Slot. Nutzt scoped WiFiClientSecure-
+// Objekte damit die TLS-Resourcen nach jedem Hop/Phase freigegeben werden.
+// pctBase + pctRange: wie der Fortschritt in _otaCombo.pct abgebildet wird.
+// label: Präfix für die phase-Meldung (z.B. "Web-UI" / "Firmware").
+static bool _otaDownloadFlash(const String &startUrl, int slot,
+                              const char *label, int pctBase, int pctRange) {
+    String url = startUrl;
+    for (int hop = 0; hop < 4; hop++) {
+        Logger::info("OTA", String(label) + " GET [" + hop + "] " + url);
+        snprintf(_otaCombo.phase, sizeof(_otaCombo.phase), "%s: Verbinde...", label);
+        bool redirect = false;
+        bool success  = false;
+        {   // ← scoped block: WiFiClientSecure + HTTPClient werden beim } zerstört
+            WiFiClientSecure client;
+            client.setInsecure();
+            client.setTimeout(20);
+            HTTPClient http;
+            http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+            http.setTimeout(20000);
+            http.setUserAgent("ESP32-OTA/1.0");
+            if (!http.begin(client, url)) {
+                Logger::error("OTA", String(label) + " http.begin failed");
+                return false;
+            }
+            int code = http.GET();
+            Logger::info("OTA", String(label) + " HTTP " + code);
+            if (code <= 0) {
+                Logger::error("OTA", String(label) + " TLS Fehler: " + code +
+                    " | internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+                http.end();
+                return false;
+            }
+            if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                url = http.getLocation();
+                http.end();
+                redirect = true;  // client + http destroyed at }, then continue
+            } else if (code != 200) {
+                Logger::error("OTA", String(label) + " HTTP " + code);
+                http.end();
+                return false;
+            } else {
+                int total = http.getSize();
+                Logger::info("OTA", String(label) + " size: " + total + " bytes");
+                snprintf(_otaCombo.phase, sizeof(_otaCombo.phase), "%s: 0%%", label);
+                if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, slot)) {
+                    Logger::error("OTA", String(label) + " Update.begin failed");
+                    http.end();
+                    return false;
+                }
+                WiFiClient *stream = http.getStreamPtr();
+                uint8_t buf[4096];
+                int received = 0;
+                while (http.connected() && (total < 0 || received < total)) {
+                    int avail = stream->available();
+                    if (!avail) { delay(5); continue; }
+                    int n = stream->readBytes(buf, min(avail, (int)sizeof(buf)));
+                    if (n > 0) {
+                        Update.write(buf, n);
+                        received += n;
+                        if (total > 0) {
+                            int pct = received * 100 / total;
+                            _otaCombo.pct = pctBase + pct * pctRange / 100;
+                            snprintf(_otaCombo.phase, sizeof(_otaCombo.phase),
+                                     "%s: %d%%", label, pct);
+                        }
+                    }
+                }
+                http.end();
+                success = Update.end(true) && Update.isFinished();
+                Logger::info("OTA", String(label) + (success ? " OTA OK" : " OTA FAILED"));
+            }
+        } // WiFiClientSecure und HTTPClient werden hier zerstört → TLS-Speicher frei
+        if (redirect) continue;
+        return success;
+    }
+    Logger::error("OTA", String(label) + " zu viele Redirects");
+    return false;
+}
+
+struct OtaCombinedUrls { String fw, fs; };
+
+static void otaCombinedTask(void *param) {
+    OtaCombinedUrls *urls = static_cast<OtaCombinedUrls *>(param);
+    String fwUrl = urls->fw;
+    String fsUrl = urls->fs;
+    delete urls;
+
+    _otaCombo.active = true;
+    _otaCombo.done   = false;
+    _otaCombo.ok     = false;
+    _otaCombo.pct    = 0;
+
+    // ── Schritt 1: BLE trennen → internen SRAM freigeben ─────────────
+    strncpy(_otaCombo.phase, "BLE trennen...", sizeof(_otaCombo.phase) - 1);
+    ble_scanner.setAutoReconnect(false);
+    ble_scanner.disconnect();
+    delay(800);  // NimBLE Zeit zum Aufräumen geben
+
+    _ota_ssl_use_psram();  // SSL-Allokierungen auf PSRAM umleiten
+
+    Logger::info("OTA", String("Kombiniert – internal nach BLE-Trennung: ")
+        + heap_caps_get_free_size(MALLOC_CAP_INTERNAL) + " bytes");
+
+    // ── Schritt 2: LittleFS (Web-UI) ─────────────────────────────────
+    // Kein Neustart nach FS. Scoped-Block in _otaDownloadFlash stellt sicher,
+    // dass TLS-Ressourcen VOR dem Firmware-Download freigegeben werden.
+    if (!fsUrl.isEmpty()) {
+        bool fsOk = _otaDownloadFlash(fsUrl, U_SPIFFS, "Web-UI", 0, 45);
+        if (!fsOk) {
+            strncpy(_otaCombo.phase, "Web-UI: FEHLER", sizeof(_otaCombo.phase) - 1);
+            _otaCombo.done = true; _otaCombo.active = false;
+            vTaskDelete(nullptr); return;
+        }
+        // Kurz warten damit der TCP-Stack alle Puffer freigibt
+        delay(500);
+        Logger::info("OTA", String("Internal nach Web-UI: ")
+            + heap_caps_get_free_size(MALLOC_CAP_INTERNAL) + " bytes");
+    }
+
+    // ── Schritt 3: Firmware ───────────────────────────────────────────
+    bool fwOk = _otaDownloadFlash(fwUrl, U_FLASH, "Firmware", 50, 50);
+    if (fwOk) {
+        strncpy(_otaCombo.phase, "Neustart...", sizeof(_otaCombo.phase) - 1);
+        _otaCombo.pct = 100;
+        _otaCombo.ok  = true;
+        delay(500);
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        delay(300);
+        esp_restart();
+    }
+    strncpy(_otaCombo.phase, "Firmware: FEHLER", sizeof(_otaCombo.phase) - 1);
+    _otaCombo.done = true; _otaCombo.active = false;
+    vTaskDelete(nullptr);
+}
+
 /* ── WiFi scan cache ──────────────────────────────────────────── */
 static constexpr int WIFI_SCAN_CACHE_MAX = 30;
 
@@ -1774,6 +1922,46 @@ void WebInterface::registerApiRoutes() {
         req->send(200, "application/json", out);
     });
 
+    // ── Kombiniertes OTA (FS + Firmware) ─────────────────────────────
+    _server.on("/api/ota-combined", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            if (_otaCombo.active && !_otaCombo.done) {
+                req->send(409, "application/json", "{\"ok\":false,\"error\":\"OTA laeuft bereits\"}");
+                return;
+            }
+            JsonDocument doc;
+            if (deserializeJson(doc, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
+                return;
+            }
+            String fwUrl = doc["fw"] | "";
+            String fsUrl = doc["fs"] | "";
+            if (fwUrl.isEmpty()) {
+                req->send(400, "application/json", "{\"ok\":false,\"error\":\"fw URL fehlt\"}");
+                return;
+            }
+            // Reset state
+            _otaCombo.active = false;
+            _otaCombo.done   = false;
+            _otaCombo.ok     = false;
+            _otaCombo.pct    = 0;
+            strncpy(_otaCombo.phase, "Starte...", sizeof(_otaCombo.phase) - 1);
+            OtaCombinedUrls *urls = new OtaCombinedUrls{fwUrl, fsUrl};
+            xTaskCreate(otaCombinedTask, "ota_comb", 40960, urls, 3, nullptr);
+            req->send(202, "application/json", "{\"ok\":true}");
+        }, nullptr, bodyCollect);
+
+    _server.on("/api/ota-combined-progress", HTTP_GET, [](AsyncWebServerRequest *req) {
+        JsonDocument doc;
+        doc["active"] = (bool)_otaCombo.active;
+        doc["done"]   = (bool)_otaCombo.done;
+        doc["ok"]     = (bool)_otaCombo.ok;
+        doc["pct"]    = (int)_otaCombo.pct;
+        doc["phase"]  = _otaCombo.phase;
+        String out; serializeJson(doc, out);
+        req->send(200, "application/json", out);
+    });
+
     // ---- TOUCH DEBUG ----
     _server.on("/api/touch-debug", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
@@ -1970,3 +2158,7 @@ void WebInterface::registerApiRoutes() {
             }
         });
 }
+
+bool WebInterface::isOtaActive() const { return _otaCombo.active && !_otaCombo.done; }
+int  WebInterface::otaPct()      const { return _otaCombo.pct; }
+const char *WebInterface::otaPhase() const { return _otaCombo.phase; }

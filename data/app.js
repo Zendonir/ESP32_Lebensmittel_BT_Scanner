@@ -2332,23 +2332,17 @@ Pages.ota = {
     const progText = document.getElementById('otaProgressText');
     document.getElementById('otaProgressCard').hidden = false;
     progress.style.width = '0%';
+    progText.textContent = 'BLE trennen & Verbinde…';
     document.getElementById('otaInstallBtn').disabled = true;
 
     try {
-      // Phase 1: LittleFS (Web-UI) aktualisieren – kein Neustart
-      if (fsAsset) {
-        progText.textContent = 'Web-UI: Lade…';
-        const r1 = await API.post('/api/ota-url-fs', { url: fsAsset.browser_download_url });
-        if (!r1.ok) throw new Error(r1.error || 'FS-Update fehlgeschlagen');
-        await this._waitOtaProgress('/api/ota-fs-progress', progress, progText, 'Web-UI');
-      }
-
-      // Phase 2: Firmware aktualisieren – löst Neustart aus
-      progress.style.width = '0%';
-      progText.textContent = 'Firmware: Lade…';
-      const r2 = await API.post('/api/ota-url', { url: fwAsset.browser_download_url });
-      if (!r2.ok) throw new Error(r2.error || 'Firmware-Update fehlgeschlagen');
-      this._pollProgress();
+      // Kombinierter Task auf dem Gerät: BLE trennen → FS → FW → Neustart
+      const r = await API.post('/api/ota-combined', {
+        fw: fwAsset.browser_download_url,
+        fs: fsAsset ? fsAsset.browser_download_url : '',
+      });
+      if (!r.ok) throw new Error(r.error || 'OTA konnte nicht gestartet werden');
+      this._pollCombinedProgress();
     } catch(e) {
       progText.textContent = 'Fehler!';
       Toast.error('OTA: ' + e.message);
@@ -2356,45 +2350,34 @@ Pages.ota = {
     }
   },
 
-  _waitOtaProgress(endpoint, progressEl, textEl, label) {
-    return new Promise((resolve, reject) => {
-      const t = setInterval(async () => {
-        try {
-          const p = await API.get(endpoint);
-          progressEl.style.width = `${p.pct}%`;
-          textEl.textContent = `${label}: ${p.pct}%`;
-          if (p.done) {
-            clearInterval(t);
-            this._progressInterval = null;
-            if (p.ok) resolve();
-            else reject(new Error(`${label} fehlgeschlagen`));
-          }
-        } catch {}
-      }, 1500);
-      this._progressInterval = t;
-    });
-  },
-
-  _pollProgress() {
+  _pollCombinedProgress() {
     if (this._pollTimer) clearInterval(this._pollTimer);
     this._pollTimer = setInterval(async () => {
       try {
-        const p = await API.get('/api/ota-progress');
-        document.getElementById('otaProgress').style.width = `${p.pct}%`;
-        document.getElementById('otaProgressText').textContent = `${p.pct}%`;
+        const p = await API.get('/api/ota-combined-progress');
+        const progress = document.getElementById('otaProgress');
+        const progText = document.getElementById('otaProgressText');
+        if (p.active || p.done) {
+          progress.style.width = `${p.pct}%`;
+          progText.textContent = p.phase || `${p.pct}%`;
+        }
         if (p.done) {
           clearInterval(this._pollTimer); this._pollTimer = null;
           if (p.ok) {
-            document.getElementById('otaProgress').style.width = '100%';
-            document.getElementById('otaProgressText').textContent = 'Fertig – Neustart…';
+            progress.style.width = '100%';
+            progText.textContent = 'Fertig – Gerät startet neu…';
             Toast.success('Update erfolgreich – Gerät startet neu');
           } else {
-            document.getElementById('otaProgressText').textContent = 'Fehler!';
-            Toast.error('OTA fehlgeschlagen');
+            progText.textContent = p.phase || 'Fehler!';
+            Toast.error('OTA fehlgeschlagen: ' + (p.phase || ''));
             document.getElementById('otaInstallBtn').disabled = false;
           }
         }
-      } catch {}
+      } catch(e) {
+        // Netzwerkfehler während Neustart ist normal – kurz warten dann neu laden
+        clearInterval(this._pollTimer); this._pollTimer = null;
+        setTimeout(() => location.reload(), 8000);
+      }
     }, 1500);
   },
 

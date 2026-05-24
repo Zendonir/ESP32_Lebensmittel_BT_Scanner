@@ -143,6 +143,25 @@ void App::loop() {
     // Touch polling runs in its own FreeRTOS task (startTouchTask in begin()).
     // No tick() call needed here.
 
+    // ── OTA läuft: Display-Status anzeigen, alles andere sperren ─────
+    if (web.isOtaActive()) {
+        _lastActivityMs = millis();  // Standby verhindern
+        if (!_displayOn) setBacklight(true);
+        static uint32_t s_otaRenderMs = 0;
+        if (millis() - s_otaRenderMs > 600) {
+            s_otaRenderMs = millis();
+            int pct = web.otaPct();
+            String msg = String(web.otaPhase());
+            // Fortschrittsbalken als einfache ASCII-Grafik
+            int bars = pct / 5;  // 0-20 Balken
+            String bar = "[";
+            for (int i = 0; i < 20; i++) bar += (i < bars ? '#' : '.');
+            bar += "] " + String(pct) + "%";
+            display_obj.showResult("OTA Update", msg + "\n" + bar, true);
+        }
+        return;
+    }
+
     // WiFi setup: check async scan result and show network list
     if (workflow == WorkflowMode::WIFI_SETUP_SCAN) {
         int n = WiFi.scanComplete();
