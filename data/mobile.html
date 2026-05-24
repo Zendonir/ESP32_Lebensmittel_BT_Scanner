@@ -331,6 +331,21 @@
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-title">Display</div>
+        <div class="setting-row">
+          <div><div class="setting-label">Standby</div><div class="setting-sub">Display abschalten nach</div></div>
+          <select id="mob-standby" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;-webkit-appearance:none" onchange="saveStandby(this.value)">
+            <option value="0">Nie</option>
+            <option value="60">1 Min</option>
+            <option value="120">2 Min</option>
+            <option value="300">5 Min</option>
+            <option value="600">10 Min</option>
+            <option value="1800">30 Min</option>
+          </select>
+        </div>
+      </div>
+
       <a href="/" class="admin-link">&#x2699;&#xFE0F; Zur vollst&auml;ndigen Verwaltung</a>
     </div>
   </div>
@@ -666,7 +681,11 @@ function renderExpiring() {
 // ── System info ───────────────────────────────────────────────
 async function loadSysInfo() {
   try {
-    const [si, dc] = await Promise.all([apiFetch('/api/system-info'), apiFetch('/api/device-config')]);
+    const [si, dc, disp] = await Promise.all([
+      apiFetch('/api/system-info'),
+      apiFetch('/api/device-config'),
+      apiFetch('/api/display-config').catch(() => ({ standby_sec: 300 })),
+    ]);
     _sysInfo = si; _devCfg = dc;
     document.getElementById('sys-ssid').textContent    = si.ssid || '-';
     document.getElementById('sys-ip').textContent      = si.ip   || '-';
@@ -678,7 +697,24 @@ async function loadSysInfo() {
     const sync = dc.apiUrl || dc.syncUrl;
     document.getElementById('sys-sync').textContent   = sync ? 'Aktiv' : 'Aus';
     document.getElementById('hh-abbr').textContent    = dc.householdAbbr || '';
+    // Standby select: find closest matching option
+    const sel = document.getElementById('mob-standby');
+    const secs = disp.standby_sec ?? 300;
+    let best = '300';
+    for (const opt of sel.options) {
+      if (parseInt(opt.value) === secs) { best = opt.value; break; }
+    }
+    sel.value = best;
   } catch(e) {}
+}
+
+async function saveStandby(val) {
+  try {
+    await apiPost('/api/display-config', { standby_sec: parseInt(val, 10) || 0 });
+    showToast(parseInt(val) === 0 ? 'Standby deaktiviert' : 'Standby gespeichert', 1500);
+  } catch(e) {
+    showToast('Fehler: ' + e.message, 3000);
+  }
 }
 
 function fmtUptime(sec) {

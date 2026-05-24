@@ -1262,7 +1262,8 @@ void WebInterface::registerApiRoutes() {
             File f = AppFS::fs().open("/display_config.json", "r");
             if (f) { deserializeJson(doc, f); f.close(); }
         }
-        if (!doc["standby_sec"].is<uint32_t>()) doc["standby_sec"] = 0;
+        // Standardwert 300 s (= 5 Minuten) — konsistent mit loadDisplayConfig()
+        if (!doc["standby_sec"].is<uint32_t>()) doc["standby_sec"] = 300;
         String body; serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
