@@ -2104,6 +2104,80 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
+    // POST /api/templates/sorten/add  → { id, sorte }  – fügt Sorte zu Vorlage hinzu
+    _server.on("/api/templates/sorten/add", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, inp;
+            loadJson("/custom_products.json", arr, "[]");
+            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}"); return;
+            }
+            String id    = inp["id"]    | "";
+            String sorte = inp["sorte"] | "";
+            if (id.isEmpty() || sorte.isEmpty()) {
+                req->send(400, "application/json", "{\"error\":\"id and sorte required\"}"); return;
+            }
+            bool found = false;
+            int fallbackIdx = 0;
+            for (JsonObject obj : arr.as<JsonArray>()) {
+                String name  = obj["name"] | "";
+                int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
+                String objId = obj["id"] | String(fallbackIdx);
+                if (days > 0 && !name.isEmpty()) fallbackIdx++;
+                if (objId != id) continue;
+                if (!obj["sorten"].is<JsonArray>()) obj["sorten"].to<JsonArray>();
+                // Duplikat verhindern
+                bool dup = false;
+                for (JsonVariant s : obj["sorten"].as<JsonArray>())
+                    if (s.as<String>() == sorte) { dup = true; break; }
+                if (!dup) obj["sorten"].as<JsonArray>().add(sorte);
+                found = true;
+                break;
+            }
+            if (!found) { req->send(404, "application/json", "{\"error\":\"template not found\"}"); return; }
+            saveJson("/custom_products.json", arr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+
+    // POST /api/templates/sorten/delete  → { id, sorte }  – entfernt Sorte aus Vorlage
+    _server.on("/api/templates/sorten/delete", HTTP_POST,
+        [](AsyncWebServerRequest *req) {
+            JsonDocument arr, inp;
+            loadJson("/custom_products.json", arr, "[]");
+            if (deserializeJson(inp, _body) != DeserializationError::Ok) {
+                req->send(400, "application/json", "{\"error\":\"invalid JSON\"}"); return;
+            }
+            String id    = inp["id"]    | "";
+            String sorte = inp["sorte"] | "";
+            if (id.isEmpty() || sorte.isEmpty()) {
+                req->send(400, "application/json", "{\"error\":\"id and sorte required\"}"); return;
+            }
+            bool changed = false;
+            int fallbackIdx = 0;
+            for (JsonObject obj : arr.as<JsonArray>()) {
+                String name  = obj["name"] | "";
+                int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
+                String objId = obj["id"] | String(fallbackIdx);
+                if (days > 0 && !name.isEmpty()) fallbackIdx++;
+                if (objId != id) continue;
+                if (!obj["sorten"].is<JsonArray>()) break;
+                JsonArray sa = obj["sorten"].as<JsonArray>();
+                std::vector<String> kept;
+                for (JsonVariant s : sa)
+                    if (s.as<String>() != sorte) kept.push_back(s.as<String>());
+                obj.remove("sorten");
+                JsonArray newArr = obj["sorten"].to<JsonArray>();
+                for (const auto &s : kept) newArr.add(s);
+                changed = true;
+                break;
+            }
+            if (!changed) { req->send(404, "application/json", "{\"error\":\"sorte not found\"}"); return; }
+            saveJson("/custom_products.json", arr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
+
     // POST /api/templates/delete  → delete template by id or name {id} or {name}
     _server.on("/api/templates/delete", HTTP_POST,
         [](AsyncWebServerRequest *req) {

@@ -195,12 +195,20 @@
   .btn { padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-danger  { background: none; border: 1px solid var(--border); color: var(--red); padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
-  .mgmt-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .mgmt-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .mgmt-item:last-child { border-bottom: none; }
   .mgmt-item-info { flex: 1; min-width: 0; }
   .mgmt-item-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mgmt-item-sub  { font-size: 12px; color: var(--sub); margin-top: 2px; }
   .mgmt-empty { text-align: center; color: var(--sub); padding: 16px 0; font-size: 13px; }
+  /* ── Sorten inline ── */
+  .sorten-section { margin-top: 8px; }
+  .sorten-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+  .sorte-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px 3px 10px; font-size: 12px; }
+  .sorte-chip button { background: none; border: none; color: var(--sub); cursor: pointer; padding: 0; font-size: 14px; line-height: 1; -webkit-tap-highlight-color: transparent; }
+  .sorte-add-row { display: flex; gap: 6px; }
+  .sorte-add-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 5px 10px; font-size: 13px; min-width: 0; }
+  .sorte-add-row button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .tmpl-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
   .tmpl-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .tmpl-form input, .tmpl-form select {
@@ -912,15 +920,34 @@ function renderTemplates() {
   el.innerHTML = Object.entries(grouped).map(([cat, items]) => `
     <div class="section-head">${esc(cat)}</div>
     ${items.map(t => {
-      const days = t.defaultDays || t.shelfDays || '?';
-      const unit = t.unit ? ` · ${esc(t.unit)}` : '';
-      const sortenBadge = t.useSorten ? ' · Sorten' : '';
+      const days   = t.defaultDays || t.shelfDays || '?';
+      const unit   = t.unit ? ` · ${esc(t.unit)}` : '';
+      const tid    = JSON.stringify(t.id || t.name);
+      // CSS-sicherer Bezeichner für HTML element IDs (Sonderzeichen → _)
+      const safeId = (t.id || t.name || '').replace(/[^a-zA-Z0-9]/g, '_');
+      const sortenBadge = t.useSorten ? ' · <span style="color:var(--accent)">Sorten</span>' : '';
+      const sortenSection = t.useSorten ? `
+        <div class="sorten-section">
+          <div class="sorten-chips">
+            ${(t.sorten || []).map(s => `
+              <span class="sorte-chip">
+                ${esc(s)}
+                <button title="Löschen" onclick="deleteSorte(${tid},${JSON.stringify(s)})">×</button>
+              </span>`).join('')}
+            ${!(t.sorten || []).length ? '<span style="font-size:12px;color:var(--sub);font-style:italic">Noch keine Sorten – am Gerät eingeben oder hier hinzufügen</span>' : ''}
+          </div>
+          <div class="sorte-add-row">
+            <input type="text" id="sorte-input-${safeId}" placeholder="Neue Sorte…" onkeydown="if(event.key==='Enter')addSorte(${tid},'${safeId}')">
+            <button onclick="addSorte(${tid},'${safeId}')">+ Hinzufügen</button>
+          </div>
+        </div>` : '';
       return `<div class="mgmt-item">
       <div class="mgmt-item-info">
         <div class="mgmt-item-name">${esc(t.name || '')}</div>
         <div class="mgmt-item-sub">MHD: ${days} Tage${unit}${sortenBadge}</div>
+        ${sortenSection}
       </div>
-      <button class="btn-danger" onclick="deleteTemplate(${JSON.stringify(t.id || t.name)})">Löschen</button>
+      <button class="btn-danger" onclick="deleteTemplate(${tid})">Löschen</button>
     </div>`;
     }).join('')}
   `).join('');
@@ -965,6 +992,41 @@ async function deleteTemplate(id) {
     renderCategories();
     renderTemplates();
     toast('Vorlage gelöscht');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
+}
+
+// ── Sorten-Verwaltung ─────────────────────────────────────────
+async function addSorte(templateId, safeId) {
+  const inp = document.getElementById('sorte-input-' + safeId);
+  if (!inp) return;
+  const sorte = inp.value.trim();
+  if (!sorte) { toast('Bitte Sorte eingeben', 2000); return; }
+  try {
+    await apiPost('/api/templates/sorten/add', { id: templateId, sorte });
+    // Lokal aktualisieren
+    const tmpl = _templates.find(t => (t.id || t.name) === templateId);
+    if (tmpl) {
+      if (!tmpl.sorten) tmpl.sorten = [];
+      if (!tmpl.sorten.includes(sorte)) tmpl.sorten.push(sorte);
+    }
+    inp.value = '';
+    renderTemplates();
+    toast('Sorte hinzugefügt');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
+}
+
+async function deleteSorte(templateId, sorte) {
+  try {
+    await apiPost('/api/templates/sorten/delete', { id: templateId, sorte });
+    // Lokal aktualisieren
+    const tmpl = _templates.find(t => (t.id || t.name) === templateId);
+    if (tmpl && tmpl.sorten) tmpl.sorten = tmpl.sorten.filter(s => s !== sorte);
+    renderTemplates();
+    toast('Sorte gelöscht');
   } catch(e) {
     toast('Fehler: ' + e.message, 3000);
   }

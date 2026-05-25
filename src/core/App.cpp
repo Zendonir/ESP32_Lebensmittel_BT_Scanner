@@ -1838,19 +1838,26 @@ void App::addSorteToTemplate(const String &templateId, const String &sorte) {
     JsonDocument doc;
     if (!json.loadDocument("/custom_products.json", doc, "[]")) return;
     bool found = false;
+    int fallbackIdx = 0;
     for (JsonObject obj : doc.as<JsonArray>()) {
-        if (obj["id"].as<String>() == templateId) {
-            JsonArray arr = obj["sorten"].is<JsonArray>()
-                ? obj["sorten"].as<JsonArray>()
-                : obj["sorten"].to<JsonArray>();
-            arr.add(sorte);
-            found = true;
-            break;
-        }
+        String name  = obj["name"] | "";
+        int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
+        // Gleiche Fallback-ID-Logik wie loadTemplates(): fehlende id → Index
+        String objId = obj["id"] | String(fallbackIdx);
+        if (days > 0 && !name.isEmpty()) fallbackIdx++;
+        if (objId != templateId) continue;
+
+        // Sorte-Array anlegen oder erweitern
+        if (!obj["sorten"].is<JsonArray>()) obj["sorten"].to<JsonArray>();
+        obj["sorten"].as<JsonArray>().add(sorte);
+        found = true;
+        break;
     }
     if (found) {
         json.saveDocument("/custom_products.json", doc);
         loadTemplates();  // refresh in-memory list with new sorte
+    } else {
+        Logger::warn("Templates", String("addSorteToTemplate: Template '") + templateId + "' nicht gefunden");
     }
 }
 
@@ -1858,23 +1865,28 @@ void App::removeSorteFromTemplate(const String &templateId, int sorteIdx) {
     JsonDocument doc;
     if (!json.loadDocument("/custom_products.json", doc, "[]")) return;
     bool changed = false;
+    int fallbackIdx = 0;
     for (JsonObject obj : doc.as<JsonArray>()) {
-        if (obj["id"].as<String>() == templateId) {
-            if (!obj["sorten"].is<JsonArray>()) break;
-            JsonArray arr = obj["sorten"].as<JsonArray>();
-            int n = (int)arr.size();
-            if (sorteIdx < 0 || sorteIdx >= n) break;
-            // Rebuild array without the deleted element
-            std::vector<String> kept;
-            for (int i = 0; i < n; i++) {
-                if (i != sorteIdx) kept.push_back(arr[i] | "");
-            }
-            obj.remove("sorten");
-            JsonArray newArr = obj["sorten"].to<JsonArray>();
-            for (const auto &s : kept) newArr.add(s);
-            changed = true;
-            break;
+        String name  = obj["name"] | "";
+        int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
+        String objId = obj["id"] | String(fallbackIdx);
+        if (days > 0 && !name.isEmpty()) fallbackIdx++;
+        if (objId != templateId) continue;
+
+        if (!obj["sorten"].is<JsonArray>()) break;
+        JsonArray arr = obj["sorten"].as<JsonArray>();
+        int n = (int)arr.size();
+        if (sorteIdx < 0 || sorteIdx >= n) break;
+        // Rebuild array without the deleted element
+        std::vector<String> kept;
+        for (int i = 0; i < n; i++) {
+            if (i != sorteIdx) kept.push_back(arr[i] | "");
         }
+        obj.remove("sorten");
+        JsonArray newArr = obj["sorten"].to<JsonArray>();
+        for (const auto &s : kept) newArr.add(s);
+        changed = true;
+        break;
     }
     if (changed) {
         json.saveDocument("/custom_products.json", doc);
