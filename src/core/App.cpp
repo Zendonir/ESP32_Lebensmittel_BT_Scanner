@@ -1845,11 +1845,21 @@ void App::addSorteToTemplate(const String &templateId, const String &sorte) {
         // Gleiche Fallback-ID-Logik wie loadTemplates(): fehlende id → Index
         String objId = obj["id"] | String(fallbackIdx);
         if (days > 0 && !name.isEmpty()) fallbackIdx++;
-        if (objId != templateId) continue;
+        // Treffer: per expliziter ID oder per Name
+        if (objId != templateId && name != templateId) continue;
 
-        // Sorte-Array anlegen oder erweitern
-        if (!obj["sorten"].is<JsonArray>()) obj["sorten"].to<JsonArray>();
-        obj["sorten"].as<JsonArray>().add(sorte);
+        // Collect + rebuild (sichere Alternative zu to<JsonArray>() auf neuem Member)
+        std::vector<String> sorten;
+        if (obj["sorten"].is<JsonArray>()) {
+            for (JsonVariant s : obj["sorten"].as<JsonArray>()) {
+                String sv = s | "";
+                if (!sv.isEmpty() && sv != sorte) sorten.push_back(sv);
+            }
+        }
+        sorten.push_back(sorte);
+        obj.remove("sorten");
+        JsonArray na = obj["sorten"].to<JsonArray>();
+        for (const auto &sv : sorten) na.add(sv);
         found = true;
         break;
     }
@@ -1871,7 +1881,7 @@ void App::removeSorteFromTemplate(const String &templateId, int sorteIdx) {
         int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
         String objId = obj["id"] | String(fallbackIdx);
         if (days > 0 && !name.isEmpty()) fallbackIdx++;
-        if (objId != templateId) continue;
+        if (objId != templateId && name != templateId) continue;
 
         if (!obj["sorten"].is<JsonArray>()) break;
         JsonArray arr = obj["sorten"].as<JsonArray>();

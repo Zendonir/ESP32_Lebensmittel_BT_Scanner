@@ -2124,13 +2124,20 @@ void WebInterface::registerApiRoutes() {
                 int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
                 String objId = obj["id"] | String(fallbackIdx);
                 if (days > 0 && !name.isEmpty()) fallbackIdx++;
-                if (objId != id) continue;
-                if (!obj["sorten"].is<JsonArray>()) obj["sorten"].to<JsonArray>();
-                // Duplikat verhindern
-                bool dup = false;
-                for (JsonVariant s : obj["sorten"].as<JsonArray>())
-                    if (s.as<String>() == sorte) { dup = true; break; }
-                if (!dup) obj["sorten"].as<JsonArray>().add(sorte);
+                // Treffer: per expliziter ID oder per Name (Fallback)
+                if (objId != id && name != id) continue;
+                // Collect existing sorten, then rebuild array (avoids ArduinoJson to<> edge cases)
+                std::vector<String> sorten;
+                if (obj["sorten"].is<JsonArray>()) {
+                    for (JsonVariant s : obj["sorten"].as<JsonArray>()) {
+                        String sv = s | "";
+                        if (!sv.isEmpty() && sv != sorte) sorten.push_back(sv);  // skip dup
+                    }
+                }
+                sorten.push_back(sorte);  // neue Sorte ans Ende
+                obj.remove("sorten");
+                JsonArray na = obj["sorten"].to<JsonArray>();
+                for (const auto &sv : sorten) na.add(sv);
                 found = true;
                 break;
             }
@@ -2160,20 +2167,24 @@ void WebInterface::registerApiRoutes() {
                 int    days  = obj["defaultDays"] | (obj["shelfDays"] | 0);
                 String objId = obj["id"] | String(fallbackIdx);
                 if (days > 0 && !name.isEmpty()) fallbackIdx++;
-                if (objId != id) continue;
+                if (objId != id && name != id) continue;
                 if (!obj["sorten"].is<JsonArray>()) break;
-                JsonArray sa = obj["sorten"].as<JsonArray>();
                 std::vector<String> kept;
-                for (JsonVariant s : sa)
-                    if (s.as<String>() != sorte) kept.push_back(s.as<String>());
+                for (JsonVariant s : obj["sorten"].as<JsonArray>()) {
+                    String sv = s | "";
+                    if (sv != sorte) kept.push_back(sv);
+                }
                 obj.remove("sorten");
-                JsonArray newArr = obj["sorten"].to<JsonArray>();
-                for (const auto &s : kept) newArr.add(s);
+                JsonArray na = obj["sorten"].to<JsonArray>();
+                for (const auto &sv : kept) na.add(sv);
                 changed = true;
                 break;
             }
             if (!changed) { req->send(404, "application/json", "{\"error\":\"sorte not found\"}"); return; }
             saveJson("/custom_products.json", arr);
+            req->send(200, "application/json", "{\"ok\":true}");
+        },
+        nullptr, bodyCollect);
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
