@@ -150,8 +150,10 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── Toast ── */
-  #toast { position: fixed; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }
+  #toast { position: fixed; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; display: flex; align-items: center; gap: 12px; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.clickable { pointer-events: auto; }
+  .toast-undo-btn { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 12px; padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
 
   /* ── Pull-to-refresh hint ── */
   .ptr-hint { text-align: center; font-size: 11px; color: var(--sub); padding: 8px 0 0; }
@@ -382,12 +384,13 @@
 'use strict';
 
 // ── State ──────────────────────────────────────────────────────
-let _allItems   = [];
-let _filter     = '';
-let _sysInfo    = {};
-let _devCfg     = {};
-let _categories = [];
-let _templates  = [];
+let _allItems      = [];
+let _filter        = '';
+let _sysInfo       = {};
+let _devCfg        = {};
+let _categories    = [];
+let _templates     = [];
+let _pendingDelete = null;  // { labelBarcode, item, timerId } – Undo-Puffer
 
 // ── Tab switching ──────────────────────────────────────────────
 function switchTab(name) {
@@ -404,10 +407,25 @@ function switchTab(name) {
 let _toastTimer;
 function toast(msg, ms = 2500) {
   const el = document.getElementById('toast');
+  el.innerHTML = '';
   el.textContent = msg;
+  el.classList.remove('clickable');
   el.classList.add('show');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+// Alias used in some places
+const showToast = toast;
+
+// Toast mit „Rückgängig"-Button (Undo-Toast)
+function toastUndo(msg, ms = 5000) {
+  const el = document.getElementById('toast');
+  el.innerHTML = `<span>${msg}</span><button class="toast-undo-btn" onclick="undoDelete()">Rückgängig</button>`;
+  el.classList.add('show', 'clickable');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    el.classList.remove('show', 'clickable');
+  }, ms);
 }
 
 // ── Date helpers ──────────────────────────────────────────────
@@ -523,18 +541,31 @@ function buildGroups(items) {
 function renderInventory() {
   const filtered = filterItems(_filter);
   const el = document.getElementById('inv-list');
+
+  // Merke welche Gruppen gerade aufgeklappt sind (nach Name), damit sie nach
+  // dem Re-render wieder offen bleiben
+  const wasExpanded = new Set();
+  el.querySelectorAll('.inv-group:not(.solo)').forEach(g => {
+    const sub = g.querySelector('.inv-sub-list');
+    if (sub && sub.style.display !== 'none') {
+      const nameEl = g.querySelector('.inv-name');
+      if (nameEl) wasExpanded.add(nameEl.textContent);
+    }
+  });
+
   if (!filtered.length) {
     el.innerHTML = '<div class="inv-empty">Keine Eintr&auml;ge gefunden</div>';
     return;
   }
 
   const groups = buildGroups(filtered);
-  // close any open swipes when re-rendering
   el.innerHTML = groups.map((g, gi) => {
-    const cls = expiryClass(g.firstExpiry);
+    const cls   = expiryClass(g.firstExpiry);
     const total = g.items.reduce((s, it) => s + (it.quantity || 1), 0);
     const loc   = g.items[0].location ? ' · ' + g.items[0].location : '';
     const solo  = g.items.length === 1;
+    // Gruppe aufgeklappt lassen, wenn sie vorher offen war
+    const expanded = wasExpanded.has(g.name);
 
     const subHtml = solo ? '' : g.items.map(it => {
       const exp    = getExpiry(it);
@@ -553,6 +584,7 @@ function renderInventory() {
     }).join('');
 
     const soloLb = solo ? esc(g.items[0].labelBarcode || '') : '';
+    const chevronStyle = expanded ? ' style="transform:rotate(90deg)"' : '';
     const headInner = `
       <div class="inv-dot"></div>
       <div class="inv-info">
@@ -560,7 +592,7 @@ function renderInventory() {
         <div class="inv-meta">${g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD'}${esc(loc)}</div>
       </div>
       <div class="inv-qty">${total}x</div>
-      ${solo ? '' : '<div class="inv-chevron">›</div>'}`;
+      ${solo ? '' : `<div class="inv-chevron"${chevronStyle}>›</div>`}`;
 
     const groupHead = solo
       ? `<div class="swipe-wrap">
@@ -575,24 +607,70 @@ function renderInventory() {
 
     return `<div class="inv-group${solo ? ' solo' : ''}" data-gi="${gi}">
       ${groupHead}
-      ${solo ? '' : `<div class="inv-sub-list" style="display:none">${subHtml}</div>`}
+      ${solo ? '' : `<div class="inv-sub-list" style="display:${expanded ? 'block' : 'none'}">${subHtml}</div>`}
     </div>`;
   }).join('');
   initSwipe(el);
 }
 
-// ── Delete item ──────────────────────────────────────────────
-async function deleteItem(labelBarcode) {
-  if (!labelBarcode) return;
+// ── Delete item mit Undo-Puffer ───────────────────────────────
+async function _flushPendingDelete() {
+  if (!_pendingDelete) return;
+  const { labelBarcode, timerId } = _pendingDelete;
+  clearTimeout(timerId);
+  _pendingDelete = null;
   try {
     await apiPost('/api/inventory/delete', { labelBarcode });
-    _allItems = _allItems.filter(it => it.labelBarcode !== labelBarcode);
-    renderInventory();
-    updateStats();
-    showToast('Gelöscht', 1500);
   } catch(e) {
-    showToast('Fehler: ' + e.message, 3000);
+    console.error('Verzögertes Löschen fehlgeschlagen:', e);
   }
+}
+
+function deleteItem(labelBarcode) {
+  if (!labelBarcode) return;
+
+  // Falls ein anderes Item noch im Undo-Puffer ist, sofort serverseitig löschen
+  _flushPendingDelete();
+
+  // Item lokal suchen
+  const item = _allItems.find(it => it.labelBarcode === labelBarcode);
+  if (!item) return;
+
+  // Sofort aus lokaler Liste entfernen + UI aktualisieren
+  _allItems = _allItems.filter(it => it.labelBarcode !== labelBarcode);
+  renderInventory();
+  updateStats();
+
+  // Nach 5 Sekunden tatsächlich auf dem Server löschen
+  const timerId = setTimeout(() => {
+    _pendingDelete = null;
+    apiPost('/api/inventory/delete', { labelBarcode }).catch(e => {
+      // Bei Fehler wiederherstellen
+      _allItems.push(item);
+      renderInventory();
+      updateStats();
+      toast('Fehler beim Löschen', 3000);
+    });
+  }, 5000);
+
+  _pendingDelete = { labelBarcode, item, timerId };
+  toastUndo('Gelöscht');
+}
+
+function undoDelete() {
+  if (!_pendingDelete) return;
+  const { item, timerId } = _pendingDelete;
+  clearTimeout(timerId);
+  _pendingDelete = null;
+  // Toast sofort schließen
+  const el = document.getElementById('toast');
+  el.classList.remove('show', 'clickable');
+  clearTimeout(_toastTimer);
+  // Item wiederherstellen
+  _allItems.push(item);
+  renderInventory();
+  updateStats();
+  toast('Wiederhergestellt ✓', 2000);
 }
 
 // ── Swipe-to-delete (touch) ───────────────────────────────────
@@ -916,7 +994,11 @@ content.addEventListener('touchend', e => {
 }, {passive:true});
 
 // ── Auto-refresh every 60 s ───────────────────────────────────
-setInterval(loadInventory, 60000);
+// Vor Auto-Refresh ausstehende Löschungen sofort serverseitig ausführen
+setInterval(async () => { await _flushPendingDelete(); loadInventory(); }, 60000);
+
+// Bei Seitenverlassen ausstehende Löschungen flushen (best effort)
+window.addEventListener('pagehide', () => { _flushPendingDelete(); });
 
 // ── Init ──────────────────────────────────────────────────────
 loadInventory();
