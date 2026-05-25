@@ -187,11 +187,16 @@ static HomeState _homeState;
 //   Low-level drawing helpers
 // ═════════════════════════════════════════════════════════
 
-static String trunc(const String &s, int maxChars) {
-    // Byte-based truncation; the GFX font drawString decodes UTF-8 natively,
-    // so we pass the original UTF-8 string unchanged.
-    if ((int)s.length() <= maxChars) return s;
-    return s.substring(0, maxChars - 1) + "~";
+static String trunc(const String &s, int maxBytes) {
+    // UTF-8-safe truncation: walk back from the cut point past any continuation
+    // bytes (0x80–0xBF) so we never emit a broken multi-byte sequence.
+    // The GFX font's drawString decodes UTF-8 natively; a broken sequence would
+    // produce a garbled or missing character (affects Umlauts ü/ö/ä/ß etc.).
+    int len = (int)s.length();
+    if (len <= maxBytes) return s;
+    int cut = maxBytes - 1;  // leave one byte for the '~' suffix
+    while (cut > 0 && ((uint8_t)s[cut] & 0xC0) == 0x80) cut--;
+    return s.substring(0, cut) + "~";
 }
 
 static void draw_button(int x, int y, int w, int h,
@@ -1350,7 +1355,11 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     // to avoid conflicts with swipe-scroll gestures
     if (!_s_active_location.isEmpty()) {
         String lbl = _s_active_location;
-        if (lbl.length() > 10) lbl = lbl.substring(0, 10);   // FreeSans22pt ist breiter
+        if ((int)lbl.length() > 10) {  // UTF-8-safe: walk back past continuation bytes
+            int cut = 10;
+            while (cut > 0 && ((uint8_t)lbl[cut] & 0xC0) == 0x80) cut--;
+            lbl = lbl.substring(0, cut);
+        }
         uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
         _spr.setFreeFont(&FreeSans22pt);   // ~50% größer als vorher (FreeSans16)
         int tw = (int)_spr.textWidth(lbl.c_str());
