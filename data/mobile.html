@@ -839,14 +839,15 @@ function renderCategories() {
     return;
   }
   el.innerHTML = _categories.map(c => {
-    const name = typeof c === 'string' ? c : (c.name || '');
+    const name  = typeof c === 'string' ? c : (c.name || '');
+    const nameQ = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");  // safe for onclick single-quote
     const count = _templates.filter(t => (t.category || '') === name).length;
     return `<div class="mgmt-item">
       <div class="mgmt-item-info">
         <div class="mgmt-item-name">${esc(name)}</div>
         <div class="mgmt-item-sub">${count} Vorlage${count !== 1 ? 'n' : ''}</div>
       </div>
-      <button class="btn-danger" onclick="deleteCategory(${JSON.stringify(esc(name))})">Löschen</button>
+      <button class="btn-danger" onclick="deleteCategory('${nameQ}')">Löschen</button>
     </div>`;
   }).join('');
 }
@@ -922,23 +923,27 @@ function renderTemplates() {
     ${items.map(t => {
       const days   = t.defaultDays || t.shelfDays || '?';
       const unit   = t.unit ? ` · ${esc(t.unit)}` : '';
-      const tid    = JSON.stringify(t.id || t.name);
+      // JS-sicherer String für onclick innerhalb doppelt-quotierter Attribute:
+      // Wert in einfachen Anführungszeichen übergeben, interne ' escapen
+      const tidQ   = (t.id || t.name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       // CSS-sicherer Bezeichner für HTML element IDs (Sonderzeichen → _)
       const safeId = (t.id || t.name || '').replace(/[^a-zA-Z0-9]/g, '_');
       const sortenBadge = t.useSorten ? ' · <span style="color:var(--accent)">Sorten</span>' : '';
       const sortenSection = t.useSorten ? `
         <div class="sorten-section">
           <div class="sorten-chips">
-            ${(t.sorten || []).map(s => `
-              <span class="sorte-chip">
+            ${(t.sorten || []).map(s => {
+              const sQ = s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+              return `<span class="sorte-chip">
                 ${esc(s)}
-                <button title="Löschen" onclick="deleteSorte(${tid},${JSON.stringify(s)})">×</button>
-              </span>`).join('')}
+                <button title="Löschen" onclick="deleteSorte('${tidQ}','${sQ}')">×</button>
+              </span>`;
+            }).join('')}
             ${!(t.sorten || []).length ? '<span style="font-size:12px;color:var(--sub);font-style:italic">Noch keine Sorten – am Gerät eingeben oder hier hinzufügen</span>' : ''}
           </div>
           <div class="sorte-add-row">
-            <input type="text" id="sorte-input-${safeId}" placeholder="Neue Sorte…" onkeydown="if(event.key==='Enter')addSorte(${tid},'${safeId}')">
-            <button onclick="addSorte(${tid},'${safeId}')">+ Hinzufügen</button>
+            <input type="text" id="sorte-input-${safeId}" placeholder="Neue Sorte…" onkeydown="if(event.key==='Enter')addSorte('${tidQ}','${safeId}')">
+            <button onclick="addSorte('${tidQ}','${safeId}')">+ Hinzufügen</button>
           </div>
         </div>` : '';
       return `<div class="mgmt-item">
@@ -947,7 +952,7 @@ function renderTemplates() {
         <div class="mgmt-item-sub">MHD: ${days} Tage${unit}${sortenBadge}</div>
         ${sortenSection}
       </div>
-      <button class="btn-danger" onclick="deleteTemplate(${tid})">Löschen</button>
+      <button class="btn-danger" onclick="deleteTemplate('${tidQ}')">Löschen</button>
     </div>`;
     }).join('')}
   `).join('');
