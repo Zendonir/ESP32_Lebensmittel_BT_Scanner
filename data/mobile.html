@@ -272,10 +272,13 @@
             <select id="tmpl-cat"><option value="">Kategorie wählen…</option></select>
             <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650">
           </div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="tmpl-ask-qty" style="width:18px;height:18px;accent-color:var(--accent)" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
-            Menge abfragen
-          </label>
+          <div style="display:flex;align-items:center;gap:10px;font-size:13px;padding:2px 0">
+            <label class="toggle">
+              <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
+              <span class="slider"></span>
+            </label>
+            <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
+          </div>
           <div id="tmpl-unit-row" style="display:none">
             <select id="tmpl-unit" style="width:100%">
               <option value="St.">Stück (St.)</option>
@@ -284,10 +287,13 @@
               <option value="kg">Kilogramm (kg)</option>
             </select>
           </div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="tmpl-sorten" style="width:18px;height:18px;accent-color:var(--accent)">
-            Sorten-Auswahl (Texteingabe am Gerät)
-          </label>
+          <div style="display:flex;align-items:center;gap:10px;font-size:13px;padding:2px 0">
+            <label class="toggle">
+              <input type="checkbox" id="tmpl-sorten">
+              <span class="slider"></span>
+            </label>
+            <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl (Texteingabe am Gerät)</span>
+          </div>
           <button class="btn btn-primary" style="width:100%" onclick="addTemplate()">Vorlage hinzufügen</button>
         </div>
       </div>
