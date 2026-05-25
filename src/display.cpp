@@ -129,7 +129,11 @@ static TFT_eSprite _spr(&_tft);
 static void draw_location_badge(int x_right = SCR_W - 8) {
     if (_s_active_location.isEmpty()) return;
     String label = _s_active_location;
-    if (label.length() > 16) label = label.substring(0, 16);
+    if ((int)label.length() > 16) {  // UTF-8-safe: nicht mitten in Mehrbyte-Sequenz schneiden
+        int cut = 16;
+        while (cut > 0 && ((uint8_t)label[cut] & 0xC0) == 0x80) cut--;
+        label = label.substring(0, cut);
+    }
     uint16_t col = _s_location_color ? _s_location_color : C_ACCENT;
 
     _spr.setFreeFont(&FreeSans16);
@@ -2336,9 +2340,10 @@ void Display::showLocationSelect(const String &current, const std::vector<String
     _spr.drawString("LAGERORTE", 12, HDR_H / 2);
     if (!current.isEmpty()) {
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-        _spr.setTextFont(2);
+        _spr.setFreeFont(&FreeSans16);  // Umlaute in Lagerort-Namen
         _spr.setTextDatum(MR_DATUM);
         _spr.drawString(("Aktiv: " + current).c_str(), SCR_W - 8, HDR_H / 2);
+        _spr.setTextFont(4);
     }
 
     // Build list: "Kein Lagerort" first, then actual locations
@@ -2360,7 +2365,7 @@ void Display::showLocationSelect(const String &current, const std::vector<String
         _spr.fillRect(0, iy, SCR_W, ITEM_H, bg);
         _spr.fillRect(0, iy, 3, ITEM_H, isActive ? C_BG : C_ACCENT);
         _spr.setTextColor(fg, bg);
-        _spr.setTextFont(4);
+        _spr.setFreeFont(&FreeSans16);  // GFX font – unterstützt Umlaute (ä/ö/ü/ß)
         _spr.setTextDatum(ML_DATUM);
         _spr.drawString(trunc(rows[i], 36).c_str(), 12, iy + ITEM_H / 2);
         if (isActive) {
@@ -2368,6 +2373,7 @@ void Display::showLocationSelect(const String &current, const std::vector<String
             _spr.setTextDatum(MR_DATUM);
             _spr.drawString("*", SCR_W - 12, iy + ITEM_H / 2);
         }
+        _spr.setTextFont(2);  // zurück zu Bitmap-Font für weitere Zeichenoperationen
         _spr.drawFastHLine(0, iy + ITEM_H - 1, SCR_W, C_BORDER);
         add_region(0, iy, SCR_W, ITEM_H, LIST_ACTIONS[i]);
     }
