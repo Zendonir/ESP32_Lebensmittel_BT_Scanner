@@ -253,6 +253,23 @@ void BLEScanner::loop() {
         _startScan();
     }
 
+    // ── Scan-Watchdog: Scan jede Sekunde prüfen und ggf. neu starten ───────
+    // Sichert schnelle Auto-Verbindung nach Boot oder wenn NimBLE den Scan
+    // intern stoppt (z. B. Timing-Problem kurz nach begin()).
+    {
+        static uint32_t s_watchMs = 0;
+        if (!connected && !connecting && !connectRequested
+                && autoReconnect && !deviceAddress.isEmpty()
+                && !reconnectPaused && !s_discovering
+                && millis() - s_watchMs >= 1000) {
+            s_watchMs = millis();
+            if (!NimBLEDevice::getScan()->isScanning()) {
+                Serial.println("[BLE] Watchdog: Scan gestoppt – starte neu");
+                _startScan();
+            }
+        }
+    }
+
     if (!connectRequested) return;
     connectRequested = false;
 

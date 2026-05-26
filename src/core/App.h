@@ -140,6 +140,7 @@ private:
     uint32_t        _standbyMs = 0;        // 0 = never; 120000 / 300000 ms
     uint32_t        _lastActivityMs = 0;
     std::atomic<bool> _displayOn{true};
+    bool            _blPwm = false;       // true = ledcAttach gelungen, ledcWrite nutzbar
     ProductInfo     _pendingProduct;
     String          _pendingDateDraft;
     String          _pendingExpiryDate;

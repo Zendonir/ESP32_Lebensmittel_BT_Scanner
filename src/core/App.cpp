@@ -435,8 +435,10 @@ void App::initBacklight() {
     pinMode(LCD_BL, OUTPUT);
     if (ledcAttach(LCD_BL, 5000, 8)) {
         ledcWrite(LCD_BL, 255);
+        _blPwm = true;
     } else {
         digitalWrite(LCD_BL, HIGH);
+        _blPwm = false;
         Logger::warn("Display", "PWM attach failed; using digital backlight ON");
     }
     Logger::info("Display", String("Backlight ON GPIO ") + LCD_BL);
@@ -445,7 +447,11 @@ void App::initBacklight() {
 void App::setBacklight(bool on) {
     _displayOn = on;
     if (LCD_BL < 0) return;
-    ledcWrite(LCD_BL, on ? 255 : 0);
+    if (_blPwm) {
+        ledcWrite(LCD_BL, on ? 255 : 0);
+    } else {
+        digitalWrite(LCD_BL, on ? HIGH : LOW);
+    }
 }
 
 void App::loadDisplayConfig() {
