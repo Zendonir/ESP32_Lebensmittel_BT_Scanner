@@ -498,6 +498,57 @@ img { max-width: 100%; }
 }
 .cat-btn:hover { background: rgba(0,0,0,.4); }
 
+/* ---- Page header actions (flex group right side) ---- */
+.page-header-actions { display: flex; align-items: center; gap: 10px; }
+
+/* Runder Add-Button (Vorlagen, etc.) */
+.btn-add {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: filter .15s, transform .1s;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.btn-add:hover  { filter: brightness(1.15); transform: scale(1.06); }
+.btn-add:active { transform: scale(.96); }
+
+/* Kleiner Icon+Text-Button (z.B. Kategorien) */
+.btn-icon-round {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--subtext);
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--trans), color var(--trans), border-color var(--trans);
+}
+.btn-icon-round:hover { background: var(--border); color: var(--text); }
+
+/* Kategorien-Manager-Liste im Modal */
+.cat-mgr-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  gap: 10px;
+}
+.cat-mgr-name { font-weight: 600; font-size: .95rem; }
+
 /* ---- Template card ---- */
 .tpl-card {
   background: var(--surface);

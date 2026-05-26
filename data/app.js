@@ -900,6 +900,8 @@ Pages.templates = {
 
 /* ---- CATEGORIES ---- */
 Pages.categories = {
+  _managerOpen: false,   // merken ob Manager gerade offen war
+
   async load() {
     try {
       const cats = await API.get('/api/categories');
@@ -914,8 +916,9 @@ Pages.categories = {
     const grid  = document.getElementById('catGrid');
     const empty = document.getElementById('catEmpty');
     const cats  = State.categories;
-    if (!cats.length) { grid.innerHTML = ''; empty.hidden = false; return; }
-    empty.hidden = true;
+    if (!grid) return;
+    if (!cats.length) { grid.innerHTML = ''; if (empty) empty.hidden = false; return; }
+    if (empty) empty.hidden = true;
     grid.innerHTML = cats.map((c, i) => {
       const bg  = rgb16ToHex(c.bgColor   || 0x2435);
       const txt = rgb16ToHex(c.textColor || 0xFFFF);
@@ -928,6 +931,37 @@ Pages.categories = {
           </div>
         </div>`;
     }).join('');
+  },
+
+  // Modal-Manager: listet alle Kategorien auf, Bearbeiten/Löschen/Hinzufügen
+  openManager() {
+    this._managerOpen = true;
+    const cats = State.categories || [];
+    const rows = cats.length
+      ? cats.map((c, i) => {
+          const bg  = rgb16ToHex(c.bgColor   || 0x2435);
+          const txt = rgb16ToHex(c.textColor || 0xFFFF);
+          return `
+            <div class="cat-mgr-item" style="background:${bg};color:${txt}">
+              <span class="cat-mgr-name">${esc(c.name)}</span>
+              <div class="btn-group">
+                <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:inherit;border:1px solid rgba(255,255,255,.3)"
+                  onclick="Pages.categories.edit(${i})">Bearbeiten</button>
+                <button class="btn btn-sm btn-danger"
+                  onclick="Pages.categories.removeMgr(${i})">Löschen</button>
+              </div>
+            </div>`;
+        }).join('')
+      : '<p style="color:var(--subtext);text-align:center;padding:16px 0">Noch keine Kategorien</p>';
+
+    Modal.show({
+      title: 'Kategorien verwalten',
+      body: `<div id="catMgrBody">${rows}</div>`,
+      actions: [
+        { label: 'Schließen', cls: '', onclick: () => { this._managerOpen = false; Modal.hide(); } },
+        { label: '+ Neue Kategorie', cls: 'btn-ok', onclick: () => { this._managerOpen = true; this.openAdd(); } },
+      ],
+    });
   },
 
   openAdd() { this._openForm(null); },
@@ -982,11 +1016,25 @@ Pages.categories = {
         ...(original ? { oldName: original.name } : {}),
       });
       Toast.success('Kategorie gespeichert');
-      Modal.hide();
-      this.load();
+      await this.load();
+      if (this._managerOpen) { this.openManager(); } else { Modal.hide(); }
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
       if (btn) btn.disabled = false;
+    }
+  },
+
+  // Löschen direkt aus Manager (kein extra Confirm-Modal öffnen, nur Toast)
+  async removeMgr(i) {
+    const c = State.categories[i];
+    if (!confirm(`Kategorie "${c.name}" wirklich löschen?`)) return;
+    try {
+      await API.post('/api/categories/delete', { name: c.name });
+      Toast.success('Kategorie gelöscht');
+      await this.load();
+      if (this._managerOpen) this.openManager();
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
     }
   },
 
@@ -996,7 +1044,8 @@ Pages.categories = {
       try {
         await API.post('/api/categories/delete', { name: c.name });
         Toast.success('Kategorie gelöscht');
-        this.load();
+        await this.load();
+        if (this._managerOpen) this.openManager();
       } catch(e) {
         Toast.error('Fehler: ' + e.message);
       }

@@ -209,14 +209,16 @@
   .sorte-add-row { display: flex; gap: 6px; }
   .sorte-add-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 5px 10px; font-size: 13px; min-width: 0; }
   .sorte-add-row button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-  .tmpl-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
-  .tmpl-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .tmpl-form input, .tmpl-form select {
-    width: 100%; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 14px;
-    outline: none; -webkit-appearance: none;
+  /* Vorlage-Hinzufügen-Button im Kartenkopf */
+  .tmpl-add-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    transition: filter .15s, transform .1s;
   }
-  .tmpl-form input:focus, .tmpl-form select:focus { border-color: var(--accent); }
+  .tmpl-add-btn:active { transform: scale(.93); }
   .cat-filter-wrap { margin-bottom: 10px; }
   .cat-filter-wrap select {
     width: 100%; background: var(--surface2); border: 1px solid var(--border);
@@ -269,45 +271,63 @@
       </div>
 
       <div class="card">
-        <div class="card-title">Vorlagen</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="card-title" style="margin-bottom:0">Vorlagen</div>
+          <button class="tmpl-add-btn" onclick="openTmplSheet()" title="Neue Vorlage">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
         <div class="cat-filter-wrap">
           <select id="tmpl-filter-cat" onchange="renderTemplates()">
             <option value="">Alle Kategorien</option>
           </select>
         </div>
         <div id="tmpl-list"><div class="mgmt-empty"><span class="spinner"></span></div></div>
-        <div class="tmpl-form">
-          <input type="text" id="tmpl-name" placeholder="Name der Vorlage…" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false">
-          <div class="tmpl-form-row">
-            <select id="tmpl-cat"><option value="">Kategorie wählen…</option></select>
-            <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650">
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;font-size:13px;padding:2px 0">
-            <label class="toggle">
-              <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
-              <span class="slider"></span>
-            </label>
-            <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
-          </div>
-          <div id="tmpl-unit-row" style="display:none">
-            <select id="tmpl-unit" style="width:100%">
-              <option value="St.">Stück (St.)</option>
-              <option value="g">Gramm (g)</option>
-              <option value="ml">Milliliter (ml)</option>
-              <option value="kg">Kilogramm (kg)</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;font-size:13px;padding:2px 0">
-            <label class="toggle">
-              <input type="checkbox" id="tmpl-sorten">
-              <span class="slider"></span>
-            </label>
-            <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl (Texteingabe am Gerät)</span>
-          </div>
-          <button class="btn btn-primary" style="width:100%" onclick="addTemplate()">Vorlage hinzufügen</button>
-        </div>
       </div>
     </div>
+
+  <!-- Bottom-Sheet: Neue Vorlage -->
+  <div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
+  <div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:90vh;overflow-y:auto;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <span style="font-weight:700;font-size:16px">Neue Vorlage</span>
+      <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;padding:0;line-height:1">&times;</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
+          <option value="">Kategorie…</option>
+        </select>
+        <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
+        <label class="toggle">
+          <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
+          <span class="slider"></span>
+        </label>
+        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
+      </div>
+      <div id="tmpl-unit-row" style="display:none">
+        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
+          <option value="St.">Stück (St.)</option>
+          <option value="g">Gramm (g)</option>
+          <option value="ml">Milliliter (ml)</option>
+          <option value="kg">Kilogramm (kg)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
+        <label class="toggle">
+          <input type="checkbox" id="tmpl-sorten">
+          <span class="slider"></span>
+        </label>
+        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl</span>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
+    </div>
+  </div>
 
     <!-- EINSTELLUNGEN TAB -->
     <div id="tab-sys" class="tab-pane">
@@ -958,6 +978,32 @@ function renderTemplates() {
   `).join('');
 }
 
+// ── Bottom-Sheet für neue Vorlage ─────────────────────────────
+function openTmplSheet() {
+  // Felder zurücksetzen
+  document.getElementById('tmpl-name').value = '';
+  document.getElementById('tmpl-days').value = '';
+  document.getElementById('tmpl-ask-qty').checked = false;
+  document.getElementById('tmpl-unit-row').style.display = 'none';
+  document.getElementById('tmpl-sorten').checked = false;
+  const overlay = document.getElementById('tmpl-sheet-overlay');
+  const sheet   = document.getElementById('tmpl-sheet');
+  overlay.style.display = 'block';
+  sheet.style.display   = 'block';
+  requestAnimationFrame(() => { sheet.style.transform = 'translateY(0)'; });
+  setTimeout(() => { document.getElementById('tmpl-name').focus(); }, 350);
+}
+
+function closeTmplSheet() {
+  const sheet   = document.getElementById('tmpl-sheet');
+  const overlay = document.getElementById('tmpl-sheet-overlay');
+  sheet.style.transform = 'translateY(100%)';
+  setTimeout(() => {
+    sheet.style.display   = 'none';
+    overlay.style.display = 'none';
+  }, 300);
+}
+
 async function addTemplate() {
   const name     = document.getElementById('tmpl-name').value.trim();
   const category = document.getElementById('tmpl-cat').value;
@@ -973,11 +1019,7 @@ async function addTemplate() {
   if (useSorten) payload.useSorten = true;
   try {
     const res = await apiPost('/api/templates/add', payload);
-    document.getElementById('tmpl-name').value  = '';
-    document.getElementById('tmpl-days').value  = '';
-    document.getElementById('tmpl-ask-qty').checked = false;
-    document.getElementById('tmpl-unit-row').style.display = 'none';
-    document.getElementById('tmpl-sorten').checked = false;
+    closeTmplSheet();
     const newTmpl = { id: res.id || String(Date.now()), name, category, shelfDays };
     if (unit)      newTmpl.unit      = unit;
     if (useSorten) newTmpl.useSorten = true;
