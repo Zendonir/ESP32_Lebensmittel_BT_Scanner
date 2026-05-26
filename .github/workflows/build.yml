@@ -67,92 +67,95 @@ jobs:
 
       # ── Vorabrelease bei jedem Push auf main ───────────────────────────────
       # Tag "latest" wird immer auf den aktuellen main-Commit verschoben.
-      # prerelease: true → erscheint im Dropdown als "[Vorab] latest"
       - name: Update Vorabrelease (latest)
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: "Vorabversion (latest)"
-          prerelease: true
-          make_latest: false
-          files: |
-            firmware_ota.bin
-            firmware_full_flash.bin
-            littlefs.bin
-          body: |
-            ## Vorabversion – aktueller Entwicklungsstand
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY="## Vorabversion – aktueller Entwicklungsstand
 
-            Automatisch gebaut von Commit ${{ github.sha }} (`${{ github.ref_name }}`)
-            Zeitstempel: ${{ github.event.head_commit.timestamp }}
+          Automatisch gebaut von Commit \`${{ github.sha }}\` (\`${{ github.ref_name }}\`)
+          Zeitstempel: ${{ github.event.head_commit.timestamp }}
 
-            > ⚠️ Dies ist kein stabiles Release. Für den Produktiveinsatz eine nummerierte Version (z.B. v1.0.x) verwenden.
+          > ⚠️ Dies ist kein stabiles Release. Für den Produktiveinsatz eine nummerierte Version (z.B. v1.0.x) verwenden.
 
-            | Datei | Verwendung |
-            |-------|-----------|
-            | `firmware_ota.bin` | OTA-Update über Web-Interface |
-            | `firmware_full_flash.bin` | Erstmaliges Flashen per USB (`esptool`) |
-            | `littlefs.bin` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+          | Datei | Verwendung |
+          |-------|-----------|
+          | \`firmware_ota.bin\` | OTA-Update über Web-Interface |
+          | \`firmware_full_flash.bin\` | Erstmaliges Flashen per USB (\`esptool\`) |
+          | \`littlefs.bin\` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
 
-            ### USB-Flash Befehl
-            ```
-            esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
-            ```
+          ### USB-Flash Befehl
+          \`\`\`
+          esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
+          \`\`\`"
+
+          # Tag auf aktuellen Commit verschieben
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag -fa latest -m "Vorabversion (latest)" HEAD
+          git push origin latest --force
+
+          # Release aktualisieren (oder neu erstellen falls noch nicht vorhanden)
+          if gh release view latest &>/dev/null; then
+            gh release edit latest \
+              --title "Vorabversion (latest)" \
+              --prerelease \
+              --notes "$BODY"
+            gh release upload latest --clobber \
+              firmware_ota.bin firmware_full_flash.bin littlefs.bin
+          else
+            gh release create latest \
+              --title "Vorabversion (latest)" \
+              --prerelease \
+              --notes "$BODY" \
+              firmware_ota.bin firmware_full_flash.bin littlefs.bin
+          fi
 
       # ── Stabiles Release bei v*-Tags (ohne -pre) ──────────────────────────
       - name: Create stable Release
         if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-pre')
-        uses: softprops/action-gh-release@v2
-        with:
-          make_latest: true
-          files: |
-            firmware_ota.bin
-            firmware_full_flash.bin
-            littlefs.bin
-          body: |
-            ## Firmware ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Firmware ${{ github.ref_name }}" \
+            --latest \
+            --notes "## Firmware ${{ github.ref_name }}
 
-            | Datei | Verwendung |
-            |-------|-----------|
-            | `firmware_ota.bin` | OTA-Update über Web-Interface |
-            | `firmware_full_flash.bin` | Erstmaliges Flashen per USB (`esptool`) |
-            | `littlefs.bin` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+          | Datei | Verwendung |
+          |-------|-----------|
+          | \`firmware_ota.bin\` | OTA-Update über Web-Interface |
+          | \`firmware_full_flash.bin\` | Erstmaliges Flashen per USB (\`esptool\`) |
+          | \`littlefs.bin\` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
 
-            ### USB-Flash Befehl
-            ```
-            esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
-            ```
+          ### USB-Flash Befehl
+          \`\`\`
+          esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
+          \`\`\`" \
+            firmware_ota.bin firmware_full_flash.bin littlefs.bin
 
       # ── Vorabrelease bei v*-pre*-Tags ─────────────────────────────────────
       - name: Create pre-Release
         if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-pre')
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: true
-          make_latest: false
-          files: |
-            firmware_ota.bin
-            firmware_full_flash.bin
-            littlefs.bin
-          body: |
-            ## Vorabversion ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Vorabversion ${{ github.ref_name }}" \
+            --prerelease \
+            --notes "## Vorabversion ${{ github.ref_name }}
 
-            > ⚠️ Dies ist eine Vorabversion zum Testen. Für den Produktiveinsatz eine stabile Version verwenden.
+          > ⚠️ Dies ist eine Vorabversion zum Testen. Für den Produktiveinsatz eine stabile Version verwenden.
 
-            | Datei | Verwendung |
-            |-------|-----------|
-            | `firmware_ota.bin` | OTA-Update über Web-Interface |
-            | `firmware_full_flash.bin` | Erstmaliges Flashen per USB (`esptool`) |
-            | `littlefs.bin` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+          | Datei | Verwendung |
+          |-------|-----------|
+          | \`firmware_ota.bin\` | OTA-Update über Web-Interface |
+          | \`firmware_full_flash.bin\` | Erstmaliges Flashen per USB (\`esptool\`) |
+          | \`littlefs.bin\` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
 
-            ### Änderungen
-            - Display-Inventar: Lagerort statt Marke in Hauptzeile, Spaltenköpfe dynamisch
-            - OTA-Statusscreen: Versionsnummer, echter Fortschrittsbalken, kein Lagerort-Badge
-            - Web-UI: Release-Datum im OTA-Dropdown
-            - Mobile: Swipe-to-delete in Gruppenzeilen gefixt, Lagerort in Unterzeilen
-            - Display-Standby: Standardwert 5 Min, in mobiler UI einstellbar
-
-            ### USB-Flash Befehl
-            ```
-            esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
-            ```
+          ### USB-Flash Befehl
+          \`\`\`
+          esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
+          \`\`\`" \
+            firmware_ota.bin firmware_full_flash.bin littlefs.bin
