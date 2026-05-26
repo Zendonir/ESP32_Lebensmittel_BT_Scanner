@@ -507,7 +507,7 @@ class AuthHandler : public AsyncWebHandler {
     // Bei Reverse-Proxy: X-Forwarded-For enthält die echte externe IP.
     // Direkt: Verbindungs-IP der TCP-Session.
     static IPAddress effectiveIP(AsyncWebServerRequest *req) {
-        AsyncWebHeader *xff = req->getHeader("X-Forwarded-For");
+        const AsyncWebHeader *xff = req->getHeader("X-Forwarded-For");
         if (xff) {
             String first = xff->value();
             int c = first.indexOf(',');
@@ -527,7 +527,7 @@ class AuthHandler : public AsyncWebHandler {
     }
 
 public:
-    bool canHandle(AsyncWebServerRequest *req) override {
+    bool canHandle(AsyncWebServerRequest *req) {
         const String pass = device_config.getWebPassword();
         if (pass.isEmpty()) return false;          // kein Passwort → kein Schutz
 
