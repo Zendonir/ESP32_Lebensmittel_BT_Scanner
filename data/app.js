@@ -1452,6 +1452,11 @@ Pages.system = {
       document.getElementById('cfgNtfyUrl').value   = cfg.ntfyUrl   || '';
       document.getElementById('cfgNtfyTopic').value = cfg.ntfyTopic || '';
       document.getElementById('cfgNtfyDays').value  = cfg.ntfyDays  != null ? cfg.ntfyDays : 3;
+      document.getElementById('cfgWebUser').value   = cfg.webUser   || 'admin';
+      const authStatus = document.getElementById('webAuthStatus');
+      if (authStatus) authStatus.textContent = cfg.webPasswordSet
+        ? '🔒 Passwort gesetzt – Schutz aktiv für externe Zugriffe'
+        : '🔓 Kein Passwort – Web-Interface frei zugänglich';
       try {
         const disp = await API.get('/api/display-config');
         document.getElementById('cfgStandby').value = String(disp.standby_sec ?? 0);
@@ -1493,6 +1498,41 @@ Pages.system = {
     } catch(e) {
       Toast.error('Fehler: ' + e.message);
     }
+  },
+
+  async saveWebAuth(e) {
+    e.preventDefault();
+    const user  = document.getElementById('cfgWebUser').value.trim() || 'admin';
+    const pass  = document.getElementById('cfgWebPass').value;
+    const pass2 = document.getElementById('cfgWebPass2').value;
+    if (pass !== pass2) { Toast.error('Passwörter stimmen nicht überein'); return; }
+    if (pass && pass.length < 6) { Toast.error('Passwort muss mindestens 6 Zeichen haben'); return; }
+    try {
+      const body = { webUser: user };
+      if (pass) body.webPassword = pass;   // nur senden wenn neu gesetzt
+      await API.post('/api/device-config', body);
+      document.getElementById('cfgWebPass').value  = '';
+      document.getElementById('cfgWebPass2').value = '';
+      const authStatus = document.getElementById('webAuthStatus');
+      if (authStatus) authStatus.textContent = pass
+        ? '🔒 Passwort gesetzt – Schutz aktiv für externe Zugriffe'
+        : authStatus.textContent;
+      Toast.success('Web-Authentifizierung gespeichert');
+    } catch(e) {
+      Toast.error('Fehler: ' + e.message);
+    }
+  },
+
+  async removeWebAuth() {
+    Modal.confirm('Passwort entfernen',
+      'Web-Authentifizierung deaktivieren? Das Interface ist dann ohne Passwort erreichbar.', async () => {
+      try {
+        await API.post('/api/device-config', { webPassword: '' });
+        const authStatus = document.getElementById('webAuthStatus');
+        if (authStatus) authStatus.textContent = '🔓 Kein Passwort – Web-Interface frei zugänglich';
+        Toast.success('Passwort entfernt');
+      } catch(e) { Toast.error(e.message); }
+    });
   },
 
   render(sys) {

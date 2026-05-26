@@ -14,6 +14,8 @@ void DeviceConfig::begin() {
     _ntfyUrl              = p.getString("ntfyUrl",   "https://ntfy.sh");
     _ntfyTopic            = p.getString("ntfyTopic", "");
     _ntfyDays             = p.getInt("ntfyDays",     3);
+    _webUser              = p.getString("webUser",   "admin");
+    _webPassword          = p.getString("webPass",   "");
     p.end();
 }
 
@@ -79,4 +81,16 @@ void DeviceConfig::setTimezone(const String &tz) {
     _timezone = tz.isEmpty() ? "CET-1CEST,M3.5.0,M10.5.0/3" : tz;
     Preferences p; p.begin("device", false);
     p.putString("timezone", _timezone); p.end();
+}
+
+void DeviceConfig::setWebUser(const String &u) {
+    _webUser = u.isEmpty() ? "admin" : u;
+    Preferences p; p.begin("device", false);
+    p.putString("webUser", _webUser); p.end();
+}
+
+void DeviceConfig::setWebPassword(const String &pw) {
+    _webPassword = pw;
+    Preferences p; p.begin("device", false);
+    p.putString("webPass", _webPassword); p.end();
 }

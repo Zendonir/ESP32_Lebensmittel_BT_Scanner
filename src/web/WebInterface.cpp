@@ -497,6 +497,52 @@ static void sendScanResult(AsyncWebServerRequest *req) {
     req->send(200, "application/json", body);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Auth-Handler – abfangen aller nicht authentifizierten Anfragen von
+//  externen IPs (Lokal-IPs 192.168.x / 10.x / 172.16-31.x werden immer
+//  durchgelassen). Nur aktiv wenn webPassword gesetzt ist.
+// ═══════════════════════════════════════════════════════════════════════════
+class AuthHandler : public AsyncWebHandler {
+    // Gibt die effektive Client-IP zurück.
+    // Bei Reverse-Proxy: X-Forwarded-For enthält die echte externe IP.
+    // Direkt: Verbindungs-IP der TCP-Session.
+    static IPAddress effectiveIP(AsyncWebServerRequest *req) {
+        AsyncWebHeader *xff = req->getHeader("X-Forwarded-For");
+        if (xff) {
+            String first = xff->value();
+            int c = first.indexOf(',');
+            if (c > 0) first = first.substring(0, c);
+            first.trim();
+            IPAddress ip;
+            if (ip.fromString(first)) return ip;
+        }
+        return req->client()->remoteIP();
+    }
+
+    static bool isLocalIP(const IPAddress &ip) {
+        return (ip[0] == 192 && ip[1] == 168)           // 192.168.0.0/16
+            || (ip[0] == 10)                             // 10.0.0.0/8
+            || (ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) // 172.16-31.x
+            || (ip[0] == 127);                           // loopback
+    }
+
+public:
+    bool canHandle(AsyncWebServerRequest *req) override {
+        const String pass = device_config.getWebPassword();
+        if (pass.isEmpty()) return false;          // kein Passwort → kein Schutz
+
+        // Lokale IP (direkt oder via X-Forwarded-For) → immer durchlassen
+        if (isLocalIP(effectiveIP(req))) return false;
+
+        // Externe IP: Basic-Auth-Credentials prüfen
+        const String user = device_config.getWebUser();
+        return !req->authenticate(user.c_str(), pass.c_str());
+    }
+    void handleRequest(AsyncWebServerRequest *req) override {
+        req->requestAuthentication("FoodScanner");
+    }
+};
+
 WebInterface::WebInterface(uint16_t port) : _server(port) {}
 
 void WebInterface::begin() {
@@ -531,6 +577,7 @@ void WebInterface::begin() {
         saveJson("/categories.json", doc);
     }
 
+    _server.addHandler(new AuthHandler());   // muss vor allen anderen Handlern stehen
     registerStaticRoutes();
     registerApiRoutes();
     _server.begin();
@@ -852,6 +899,9 @@ void WebInterface::registerApiRoutes() {
         doc["ntfyUrl"]       = device_config.getNtfyUrl();
         doc["ntfyTopic"]     = device_config.getNtfyTopic();
         doc["ntfyDays"]      = device_config.getNtfyDays();
+        doc["webUser"]       = device_config.getWebUser();
+        // Passwort nicht zurückgeben – nur ob eines gesetzt ist
+        doc["webPasswordSet"] = !device_config.getWebPassword().isEmpty();
         String body;
         serializeJson(doc, body);
         req->send(200, "application/json", body);
@@ -897,6 +947,18 @@ void WebInterface::registerApiRoutes() {
             }
             if (!doc["ntfyDays"].isNull())
                 device_config.setNtfyDays(doc["ntfyDays"].as<int>());
+            if (!doc["webUser"].isNull()) {
+                String v = doc["webUser"].as<String>();
+                if (!validOptStr(v, 64)) { req->send(400, "application/json", "{\"error\":\"webUser zu lang\"}"); return; }
+                device_config.setWebUser(v);
+            }
+            // webPassword: leerer String = Passwort entfernen (Auth deaktivieren)
+            // Feld "webPassword" muss explizit mitgeschickt werden (null = nicht ändern)
+            if (doc["webPassword"].is<String>()) {
+                String v = doc["webPassword"].as<String>();
+                if (v.length() > 128) { req->send(400, "application/json", "{\"error\":\"Passwort zu lang\"}"); return; }
+                device_config.setWebPassword(v);
+            }
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);

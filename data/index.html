@@ -290,6 +290,31 @@
     </div>
     <div class="grid-2">
       <div class="card">
+        <div class="card-title">Web-Authentifizierung</div>
+        <form class="form-stack" onsubmit="Pages.system.saveWebAuth(event)">
+          <div class="form-field">
+            <label>Benutzername</label>
+            <input type="text" id="cfgWebUser" class="input" placeholder="admin" autocomplete="username">
+          </div>
+          <div class="form-field">
+            <label>Neues Passwort <span class="muted" style="font-weight:normal;font-size:.8rem">(leer lassen = unverändert)</span></label>
+            <input type="password" id="cfgWebPass" class="input" placeholder="••••••••" autocomplete="new-password">
+          </div>
+          <div class="form-field">
+            <label>Passwort bestätigen</label>
+            <input type="password" id="cfgWebPass2" class="input" placeholder="••••••••" autocomplete="new-password">
+          </div>
+          <p class="muted" id="webAuthStatus" style="font-size:.8rem;margin:0"></p>
+          <p class="muted" style="font-size:.8rem;margin:0">
+            Nur für Zugriffe von außerhalb des Heimnetzes aktiv.<br>
+            Lokale IPs (192.168.x.x / 10.x.x.x) werden immer durchgelassen.<br>
+            <strong>Passwort leer lassen = kein Schutz.</strong>
+          </p>
+          <button type="submit" class="btn btn-ok">Speichern</button>
+          <button type="button" class="btn btn-danger" onclick="Pages.system.removeWebAuth()" style="margin-top:4px">Passwort entfernen</button>
+        </form>
+      </div>
+      <div class="card">
         <div class="card-title">Push-Benachrichtigungen (ntfy)</div>
         <form class="form-stack" onsubmit="Pages.system.saveNtfy(event)">
           <div class="form-field">

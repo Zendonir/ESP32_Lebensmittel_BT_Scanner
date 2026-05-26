@@ -35,6 +35,12 @@ public:
     void   setNtfyTopic(const String &t);
     void   setNtfyDays(int d);
 
+    // Web-Authentifizierung (Basic Auth für externe Zugriffe via Proxy)
+    String getWebUser()     const { return _webUser; }
+    String getWebPassword() const { return _webPassword; }
+    void   setWebUser(const String &u);
+    void   setWebPassword(const String &p);
+
 private:
     String _household            = "Standard";
     String _householdAbbr        = "";
@@ -45,6 +51,8 @@ private:
     String _ntfyUrl              = "https://ntfy.sh";
     String _ntfyTopic            = "";
     int    _ntfyDays             = 3;
+    String _webUser              = "admin";
+    String _webPassword          = "";   // leer = kein Passwortschutz
 };
 
 extern DeviceConfig device_config;
