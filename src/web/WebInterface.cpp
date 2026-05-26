@@ -2185,9 +2185,6 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true}");
         },
         nullptr, bodyCollect);
-            req->send(200, "application/json", "{\"ok\":true}");
-        },
-        nullptr, bodyCollect);
 
     // POST /api/templates/delete  → delete template by id or name {id} or {name}
     _server.on("/api/templates/delete", HTTP_POST,
