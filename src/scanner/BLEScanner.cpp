@@ -221,9 +221,6 @@ void BLEScanner::begin() {
     scan->setInterval(100);
     scan->setWindow(99);
 
-    // Verbindungs-Timeout: 5 Sekunden pro Versuch, danach Scan als Fallback
-    NimBLEDevice::setConnectTimeout(5);
-
     loadSettings();
     initialized = true;
 
@@ -232,13 +229,7 @@ void BLEScanner::begin() {
 
     if (autoReconnect && !deviceAddress.isEmpty()) {
         _targetName = deviceName;
-        // Bekannte Adresse gespeichert → sofort direkt verbinden (kein Scan nötig).
-        // NimBLE initiiert Connection-Request-Pakete auf allen Advertising-Kanälen
-        // und verbindet sich, sobald das Gerät antwortet – typisch < 1 Sekunde.
-        // Bei Timeout/Fehler: connectTask ruft handleClientDisconnect() → _startScan() als Fallback.
-        NimBLEAddress *a = new NimBLEAddress(std::string(deviceAddress.c_str()), _addrType);
-        _setConnecting(true);
-        xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+        _startScan();  // Scan sofort starten – 100% Duty-Cycle, findet Scanner in < 100 ms
     }
 }
 
@@ -350,20 +341,8 @@ void BLEScanner::handleClientDisconnect() {
     _setConnected(false);
     reconnectFailures++;
     if (was) Serial.println("[BLE] Client disconnected");
-    if (autoReconnect && !reconnectPaused && initialized) {
-        if (!deviceAddress.isEmpty() && reconnectFailures <= 2) {
-            // Bekannte Adresse + noch < 3 Fehlversuche: direkt verbinden (kein Scan)
-            Serial.printf("[BLE] Direktverbindung Versuch %d/2 zu %s\n",
-                          (int)reconnectFailures, deviceAddress.c_str());
-            NimBLEAddress *a = new NimBLEAddress(std::string(deviceAddress.c_str()), _addrType);
-            _setConnecting(true);
-            xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
-        } else {
-            // Nach 2 Fehlversuchen oder keine Adresse: Scan als Fallback
-            Serial.println("[BLE] Fallback auf Scan nach Verbindungsfehlern");
-            _startScan();
-        }
-    }
+    if (autoReconnect && !reconnectPaused && initialized)
+        _startScan();
 }
 
 std::vector<BLEScannerDevice> BLEScanner::scanDevices(uint32_t durationSeconds) {
