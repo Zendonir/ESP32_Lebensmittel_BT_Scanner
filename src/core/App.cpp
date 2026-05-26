@@ -398,12 +398,6 @@ void App::loop() {
         }
     }
 
-    // Display-Wakeup bei erstem Finger-Druck (nicht erst beim Loslassen)
-    if (!_displayOn && display_obj.isTouchActive()) {
-        _lastActivityMs = millis();
-        setBacklight(true);
-    }
-
     handleTouch();
     processWorkflow();
 
@@ -629,17 +623,17 @@ void App::handleTouch() {
     OnscreenAction action = display_obj.hitTest(0, 0);
     if (action == OnscreenAction::NONE) return;
 
-    _lastActivityMs = millis();
-
     if (!_displayOn) {
-        setBacklight(true);
-        // Swipes wake AND navigate; taps are swallowed to prevent accidental actions
+        // Display aus: NUR Swipe weckt auf – Taps werden ignoriert
         if (action == OnscreenAction::SWIPE_LEFT || action == OnscreenAction::SWIPE_RIGHT) {
+            _lastActivityMs = millis();
+            setBacklight(true);
             processOnscreenAction(action);
         }
         return;
     }
 
+    _lastActivityMs = millis();
     processOnscreenAction(action);
 }
 

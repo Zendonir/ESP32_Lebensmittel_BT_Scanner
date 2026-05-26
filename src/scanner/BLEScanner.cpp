@@ -68,6 +68,7 @@ static void connectTask(void *arg) {
         s_client = NimBLEDevice::createClient();
         s_client->setClientCallbacks(&s_clientCB, false);
     }
+    s_client->setConnectTimeout(4000);  // 4 s Timeout (NimBLE 2.x: ms)
     s_client->setConnectionParams(12, 12, 0, 51);
 
     Serial.printf("[BLE] Connecting to %s\n", addr->toString().c_str());
@@ -229,7 +230,12 @@ void BLEScanner::begin() {
 
     if (autoReconnect && !deviceAddress.isEmpty()) {
         _targetName = deviceName;
-        _startScan();  // Scan sofort starten – 100% Duty-Cycle, findet Scanner in < 100 ms
+        // Direkt verbinden: _setConnecting(true) VOR _startScan() damit
+        // der Scan-Callback nicht konkurrierend eine zweite Task startet.
+        _setConnecting(true);
+        _startScan();   // paralleler Scan als Fallback; setzt Duplicate-Filter zurück
+        NimBLEAddress *a = new NimBLEAddress(std::string(deviceAddress.c_str()), _addrType);
+        xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
     }
 }
 
@@ -253,15 +259,16 @@ void BLEScanner::loop() {
         _startScan();
     }
 
-    // ── Scan-Watchdog: alle 500 ms prüfen, Scan ggf. neu starten ────────────
-    // Fallback wenn Direktverbindung (begin) oder connectTask fehlgeschlagen ist.
-    // 500 ms-Intervall sorgt für schnelles Wiederaufnehmen des Scans.
+    // ── Scan-Watchdog: alle 2 s prüfen ob Scan noch läuft ───────────────────
+    // _startScan() macht jetzt immer stop+start, daher seltener aufrufen um
+    // nicht ständig den Duplicate-Filter zu resetzen und damit Verbindungs-
+    // versuche zu unterbrechen.
     {
         static uint32_t s_watchMs = 0;
         if (!connected && !connecting && !connectRequested
                 && autoReconnect && !deviceAddress.isEmpty()
                 && !reconnectPaused && !s_discovering
-                && millis() - s_watchMs >= 500) {
+                && millis() - s_watchMs >= 2000) {
             s_watchMs = millis();
             if (!NimBLEDevice::getScan()->isScanning()) {
                 Serial.println("[BLE] Watchdog: Scan gestoppt – starte neu");
@@ -289,8 +296,10 @@ void BLEScanner::loop() {
 void BLEScanner::_startScan() {
     if (s_discovering || reconnectPaused) return;
     NimBLEScan *scan = NimBLEDevice::getScan();
-    if (scan->isScanning()) return;
-    scan->start(0, false, true); // continuous, non-blocking
+    // Immer stop+start: setzt den Duplicate-Filter zurück, damit bereits
+    // gesehene Geräte (z.B. nach Disconnect) erneut gemeldet werden.
+    if (scan->isScanning()) scan->stop();
+    scan->start(0, false, true); // continuous, non-blocking, restart=true
 }
 
 void BLEScanner::_setConnected(bool c) {
@@ -340,9 +349,24 @@ void BLEScanner::handleClientDisconnect() {
     bool was = connected || connecting;
     _setConnected(false);
     reconnectFailures++;
-    if (was) Serial.println("[BLE] Client disconnected");
-    if (autoReconnect && !reconnectPaused && initialized)
+    if (was) Serial.printf("[BLE] Disconnected – Versuch %d\n", (int)reconnectFailures);
+    if (!autoReconnect || reconnectPaused || !initialized) return;
+
+    if (!deviceAddress.isEmpty() && reconnectFailures <= 2) {
+        // Direkt verbinden (< 500 ms wenn Gerät an, 4 s Timeout wenn aus).
+        // _setConnecting(true) VOR _startScan() setzen, damit der Scan-
+        // Callback keine konkurrierende connectTask startet.
+        _setConnecting(true);
+        _startScan();   // Duplicate-Filter reset; Scan läuft als Fallback im Hintergrund
+        NimBLEAddress *a = new NimBLEAddress(std::string(deviceAddress.c_str()), _addrType);
+        xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+    } else {
+        // Nach 2 Fehlversuchen (Gerät wohl aus) → nur noch Scan
+        // Wenn Gerät wieder einschaltet, meldet scan-Callback das sofort
+        Serial.println("[BLE] Fallback auf Scan-only nach Fehlversuchen");
+        reconnectFailures = 0;  // Reset damit nächstes Mal wieder Direktverbindung
         _startScan();
+    }
 }
 
 std::vector<BLEScannerDevice> BLEScanner::scanDevices(uint32_t durationSeconds) {
