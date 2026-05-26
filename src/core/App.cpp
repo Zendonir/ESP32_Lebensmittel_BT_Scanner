@@ -398,6 +398,12 @@ void App::loop() {
         }
     }
 
+    // Display-Wakeup bei erstem Finger-Druck (nicht erst beim Loslassen)
+    if (!_displayOn && display_obj.isTouchActive()) {
+        _lastActivityMs = millis();
+        setBacklight(true);
+    }
+
     handleTouch();
     processWorkflow();
 
@@ -447,10 +453,28 @@ void App::initBacklight() {
 void App::setBacklight(bool on) {
     _displayOn = on;
     if (LCD_BL < 0) return;
-    if (_blPwm) {
-        ledcWrite(LCD_BL, on ? 255 : 0);
+    if (on) {
+        // Display einschalten: PWM anfordern (ggf. neu attachen nach ledcDetach)
+        if (!_blPwm) {
+            _blPwm = ledcAttach(LCD_BL, 5000, 8);
+        }
+        if (_blPwm) {
+            ledcWrite(LCD_BL, 255);
+        } else {
+            pinMode(LCD_BL, OUTPUT);
+            digitalWrite(LCD_BL, HIGH);
+        }
     } else {
-        digitalWrite(LCD_BL, on ? HIGH : LOW);
+        // Display ausschalten: ledcDetach + GPIO-LOW
+        // ledcWrite(pin, 0) funktioniert auf ESP32-S3 nicht zuverlässig –
+        // der LEDC-Treiber hält den Pin manchmal HIGH. Daher detachen und
+        // explizit LOW setzen.
+        if (_blPwm) {
+            ledcDetach(LCD_BL);
+            _blPwm = false;
+        }
+        pinMode(LCD_BL, OUTPUT);
+        digitalWrite(LCD_BL, LOW);
     }
 }
 

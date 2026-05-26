@@ -113,6 +113,9 @@ static constexpr int16_t SCROLL_DEAD_PX = 8;  // px dead zone before scroll acti
 static bool    _scrollEnabled    = false;  // true only when inventory list is visible
 static bool    _inScrollGesture  = false;
 static int16_t _scrollCommitDelta = 0;   // final delta saved on finger-lift
+// FT6336 Debounce: erfordert N aufeinanderfolgende „nicht berührt"-Readings bevor Lift ausgelöst
+static uint8_t _releaseDebounce = 0;
+static constexpr uint8_t RELEASE_DEBOUNCE_TICKS = 2;  // bei 10 ms/Tick = 20 ms
 static int     _lastScrollableCount = 0;   // group count from last showInventoryList render
 
 // ─────────────────── action queue (single-slot) ──────────
@@ -529,6 +532,7 @@ void Display::tick() {
 
     // ── Finger down / moving ──────────────────────────────────
     if (tp.pressed) {
+        _releaseDebounce = 0;  // Finger ist unten – Debounce-Zähler zurücksetzen
         if (!_ts.active) {
             _ts.active  = true;
             _ts.startX  = tp.x;
@@ -557,8 +561,13 @@ void Display::tick() {
         return;
     }
 
-    // ── Finger lifted ─────────────────────────────────────────
+    // ── Finger lifted (mit Debounce gegen FT6336-I2C-Glitches) ──────────
     if (!_ts.active) return;
+    // Erst nach RELEASE_DEBOUNCE_TICKS aufeinanderfolgenden „nicht berührt"-Messungen
+    // als echter Lift werten – vermeidet frühzeitigen Abbruch durch I2C-Lesefehler
+    _releaseDebounce++;
+    if (_releaseDebounce < RELEASE_DEBOUNCE_TICKS) return;
+    _releaseDebounce = 0;
     _ts.active = false;
 
     int16_t  dx      = _ts.lastX - _ts.startX;
@@ -648,6 +657,10 @@ OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {
     OnscreenAction a = _pending_action;
     _pending_action  = OnscreenAction::NONE;
     return a;
+}
+
+bool Display::isTouchActive() const {
+    return _ts.active;
 }
 
 int16_t Display::getLastSwipePressY() const {

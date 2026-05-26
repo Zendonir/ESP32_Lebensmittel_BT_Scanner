@@ -187,6 +187,9 @@ public:
     // Action queue
     OnscreenAction hitTest(uint16_t x, uint16_t y) const;
 
+    // Touch state query — used by App::loop() for display wakeup on finger-down
+    bool isTouchActive() const;
+
     // Legacy helpers
     void drawText(int x, int y, const char *text, uint16_t color = 0xFFFF);
     void fillScreen(uint16_t color);
