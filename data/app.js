@@ -1489,9 +1489,10 @@ Pages.design = {
 Pages.system = {
   async load() {
     try {
-      const [sys, cfg] = await Promise.all([
+      const [sys, cfg, uiCfg] = await Promise.all([
         API.get('/api/system-info'),
         API.get('/api/device-config'),
+        API.get('/api/ui-config').catch(() => ({})),
       ]);
       this.render(sys);
       document.getElementById('cfgHousehold').value      = cfg.household      || '';
@@ -1501,6 +1502,7 @@ Pages.system = {
       document.getElementById('cfgNtfyUrl').value   = cfg.ntfyUrl   || '';
       document.getElementById('cfgNtfyTopic').value = cfg.ntfyTopic || '';
       document.getElementById('cfgNtfyDays').value  = cfg.ntfyDays  != null ? cfg.ntfyDays : 3;
+      if (document.getElementById('cfgWarnDays')) document.getElementById('cfgWarnDays').value = uiCfg.warn_days != null ? uiCfg.warn_days : 7;
       document.getElementById('cfgWebUser').value   = cfg.webUser   || 'admin';
       const authStatus = document.getElementById('webAuthStatus');
       if (authStatus) authStatus.textContent = cfg.webPasswordSet
@@ -1528,6 +1530,7 @@ Pages.system = {
           State.householdAbbr = document.getElementById('cfgHouseholdAbbr').value.trim().slice(0, 5);
         }),
         API.post('/api/display-config', { standby_sec: standbySec }),
+        API.post('/api/ui-config', { warn_days: parseInt(document.getElementById('cfgWarnDays')?.value, 10) || 7 }),
       ]);
       Toast.success('Gerät & Haushalt gespeichert');
     } catch(e) {

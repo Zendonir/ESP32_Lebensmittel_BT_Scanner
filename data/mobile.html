@@ -80,8 +80,8 @@
   #header-right { display: flex; align-items: center; gap: 10px; }
   #wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
   #wifi-dot.ok { background: var(--green); }
-  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  #tabbar { display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); flex-shrink: 0; }
+  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
+  #tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
   .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
   .tab-btn.active { color: var(--accent); }
   .tab-btn svg { width: 22px; height: 22px; }
@@ -261,15 +261,6 @@
 
     <!-- VERWALTUNG TAB -->
     <div id="tab-mgmt" class="tab-pane">
-      <div class="card">
-        <div class="card-title">Kategorien</div>
-        <div id="cat-list"><div class="mgmt-empty"><span class="spinner"></span></div></div>
-        <div class="add-row">
-          <input type="text" id="cat-input" placeholder="Neue Kategorie…" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false">
-          <button class="btn btn-primary" onclick="addCategory()">+</button>
-        </div>
-      </div>
-
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div class="card-title" style="margin-bottom:0">Vorlagen</div>
@@ -843,33 +834,11 @@ async function loadMgmt() {
     ]);
     _categories = Array.isArray(cats) ? cats : (cats.categories || []);
     _templates  = Array.isArray(tmpls) ? tmpls : (tmpls.templates || []);
-    renderCategories();
     renderTemplates();
     populateCatSelects();
   } catch(e) {
-    document.getElementById('cat-list').innerHTML  = '<div class="mgmt-empty">Fehler beim Laden</div>';
     document.getElementById('tmpl-list').innerHTML = '<div class="mgmt-empty">Fehler beim Laden</div>';
   }
-}
-
-function renderCategories() {
-  const el = document.getElementById('cat-list');
-  if (!_categories.length) {
-    el.innerHTML = '<div class="mgmt-empty">Noch keine Kategorien</div>';
-    return;
-  }
-  el.innerHTML = _categories.map(c => {
-    const name  = typeof c === 'string' ? c : (c.name || '');
-    const nameQ = name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");  // safe for onclick single-quote
-    const count = _templates.filter(t => (t.category || '') === name).length;
-    return `<div class="mgmt-item">
-      <div class="mgmt-item-info">
-        <div class="mgmt-item-name">${esc(name)}</div>
-        <div class="mgmt-item-sub">${count} Vorlage${count !== 1 ? 'n' : ''}</div>
-      </div>
-      <button class="btn-danger" onclick="deleteCategory('${nameQ}')">Löschen</button>
-    </div>`;
-  }).join('');
 }
 
 function populateCatSelects() {
@@ -888,34 +857,6 @@ function populateCatSelects() {
 
   if (filterVal) filterSel.value = filterVal;
   if (addVal)    addSel.value    = addVal;
-}
-
-async function addCategory() {
-  const inp  = document.getElementById('cat-input');
-  const name = inp.value.trim();
-  if (!name) return;
-  try {
-    await apiPost('/api/categories', { name });
-    inp.value = '';
-    if (!_categories.includes(name)) _categories.push(name);
-    renderCategories();
-    populateCatSelects();
-    toast('Kategorie gespeichert');
-  } catch(e) {
-    toast('Fehler: ' + e.message, 3000);
-  }
-}
-
-async function deleteCategory(name) {
-  try {
-    await apiPost('/api/categories/delete', { name });
-    _categories = _categories.filter(c => (typeof c === 'string' ? c : c.name) !== name);
-    renderCategories();
-    populateCatSelects();
-    toast('Kategorie gelöscht');
-  } catch(e) {
-    toast('Fehler: ' + e.message, 3000);
-  }
 }
 
 // ── Verwaltung: Templates ─────────────────────────────────────
@@ -1024,7 +965,6 @@ async function addTemplate() {
     if (unit)      newTmpl.unit      = unit;
     if (useSorten) newTmpl.useSorten = true;
     _templates.push(newTmpl);
-    renderCategories();
     renderTemplates();
     toast('Vorlage gespeichert');
   } catch(e) {
@@ -1036,7 +976,6 @@ async function deleteTemplate(id) {
   try {
     await apiPost('/api/templates/delete', { id });
     _templates = _templates.filter(t => (t.id || t.name) !== id);
-    renderCategories();
     renderTemplates();
     toast('Vorlage gelöscht');
   } catch(e) {
