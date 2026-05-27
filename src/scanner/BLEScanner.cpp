@@ -230,16 +230,14 @@ void BLEScanner::begin() {
 
     if (autoReconnect && !deviceAddress.isEmpty()) {
         _targetName = deviceName;
-        // Erster Verbindungsversuch erfolgt sofort im ersten loop()-Aufruf
-        // (s_reMs=0 → Bedingung millis()-0 >= 1000 wahr nach 1 s)
+        // Auto-reconnect wird von App::loop() getriggert (requestConnect alle 1 s)
     } else if (autoReconnect) {
-        // Noch keine Adresse: Scan für Erstkopplung starten
-        _startScan();
+        _startScan();   // Erstkopplung: Scan für HID-Geräte
     }
 }
 
 void BLEScanner::loop() {
-    // ── Idle timeout: disconnect if no scan received within _idleTimeoutMs ────
+    // ── Idle timeout ──────────────────────────────────────────────────────────
     if (connected && _idleTimeoutMs > 0
             && (millis() - _lastActivityMs) >= _idleTimeoutMs) {
         Serial.println("[BLE] Idle timeout – disconnecting");
@@ -249,7 +247,7 @@ void BLEScanner::loop() {
         if (s_client && s_client->isConnected()) s_client->disconnect();
     }
 
-    // ── Delayed auto-reconnect after idle disconnect ───────────────────────
+    // ── Nach Idle-Timeout wieder scannen ──────────────────────────────────────
     if (!connected && !connecting && !connectRequested
             && _reconnectAfterMs != 0 && millis() >= _reconnectAfterMs) {
         _reconnectAfterMs = 0;
@@ -258,25 +256,7 @@ void BLEScanner::loop() {
         _startScan();
     }
 
-    // ── Auto-reconnect: genau wie der Connect-Button auf dem Display ─────────
-    // Wenn Adresse bekannt → alle 1 s direkt verbinden (kein Scan-Callback nötig).
-    // connectTask timeout = 4 s; wenn Gerät aus: Versuch schlägt fehl, 1 s warten,
-    // nächster Versuch. Gerät einschalten → nächster Versuch verbindet sofort.
-    {
-        static uint32_t s_reMs = 0;
-        if (!connected && !connecting && !connectRequested
-                && autoReconnect && !deviceAddress.isEmpty()
-                && !reconnectPaused && !s_discovering
-                && millis() - s_reMs >= 1000) {
-            s_reMs = millis();
-            Serial.println("[BLE] Auto-reconnect: direkter Verbindungsversuch");
-            requestedAddress = deviceAddress;
-            requestedName    = deviceName;
-            connectRequested = true;   // wird unten in dieser loop()-Iteration verarbeitet
-        }
-    }
-
-    // ── Scan-Watchdog: nur wenn Adresse unbekannt (Erstkopplung) ─────────────
+    // ── Scan-Watchdog (Erstkopplung – Adresse noch unbekannt) ─────────────────
     if (!connected && !connecting && deviceAddress.isEmpty()
             && autoReconnect && !reconnectPaused && !s_discovering) {
         static uint32_t s_wMs = 0;
@@ -293,9 +273,14 @@ void BLEScanner::loop() {
     if (NimBLEDevice::getScan()->isScanning())
         NimBLEDevice::getScan()->stop();
 
+    // Nur speichern wenn sich tatsächlich etwas geändert hat
+    bool changed = (deviceAddress != requestedAddress);
     deviceAddress = requestedAddress;
     if (!requestedName.isEmpty()) deviceName = requestedName;
-    saveSettings();
+    if (changed) saveSettings();
+
+    Serial.printf("[BLE] Connecting to %s ('%s')...\n",
+                  deviceAddress.c_str(), deviceName.c_str());
 
     NimBLEAddress *a = new NimBLEAddress(std::string(requestedAddress.c_str()), _addrType);
     _setConnecting(true);
@@ -357,9 +342,8 @@ void BLEScanner::disconnect() {
 void BLEScanner::handleClientDisconnect() {
     bool was = connected || connecting;
     _setConnected(false);
-    if (was) Serial.println("[BLE] Disconnected – warte auf Auto-reconnect");
-    // Auto-reconnect erfolgt durch loop()-Watchdog (alle 1 s direkter Versuch)
-    // Scan nur für Erstkopplung nötig; bei bekannter Adresse nicht erforderlich
+    if (was) Serial.println("[BLE] Disconnected – App triggert Reconnect");
+    // Auto-reconnect: App::loop() ruft requestConnect() alle 1 s (wie Button)
 }
 
 std::vector<BLEScannerDevice> BLEScanner::scanDevices(uint32_t durationSeconds) {
