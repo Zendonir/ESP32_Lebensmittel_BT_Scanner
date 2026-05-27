@@ -261,22 +261,6 @@ void App::loop() {
         s_bleWasConnected = bleNow;
     }
 
-    // BLE Auto-Reconnect: alle 1 s requestConnect() – exakt wie der Connect-Button.
-    // Läuft nur wenn Adresse bekannt, nicht verbunden und nicht gerade verbindend.
-    {
-        static uint32_t s_bleReMs = 0;
-        if (!ble_scanner.isConnected()
-                && !ble_scanner.isConnecting()
-                && !ble_scanner.getDeviceAddress().isEmpty()
-                && ble_scanner.getAutoReconnect()
-                && millis() - s_bleReMs >= 1000) {
-            s_bleReMs = millis();
-            ble_scanner.requestConnect(
-                ble_scanner.getDeviceAddress(),
-                ble_scanner.getDeviceName());
-        }
-    }
-
     // Scanner battery — poll every 5 min; warn once when < 10 %
     if (ble_scanner.isConnected()
             && millis() - _lastBatteryPollMs >= BATTERY_POLL_MS) {

@@ -68,15 +68,16 @@ static void connectTask(void *arg) {
         s_client = NimBLEDevice::createClient();
         s_client->setClientCallbacks(&s_clientCB, false);
     }
-    s_client->setConnectTimeout(4000);  // 4 s Timeout (NimBLE 2.x: ms)
     s_client->setConnectionParams(12, 12, 0, 51);
 
     Serial.printf("[BLE] Connecting to %s\n", addr->toString().c_str());
     if (!s_client->connect(*addr)) {
         delete addr;
-        Serial.println("[BLE] Connect failed");
-        // handleClientDisconnect() entscheidet selbst ob Direktverbindung oder Scan
-        if (s_scanner) s_scanner->handleClientDisconnect();
+        Serial.println("[BLE] Connect failed – starte Scan neu");
+        if (s_scanner) {
+            s_scanner->handleClientDisconnect();
+            s_scanner->_startScan();   // direkt nochmal – sicherheitshalber
+        }
         vTaskDelete(nullptr);
         return;
     }
@@ -87,7 +88,10 @@ static void connectTask(void *arg) {
     if (!svc) {
         Serial.println("[BLE] HID service not found");
         s_client->disconnect();
-        if (s_scanner) s_scanner->handleClientDisconnect();
+        if (s_scanner) {
+            s_scanner->handleClientDisconnect();
+            s_scanner->_startScan();
+        }
         vTaskDelete(nullptr);
         return;
     }
@@ -126,7 +130,10 @@ static void connectTask(void *arg) {
     } else {
         Serial.println("[BLE] No notifiable HID characteristic");
         s_client->disconnect();
-        if (s_scanner) s_scanner->handleClientDisconnect();
+        if (s_scanner) {
+            s_scanner->handleClientDisconnect();
+            s_scanner->_startScan();
+        }
     }
     vTaskDelete(nullptr);
 }
@@ -228,11 +235,9 @@ void BLEScanner::begin() {
     Serial.printf("[BLE] NimBLE ready. autoReconnect=%d saved=%s '%s'\n",
                   autoReconnect, deviceAddress.c_str(), deviceName.c_str());
 
-    if (autoReconnect && !deviceAddress.isEmpty()) {
+    if (autoReconnect) {
         _targetName = deviceName;
-        // Auto-reconnect wird von App::loop() getriggert (requestConnect alle 1 s)
-    } else if (autoReconnect) {
-        _startScan();   // Erstkopplung: Scan für HID-Geräte
+        _startScan();   // Scan für HID-Geräte (Erstkopplung oder Reconnect)
     }
 }
 
@@ -263,6 +268,20 @@ void BLEScanner::loop() {
         if (millis() - s_wMs >= 500) {
             s_wMs = millis();
             if (!NimBLEDevice::getScan()->isScanning()) _startScan();
+        }
+    }
+
+    // ── Scan-Watchdog (Adresse bekannt – Scan darf nicht einschlafen) ─────────
+    if (!connected && !connecting && !connectRequested
+            && autoReconnect && !deviceAddress.isEmpty()
+            && !reconnectPaused && !s_discovering) {
+        static uint32_t s_watchMs = 0;
+        if (millis() - s_watchMs >= 1000) {
+            s_watchMs = millis();
+            if (!NimBLEDevice::getScan()->isScanning()) {
+                Serial.println("[BLE] Watchdog: Scan gestoppt – starte neu");
+                _startScan();
+            }
         }
     }
 
@@ -342,8 +361,10 @@ void BLEScanner::disconnect() {
 void BLEScanner::handleClientDisconnect() {
     bool was = connected || connecting;
     _setConnected(false);
-    if (was) Serial.println("[BLE] Disconnected – App triggert Reconnect");
-    // Auto-reconnect: App::loop() ruft requestConnect() alle 1 s (wie Button)
+    reconnectFailures++;
+    if (was) Serial.println("[BLE] Disconnected – starte Reconnect-Scan");
+    if (autoReconnect && !reconnectPaused && initialized)
+        _startScan();
 }
 
 std::vector<BLEScannerDevice> BLEScanner::scanDevices(uint32_t durationSeconds) {
