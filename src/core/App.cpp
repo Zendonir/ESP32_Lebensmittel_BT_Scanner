@@ -178,6 +178,22 @@ void App::loop() {
         }
     }
 
+    // OTA version list: update display when GitHub release fetch completes
+    if (workflow == WorkflowMode::OTA_VERSION_LIST
+            && web.isReleasesFetchDone() && !_otaListRendered) {
+        _otaListRendered = true;
+        const auto &tags = web.getReleasesTags();
+        if (tags.empty()) {
+            std::vector<String> err;
+            err.push_back(web.isReleasesFetchOk()
+                          ? "Keine Releases gefunden"
+                          : "Fehler beim Laden (WLAN pruefen)");
+            display_obj.showListScreen("FIRMWARE UPDATE", err, 0);
+        } else {
+            display_obj.showListScreen("FIRMWARE UPDATE", tags, 0);
+        }
+    }
+
     // WiFi setup: poll for connection result
     if (workflow == WorkflowMode::WIFI_SETUP_CONN) {
         if (wifi_manager.isConnected()) {
@@ -912,7 +928,16 @@ void App::processOnscreenAction(OnscreenAction action) {
         // Adjust visual row index by scroll offset to get actual item index
         int row = static_cast<int>(action) - static_cast<int>(OnscreenAction::LIST_ITEM_0);
         int idx = row + _listScrollOffset;   // actual item index in the source list
-        if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
+        if (workflow == WorkflowMode::OTA_VERSION_LIST) {
+            const auto &urls = web.getReleasesUrls();
+            const auto &tags = web.getReleasesTags();
+            if (idx >= 0 && idx < (int)urls.size()) {
+                audio_obj.playClickTone();
+                web.startOtaFromUrl(urls[idx], tags[idx]);
+                // App::loop() detects isOtaActive() and shows progress screen
+            }
+            return;
+        } else if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
             if (idx >= 0 && idx < (int)_wifiNets.size()) {
                 _selectedSsid = _wifiNets[idx];
                 _kbText = "";
@@ -1278,6 +1303,10 @@ void App::processOnscreenAction(OnscreenAction action) {
                     || workflow == WorkflowMode::NEW_ROLL_CONFIRM) {
                 workflow = WorkflowMode::HOME;
                 renderActiveTab("");
+            } else if (workflow == WorkflowMode::OTA_VERSION_LIST) {
+                workflow = WorkflowMode::HOME;
+                _activeTab = UiTab::SYSTEM;
+                renderActiveTab("");
             } else {
                 workflow = WorkflowMode::HOME;
                 state.setState(AppState::MAIN);
@@ -1308,6 +1337,18 @@ void App::processOnscreenAction(OnscreenAction action) {
                 workflow = WorkflowMode::NEW_ROLL_ENTRY;
                 display_obj.showNewRollEntry("");
             }
+            break;
+        }
+
+        case OnscreenAction::OTA_UPDATE: {
+            audio_obj.playClickTone();
+            workflow = WorkflowMode::OTA_VERSION_LIST;
+            _otaListRendered = false;
+            _listScrollOffset = 0;
+            web.startReleasesFetch();
+            std::vector<String> loading;
+            loading.push_back("Lade Versionen...");
+            display_obj.showListScreen("FIRMWARE UPDATE", loading, 0);
             break;
         }
 
