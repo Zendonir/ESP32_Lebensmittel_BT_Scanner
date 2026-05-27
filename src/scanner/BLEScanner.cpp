@@ -54,8 +54,12 @@ static void hidNotifyCB(NimBLERemoteCharacteristic *, uint8_t *data,
 // ── Client callbacks (disconnect → trigger reconnect scan) ───
 class BLEClientCB : public NimBLEClientCallbacks {
     void onDisconnect(NimBLEClient *, int reason) override {
-        Serial.printf("[BLE] Disconnected (reason=%d)\n", reason);
-        if (s_scanner) s_scanner->handleClientDisconnect();
+        Serial.printf("[BLE] Verbindung getrennt (reason=%d)\n", reason);
+        if (s_scanner) {
+            s_scanner->_setConnected(false);
+            // Während Discovery den HID-Scan NICHT neu starten
+            if (!s_discovering) s_scanner->_startScan();
+        }
     }
 };
 static BLEClientCB s_clientCB;
@@ -70,28 +74,22 @@ static void connectTask(void *arg) {
     }
     s_client->setConnectionParams(12, 12, 0, 51);
 
-    Serial.printf("[BLE] Connecting to %s\n", addr->toString().c_str());
+    Serial.printf("[BLE] Verbinde mit %s ...\n", addr->toString().c_str());
     if (!s_client->connect(*addr)) {
         delete addr;
-        Serial.println("[BLE] Connect failed – starte Scan neu");
-        if (s_scanner) {
-            s_scanner->handleClientDisconnect();
-            s_scanner->_startScan();   // direkt nochmal – sicherheitshalber
-        }
+        Serial.println("[BLE] Verbindung fehlgeschlagen, Neuversuch...");
+        if (s_scanner) s_scanner->_startScan();
         vTaskDelete(nullptr);
         return;
     }
     delete addr;
-    Serial.println("[BLE] Connected, subscribing HID...");
+    Serial.println("[BLE] Verbunden!");
 
     NimBLERemoteService *svc = s_client->getService(NimBLEUUID((uint16_t)0x1812));
     if (!svc) {
-        Serial.println("[BLE] HID service not found");
+        Serial.println("[BLE] HID-Service nicht gefunden");
         s_client->disconnect();
-        if (s_scanner) {
-            s_scanner->handleClientDisconnect();
-            s_scanner->_startScan();
-        }
+        if (s_scanner) s_scanner->_startScan();
         vTaskDelete(nullptr);
         return;
     }
@@ -128,12 +126,9 @@ static void connectTask(void *arg) {
 
         if (s_scanner) s_scanner->_setConnected(true);
     } else {
-        Serial.println("[BLE] No notifiable HID characteristic");
+        Serial.println("[BLE] Kein notify-fähiges Report-Char");
         s_client->disconnect();
-        if (s_scanner) {
-            s_scanner->handleClientDisconnect();
-            s_scanner->_startScan();
-        }
+        if (s_scanner) s_scanner->_startScan();
     }
     vTaskDelete(nullptr);
 }
@@ -307,12 +302,10 @@ void BLEScanner::loop() {
 }
 
 void BLEScanner::_startScan() {
+    // Während Discovery den HID-Scan nicht starten
     if (s_discovering || reconnectPaused) return;
-    NimBLEScan *scan = NimBLEDevice::getScan();
-    // Immer stop+start: setzt den Duplicate-Filter zurück, damit bereits
-    // gesehene Geräte (z.B. nach Disconnect) erneut gemeldet werden.
-    if (scan->isScanning()) scan->stop();
-    scan->start(0, false, true); // continuous, non-blocking, restart=true
+    if (!NimBLEDevice::getScan()->isScanning())
+        NimBLEDevice::getScan()->start(0, false);
 }
 
 void BLEScanner::_setConnected(bool c) {
@@ -359,11 +352,8 @@ void BLEScanner::disconnect() {
 }
 
 void BLEScanner::handleClientDisconnect() {
-    bool was = connected || connecting;
     _setConnected(false);
-    reconnectFailures++;
-    if (was) Serial.println("[BLE] Disconnected – starte Reconnect-Scan");
-    if (autoReconnect && !reconnectPaused && initialized)
+    if (autoReconnect && !reconnectPaused && initialized && !s_discovering)
         _startScan();
 }
 
