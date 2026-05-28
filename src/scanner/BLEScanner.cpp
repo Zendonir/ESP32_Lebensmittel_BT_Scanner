@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 #include "../core/Logger.h"
+#include <esp_heap_caps.h>
 
 // ── Static singletons used by NimBLE callbacks ───────────────
 static BLEScanner   *s_scanner    = nullptr;
@@ -180,7 +181,8 @@ class BLEScanCB : public NimBLEScanCallbacks {
         if (s_scanner) s_scanner->_addrType = dev->getAddress().getType();
         NimBLEAddress *a = new NimBLEAddress(dev->getAddress()); // copy with type
         s_scanner->_setConnecting(true);
-        xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+        xTaskCreateWithCaps(connectTask, "bleConn", 8192, a, 2, nullptr,
+                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
 };
 static BLEScanCB s_scanCB;
@@ -311,7 +313,8 @@ void BLEScanner::loop() {
 
     NimBLEAddress *a = new NimBLEAddress(std::string(requestedAddress.c_str()), _addrType);
     _setConnecting(true);
-    xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+    xTaskCreateWithCaps(connectTask, "bleConn", 8192, a, 2, nullptr,
+                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 void BLEScanner::_startScan() {
