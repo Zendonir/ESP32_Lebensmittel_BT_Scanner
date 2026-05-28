@@ -10,7 +10,7 @@ struct LogEntry {
     uint32_t ms;
     LogLevel level;
     char     module[16];
-    char     message[100];
+    char     message[120];
 };
 
 class Logger {
@@ -18,8 +18,8 @@ public:
     static void begin(uint32_t baud = 115200);
     static void log(LogLevel level, const char *module, const String &message);
     static void debug(const char *module, const String &message);
-    static void info(const char *module, const String &message);
-    static void warn(const char *module, const String &message);
+    static void info (const char *module, const String &message);
+    static void warn (const char *module, const String &message);
     static void error(const char *module, const String &message);
 
     // Ring buffer for web UI log viewer
@@ -29,13 +29,15 @@ public:
     // SD card file logging — call after SD is mounted and time is valid
     static void enableSdLog(fs::FS *sdFs);
     static void rotateSdLogIfNeeded();  // call from loop() daily
+    static void flushSd();              // call from loop() every ~10 s
 
 private:
     static const char *levelName(LogLevel level);
-    static void        writeSdLine(const char *line, size_t len);
+    static void        appendToSdBuffer(const char *line, size_t len);
+    static void        flushSdBuffer();
     static void        pruneOldLogs();
 
-    static constexpr int RING_SIZE = 80;
+    static constexpr int RING_SIZE = 150;
     static LogEntry      _ring[RING_SIZE];
     static int           _ringHead;
     static int           _ringCount;
@@ -46,4 +48,10 @@ private:
     static char              _sdLogPath[48];
     static SemaphoreHandle_t _sdMutex;
     static fs::FS           *_sdFs;
+
+    // Write buffer – accumulate lines, flush in one SD write
+    static constexpr size_t  SD_BUF_SIZE = 4096;
+    static char              _sdBuf[SD_BUF_SIZE];
+    static size_t            _sdBufLen;
+    static uint32_t          _sdLastFlush;
 };

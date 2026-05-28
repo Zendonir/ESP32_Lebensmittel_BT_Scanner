@@ -1,6 +1,7 @@
 #include "BLEScanner.h"
 #include <NimBLEDevice.h>
 #include <Preferences.h>
+#include "../core/Logger.h"
 
 // ── Static singletons used by NimBLE callbacks ───────────────
 static BLEScanner   *s_scanner    = nullptr;
@@ -68,27 +69,33 @@ static BLEClientCB s_clientCB;
 static void connectTask(void *arg) {
     NimBLEAddress *addr = reinterpret_cast<NimBLEAddress *>(arg);
 
+    Logger::info("BLE", String("Verbinde mit ") + addr->toString().c_str()
+                 + " | Heap: " + ESP.getFreeHeap());
+
     // Always delete and recreate the client to avoid stale NimBLE state
     // accumulating across repeated connect/disconnect cycles.
     if (s_client) {
         if (s_client->isConnected()) s_client->disconnect();
         NimBLEDevice::deleteClient(s_client);
         s_client = nullptr;
+        Logger::info("BLE", "Alter Client gelöscht");
     }
     s_client = NimBLEDevice::createClient();
     s_client->setClientCallbacks(&s_clientCB, false);
     s_client->setConnectionParams(12, 12, 0, 51);
 
-    Serial.printf("[BLE] Verbinde mit %s ...\n", addr->toString().c_str());
     if (!s_client->connect(*addr)) {
         delete addr;
-        Serial.println("[BLE] Verbindung fehlgeschlagen, Neuversuch...");
-        if (s_scanner) s_scanner->_startScan();
+        Logger::warn("BLE", String("Verbindung fehlgeschlagen | Heap: ") + ESP.getFreeHeap());
+        if (s_scanner) {
+            s_scanner->handleClientDisconnect();
+            s_scanner->_startScan();
+        }
         vTaskDelete(nullptr);
         return;
     }
     delete addr;
-    Serial.println("[BLE] Verbunden!");
+    Logger::info("BLE", "Verbunden – abonniere HID...");
 
     NimBLERemoteService *svc = s_client->getService(NimBLEUUID((uint16_t)0x1812));
     if (!svc) {
@@ -108,7 +115,7 @@ static void connectTask(void *arg) {
     }
 
     if (subscribed) {
-        Serial.println("[BLE] HID subscribed OK");
+        Logger::info("BLE", "HID abonniert OK");
 
         // Battery Service 0x180F / Battery Level 0x2A19
         s_batteryLevel = -1;
@@ -130,8 +137,9 @@ static void connectTask(void *arg) {
         }
 
         if (s_scanner) s_scanner->_setConnected(true);
+        Logger::info("BLE", String("Scanner bereit | Heap: ") + ESP.getFreeHeap());
     } else {
-        Serial.println("[BLE] Kein notify-fähiges Report-Char");
+        Logger::warn("BLE", "Keine notifizierbare HID-Charakteristik");
         s_client->disconnect();
         if (s_scanner) s_scanner->_startScan();
     }
@@ -309,8 +317,11 @@ void BLEScanner::loop() {
 void BLEScanner::_startScan() {
     // Während Discovery den HID-Scan nicht starten
     if (s_discovering || reconnectPaused) return;
-    if (!NimBLEDevice::getScan()->isScanning())
-        NimBLEDevice::getScan()->start(0, false);
+    NimBLEScan *scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) return;
+    Logger::info("BLE", String("Scan gestartet | paused=") + reconnectPaused
+                 + " failures=" + reconnectFailures);
+    scan->start(0, false, true); // continuous, non-blocking
 }
 
 void BLEScanner::_setConnected(bool c) {
@@ -357,7 +368,13 @@ void BLEScanner::disconnect() {
 }
 
 void BLEScanner::handleClientDisconnect() {
+    bool was = connected || connecting;
     _setConnected(false);
+    reconnectFailures++;
+    if (was) Logger::warn("BLE", String("Verbindung getrennt | Fehler gesamt: ")
+                          + reconnectFailures + " | autoReconnect: " + autoReconnect
+                          + " | paused: " + reconnectPaused);
+    else     Logger::info("BLE", String("Connect-Versuch fehlgeschlagen #") + reconnectFailures);
     if (autoReconnect && !reconnectPaused && initialized && !s_discovering)
         _startScan();
 }
