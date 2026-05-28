@@ -1,8 +1,10 @@
 #include "Logger.h"
 #include <vector>
 #include <algorithm>
+#include <esp_heap_caps.h>
 
-LogEntry           Logger::_ring[Logger::RING_SIZE];
+// _ring and _sdBuf are allocated from PSRAM in begin() so internal SRAM isn't consumed.
+LogEntry          *Logger::_ring      = nullptr;
 int                Logger::_ringHead  = 0;
 int                Logger::_ringCount = 0;
 portMUX_TYPE       Logger::_mux       = portMUX_INITIALIZER_UNLOCKED;
@@ -10,7 +12,7 @@ bool               Logger::_sdEnabled = false;
 char               Logger::_sdLogPath[48] = {};
 SemaphoreHandle_t  Logger::_sdMutex   = nullptr;
 fs::FS            *Logger::_sdFs      = nullptr;
-char               Logger::_sdBuf[Logger::SD_BUF_SIZE] = {};
+char              *Logger::_sdBuf     = nullptr;
 size_t             Logger::_sdBufLen  = 0;
 uint32_t           Logger::_sdLastFlush = 0;
 
@@ -23,6 +25,14 @@ void Logger::begin(uint32_t baud) {
     Serial.setDebugOutput(true);
     uint32_t start = millis();
     while (!Serial && millis() - start < 1500) delay(10);
+
+    // Allocate ring buffer and SD write buffer from PSRAM to keep internal SRAM free.
+    if (!_ring)
+        _ring = (LogEntry *)heap_caps_calloc(RING_SIZE, sizeof(LogEntry),
+                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!_sdBuf)
+        _sdBuf = (char *)heap_caps_calloc(1, SD_BUF_SIZE,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 // ── SD logging ────────────────────────────────────────────────────────────────
@@ -85,7 +95,7 @@ void Logger::rotateSdLogIfNeeded() {
 // Append a formatted line to the in-RAM write buffer.
 // Must be called with _sdMutex held (or before _sdEnabled is true).
 void Logger::appendToSdBuffer(const char *line, size_t len) {
-    if (!line || len == 0) return;
+    if (!line || len == 0 || !_sdBuf) return;
     if (_sdBufLen + len + 1 >= SD_BUF_SIZE) {
         // Buffer full: flush first (recursive-safe: we only call flushSdBuffer
         // which doesn't call appendToSdBuffer)
@@ -150,17 +160,19 @@ void Logger::log(LogLevel level, const char *module, const String &message) {
                   millis(), levelName(level), module, message.c_str());
     Serial.flush();
 
-    portENTER_CRITICAL(&_mux);
-    LogEntry &e = _ring[_ringHead];
-    e.ms    = millis();
-    e.level = level;
-    strncpy(e.module,  module,          sizeof(e.module)  - 1);
-    e.module[sizeof(e.module) - 1]  = '\0';
-    strncpy(e.message, message.c_str(), sizeof(e.message) - 1);
-    e.message[sizeof(e.message) - 1] = '\0';
-    _ringHead = (_ringHead + 1) % RING_SIZE;
-    if (_ringCount < RING_SIZE) _ringCount++;
-    portEXIT_CRITICAL(&_mux);
+    if (_ring) {
+        portENTER_CRITICAL(&_mux);
+        LogEntry &e = _ring[_ringHead];
+        e.ms    = millis();
+        e.level = level;
+        strncpy(e.module,  module,          sizeof(e.module)  - 1);
+        e.module[sizeof(e.module) - 1]  = '\0';
+        strncpy(e.message, message.c_str(), sizeof(e.message) - 1);
+        e.message[sizeof(e.message) - 1] = '\0';
+        _ringHead = (_ringHead + 1) % RING_SIZE;
+        if (_ringCount < RING_SIZE) _ringCount++;
+        portEXIT_CRITICAL(&_mux);
+    }
 
     // Write all levels INFO and above to SD via the write buffer.
     // WARN/ERROR flush immediately; INFO/DEBUG accumulate until flushSd() is called.
@@ -202,6 +214,8 @@ const char *Logger::levelName(LogLevel level) {
 }
 
 void Logger::getLogJson(String &out) {
+    if (!_ring) { out = "[]"; return; }
+
     portENTER_CRITICAL(&_mux);
     int count = _ringCount;
     int head  = _ringHead;

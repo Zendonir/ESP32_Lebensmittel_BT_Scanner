@@ -38,7 +38,7 @@ private:
     static void        pruneOldLogs();
 
     static constexpr int RING_SIZE = 150;
-    static LogEntry      _ring[RING_SIZE];
+    static LogEntry     *_ring;       // allocated from PSRAM in begin()
     static int           _ringHead;
     static int           _ringCount;
     static portMUX_TYPE  _mux;
@@ -49,9 +49,9 @@ private:
     static SemaphoreHandle_t _sdMutex;
     static fs::FS           *_sdFs;
 
-    // Write buffer – accumulate lines, flush in one SD write
+    // Write buffer – allocated from PSRAM in begin(), flushed every ~10 s
     static constexpr size_t  SD_BUF_SIZE = 4096;
-    static char              _sdBuf[SD_BUF_SIZE];
+    static char             *_sdBuf;  // allocated from PSRAM in begin()
     static size_t            _sdBufLen;
     static uint32_t          _sdLastFlush;
 };
