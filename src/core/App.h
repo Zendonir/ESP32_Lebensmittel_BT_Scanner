@@ -67,6 +67,8 @@ private:
         // Label roll management
         NEW_ROLL_ENTRY,    // numpad to enter roll size
         NEW_ROLL_CONFIRM,  // "same roll type as before?" dialog
+        // OTA firmware update via display
+        OTA_VERSION_LIST,  // showing GitHub release list
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -240,6 +242,9 @@ private:
     String _fifoEanBarcode;
     String _fifoOlderExpiry;
     String _fifoRemovedExpiry;
+
+    // OTA from display: GitHub release list
+    bool _otaListRendered = false;
 };
 
 extern App app;

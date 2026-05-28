@@ -396,54 +396,117 @@ static void draw_panel_scanner(const HomeState &s) {
 }
 
 static void draw_panel_system(const HomeState &s) {
+    // 4-Quadranten-Layout: 234 × 132 px je Kachel, 4 px Rand + Abstand
+    static constexpr int QW = 234, QH = 132, M = 4;
     int py = CNT_Y;
-    draw_card(4, py + 8, 230, 120, C_SURFACE, C_GREEN);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("NETZWERK", 12, py + 14);
-    uint16_t wc = s.wifiConnected ? C_GREEN : C_RED;
-    _spr.setTextColor(wc, C_SURFACE);
-    _spr.setTextFont(4);
-    _spr.drawString(s.wifiConnected ? "Verbunden" : "Nicht verbunden", 12, py + 34);
-    String ssid_str = s.wifiConnected ? trunc(s.ssid, 22) : "Kein WLAN";
-    _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.drawString(ssid_str.c_str(), 12, py + 66);
-    String ip_str = s.ip.isEmpty() ? "" : s.ip;
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.drawString(ip_str.c_str(), 12, py + 84);
-    draw_button(12, py + 100, 210, 30,
-                "WLAN einrichten", C_YELLOW, C_BG, 2, OnscreenAction::WIFI_SETUP);
-    draw_card(242, py + 8, 234, 120, C_SURFACE, C_ACCENT);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("GERAET", 250, py + 14);
-    _spr.setTextColor(C_TEXT, C_SURFACE);
-    _spr.drawString("FoodScanner ESP32-S3", 250, py + 34);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.drawString("ST7796 | FT6336 | 480x320", 250, py + 54);
-    _spr.setTextColor(s.sdMounted ? C_GREEN : C_SUBTEXT, C_SURFACE);
-    _spr.drawString(s.sdMounted ? "SD: eingelegt" : "SD: nicht eingelegt", 250, py + 74);
 
-    // Scanner card below
-    bool ble_ok = (s.scannerStatus == "connected");
-    draw_card(4, py + 136, SCR_W - 8, 112, C_SURFACE, C_YELLOW);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.setTextDatum(TL_DATUM);
-    _spr.drawString("BLE-HID BARCODE SCANNER", 12, py + 142);
-    uint16_t sc = ble_ok ? C_GREEN : C_YELLOW;
-    _spr.setTextColor(sc, C_SURFACE);
-    _spr.setTextFont(4);
-    _spr.drawString(ble_ok ? "Verbunden" : "Getrennt", 12, py + 160);
-    String name_str = s.scannerName.isEmpty() ? "Koppeln im Web-UI" : trunc(s.scannerName, 36);
-    _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-    _spr.setTextFont(2);
-    _spr.drawString(name_str.c_str(), 12, py + 196);
-    draw_button(SCR_W - 222, py + 186, 210, 34,
-                "Verbinden / Trennen", C_ACCENT, C_BG, 2, OnscreenAction::SCANNER_RECONNECT);
+    // ── Oben links: NETZWERK ────────────────────────────────────────
+    {
+        int cx = M, cy = py + M;
+        draw_card(cx, cy, QW, QH, C_SURFACE, C_GREEN);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("NETZWERK", cx + 10, cy + 12);
+        uint16_t wc = s.wifiConnected ? C_GREEN : C_RED;
+        _spr.setTextColor(wc, C_SURFACE);
+        _spr.setTextFont(4);
+        _spr.drawString(s.wifiConnected ? "Verbunden" : "Getrennt", cx + 10, cy + 30);
+        String ssid_str = s.wifiConnected ? trunc(s.ssid, 20) : "Kein WLAN";
+        _spr.setTextColor(C_TEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.drawString(ssid_str.c_str(), cx + 10, cy + 56);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.drawString(s.ip.isEmpty() ? "" : s.ip.c_str(), cx + 10, cy + 74);
+        draw_button(cx + 10, cy + 98, QW - 20, 26,
+                    "WLAN einrichten", C_YELLOW, C_BG, 2, OnscreenAction::WIFI_SETUP);
+    }
+
+    // ── Oben rechts: BLE SCANNER ────────────────────────────────────
+    {
+        int cx = M + QW + M, cy = py + M;
+        bool ble_ok = (s.scannerStatus == "connected");
+        draw_card(cx, cy, QW, QH, C_SURFACE, C_YELLOW);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("BLE SCANNER", cx + 10, cy + 12);
+        if (s.scannerBattery >= 0) {
+            uint16_t bc = s.scannerBattery < 20 ? C_RED
+                        : s.scannerBattery < 50 ? C_YELLOW : C_GREEN;
+            String bat = String(s.scannerBattery) + "%";
+            _spr.setTextColor(bc, C_SURFACE);
+            _spr.setTextDatum(TR_DATUM);
+            _spr.drawString(bat.c_str(), cx + QW - 10, cy + 12);
+            _spr.setTextDatum(TL_DATUM);
+        }
+        uint16_t sc = ble_ok ? C_GREEN : C_YELLOW;
+        _spr.setTextColor(sc, C_SURFACE);
+        _spr.setTextFont(4);
+        _spr.drawString(ble_ok ? "Verbunden" : "Getrennt", cx + 10, cy + 30);
+        String name_str = s.scannerName.isEmpty() ? "Koppeln im Web-UI" : trunc(s.scannerName, 22);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.drawString(name_str.c_str(), cx + 10, cy + 56);
+        // Battery bar
+        if (s.scannerBattery >= 0) {
+            uint16_t bc = s.scannerBattery < 20 ? C_RED
+                        : s.scannerBattery < 50 ? C_YELLOW : C_GREEN;
+            int bx = cx + 10, bby = cy + 74, bw = QW - 20, bh = 8;
+            _spr.drawRoundRect(bx, bby, bw, bh, 3, C_BORDER);
+            int fill = (bw - 4) * s.scannerBattery / 100;
+            if (fill > 0) _spr.fillRoundRect(bx + 2, bby + 2, fill, bh - 4, 2, bc);
+        }
+        draw_button(cx + 10, cy + 98, QW - 20, 26,
+                    "Verbinden / Trennen", C_ACCENT, C_BG, 2, OnscreenAction::SCANNER_RECONNECT);
+    }
+
+    // ── Unten links: GERÄT + OTA ────────────────────────────────────
+    {
+        int cx = M, cy = py + M + QH + M;
+        draw_card(cx, cy, QW, QH, C_SURFACE, C_ACCENT);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("GERAET", cx + 10, cy + 12);
+        _spr.setTextColor(C_TEXT, C_SURFACE);
+        _spr.drawString("ESP32-S3 FoodScanner", cx + 10, cy + 30);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.drawString("FW: " FW_VERSION, cx + 10, cy + 48);
+        _spr.drawString("480x320 | 16 MB Flash", cx + 10, cy + 66);
+        draw_button(cx + 10, cy + 98, QW - 20, 26,
+                    "Firmware Update", C_GREEN, C_BG, 2, OnscreenAction::OTA_UPDATE);
+    }
+
+    // ── Unten rechts: SYSTEM ────────────────────────────────────────
+    {
+        int cx = M + QW + M, cy = py + M + QH + M;
+        draw_card(cx, cy, QW, QH, C_SURFACE, C_BORDER);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        _spr.setTextFont(2);
+        _spr.setTextDatum(TL_DATUM);
+        _spr.drawString("SYSTEM", cx + 10, cy + 12);
+        _spr.setTextColor(s.sdMounted ? C_GREEN : C_SUBTEXT, C_SURFACE);
+        _spr.drawString(s.sdMounted ? "SD: eingelegt" : "SD: nicht eingelegt", cx + 10, cy + 30);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+        char heap[28];
+        snprintf(heap, sizeof(heap), "Heap: %u KB frei",
+                 (unsigned)(ESP.getFreeHeap() / 1024));
+        _spr.drawString(heap, cx + 10, cy + 48);
+        uint32_t secs = millis() / 1000;
+        char uptime[28];
+        if (secs < 3600)
+            snprintf(uptime, sizeof(uptime), "Uptime: %dm %ds",
+                     (int)(secs / 60), (int)(secs % 60));
+        else
+            snprintf(uptime, sizeof(uptime), "Uptime: %dh %dm",
+                     (int)(secs / 3600), (int)((secs % 3600) / 60));
+        _spr.drawString(uptime, cx + 10, cy + 66);
+        if (s.rollRemaining >= 0) {
+            String roll = "Labels: " + String(s.rollRemaining) + " verbl.";
+            _spr.drawString(roll.c_str(), cx + 10, cy + 84);
+        }
+    }
 }
 
 static void draw_panel_manual_product(const HomeState &) {

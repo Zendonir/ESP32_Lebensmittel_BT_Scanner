@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <vector>
 
 // Forward declarations – the web layer uses these managers via pointer; all are optional.
 class InventoryManager;
@@ -26,6 +27,14 @@ public:
     int         otaPct()               const;
     const char *otaPhase()             const;
     const char *otaTargetVersion()     const;
+
+    // Display-triggered OTA: fetch GitHub releases + start download
+    void startReleasesFetch();
+    bool isReleasesFetchDone()               const;
+    bool isReleasesFetchOk()                 const;
+    const std::vector<String> &getReleasesTags() const;
+    const std::vector<String> &getReleasesUrls() const;
+    bool startOtaFromUrl(const String &url, const String &version);
 
 private:
     AsyncWebServer   _server;

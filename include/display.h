@@ -89,6 +89,8 @@ enum class OnscreenAction {
     CONFIRM_NO,
     // Label roll management
     NEW_ROLL,
+    // OTA firmware update (tapping button on System tab)
+    OTA_UPDATE,
     // Inventory date filters (tapping stat cards on home screen)
     INV_EXPIRING_7,   // show only items expiring within 7 days
     INV_EXPIRING_3,   // show only items expiring within 3 days (critical)

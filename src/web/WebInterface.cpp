@@ -215,6 +215,86 @@ static void otaFsUrlTask(void *param) {
     vTaskDelete(nullptr);
 }
 
+/* ── Display-triggered OTA: GitHub releases fetch ─────────────── */
+static char _otaUrlVersion[40] = "";
+
+struct GhReleasesState {
+    std::vector<String> tags;
+    std::vector<String> urls;
+    volatile bool fetchDone = true;
+    volatile bool fetchOk   = false;
+};
+static GhReleasesState _ghReleases;
+
+static void githubReleasesTask(void *) {
+    _ghReleases.fetchDone = false;
+    _ghReleases.fetchOk   = false;
+    _ghReleases.tags.clear();
+    _ghReleases.urls.clear();
+
+    _ota_ssl_use_psram();
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(20);
+    HTTPClient http;
+    http.setTimeout(20000);
+    http.setUserAgent("ESP32-OTA/1.0");
+    if (!http.begin(client,
+            "https://api.github.com/repos/zendonir/esp32_lebensmittel_bt_scanner/releases?per_page=7")) {
+        Logger::error("OTA", "GH releases: http.begin failed");
+        _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
+    }
+    http.addHeader("Accept", "application/vnd.github.v3+json");
+    int code = http.GET();
+    Logger::info("OTA", String("GH releases HTTP ") + code);
+    if (code != 200) {
+        http.end();
+        _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
+    }
+
+    // Filter to only extract what we need (saves RAM)
+    JsonDocument filter;
+    filter[0]["tag_name"] = true;
+    filter[0]["assets"][0]["name"] = true;
+    filter[0]["assets"][0]["browser_download_url"] = true;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, *http.getStreamPtr(),
+                                               DeserializationOption::Filter(filter));
+    http.end();
+
+    if (err) {
+        Logger::error("OTA", String("GH releases JSON: ") + err.c_str());
+        _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
+    }
+
+    for (JsonObject rel : doc.as<JsonArray>()) {
+        String tag = rel["tag_name"] | "";
+        String url;
+        for (JsonObject asset : rel["assets"].as<JsonArray>()) {
+            String name = asset["name"] | "";
+            // Pick the first .bin that is NOT the filesystem image
+            if (name.endsWith(".bin")
+                    && name.indexOf("littlefs") < 0
+                    && name.indexOf("filesystem") < 0
+                    && name.indexOf("spiffs") < 0) {
+                url = asset["browser_download_url"] | "";
+                break;
+            }
+        }
+        if (!tag.isEmpty() && !url.isEmpty()) {
+            _ghReleases.tags.push_back(tag);
+            _ghReleases.urls.push_back(url);
+        }
+        if ((int)_ghReleases.tags.size() >= 7) break;
+    }
+
+    _ghReleases.fetchOk   = !_ghReleases.tags.empty();
+    _ghReleases.fetchDone = true;
+    vTaskDelete(nullptr);
+}
+
 /* ── Kombiniertes OTA (FS + Firmware in einem Task) ──────────── */
 // Status-Struct: wird von App::loop() abgefragt für Display-Anzeige
 struct OtaComboState {
@@ -2348,7 +2428,38 @@ void WebInterface::registerApiRoutes() {
         });
 }
 
-bool WebInterface::isOtaActive()          const { return _otaCombo.active && !_otaCombo.done; }
-int  WebInterface::otaPct()               const { return _otaCombo.pct; }
-const char *WebInterface::otaPhase()      const { return _otaCombo.phase; }
-const char *WebInterface::otaTargetVersion() const { return _otaCombo.targetVersion; }
+bool WebInterface::isOtaActive() const {
+    return (_otaCombo.active && !_otaCombo.done) || !_otaUrlDone;
+}
+int WebInterface::otaPct() const {
+    if (!_otaUrlDone) return (int)_otaUrlPct;
+    return _otaCombo.pct;
+}
+const char *WebInterface::otaPhase() const {
+    if (!_otaUrlDone) return "Firmware-Download...";
+    return _otaCombo.phase;
+}
+const char *WebInterface::otaTargetVersion() const {
+    if (!_otaUrlDone && _otaUrlVersion[0]) return _otaUrlVersion;
+    return _otaCombo.targetVersion;
+}
+
+void WebInterface::startReleasesFetch() {
+    if (!_ghReleases.fetchDone) return;
+    _ghReleases.tags.clear();
+    _ghReleases.urls.clear();
+    xTaskCreate(githubReleasesTask, "gh_rel", 16384, nullptr, 2, nullptr);
+}
+bool WebInterface::isReleasesFetchDone()               const { return _ghReleases.fetchDone; }
+bool WebInterface::isReleasesFetchOk()                 const { return _ghReleases.fetchOk; }
+const std::vector<String> &WebInterface::getReleasesTags() const { return _ghReleases.tags; }
+const std::vector<String> &WebInterface::getReleasesUrls() const { return _ghReleases.urls; }
+
+bool WebInterface::startOtaFromUrl(const String &url, const String &version) {
+    if (!_otaUrlDone) return false;
+    strncpy(_otaUrlVersion, version.c_str(), sizeof(_otaUrlVersion) - 1);
+    _otaUrlVersion[sizeof(_otaUrlVersion) - 1] = '\0';
+    char *urlBuf = strdup(url.c_str());
+    xTaskCreate(otaUrlTask, "ota_url", 32768, urlBuf, 3, nullptr);
+    return true;
+}
