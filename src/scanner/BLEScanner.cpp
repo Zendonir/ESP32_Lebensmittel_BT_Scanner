@@ -64,10 +64,15 @@ static BLEClientCB s_clientCB;
 static void connectTask(void *arg) {
     NimBLEAddress *addr = reinterpret_cast<NimBLEAddress *>(arg);
 
-    if (!s_client) {
-        s_client = NimBLEDevice::createClient();
-        s_client->setClientCallbacks(&s_clientCB, false);
+    // Always delete and recreate the client to avoid stale NimBLE state
+    // accumulating across repeated connect/disconnect cycles.
+    if (s_client) {
+        if (s_client->isConnected()) s_client->disconnect();
+        NimBLEDevice::deleteClient(s_client);
+        s_client = nullptr;
     }
+    s_client = NimBLEDevice::createClient();
+    s_client->setClientCallbacks(&s_clientCB, false);
     s_client->setConnectionParams(12, 12, 0, 51);
 
     Serial.printf("[BLE] Connecting to %s\n", addr->toString().c_str());
