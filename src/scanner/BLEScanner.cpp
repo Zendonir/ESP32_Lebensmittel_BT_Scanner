@@ -497,8 +497,8 @@ void BLEScanner::readBatteryNow() {
 
 void BLEScanner::loadSettings() {
     Preferences p;
-    if (!p.begin("scanner", false)) return;  // false = read-write, creates namespace on first boot
-    autoReconnect  = p.getBool("autoReconnect", true);
+    if (!p.begin("scanner", false)) return;
+    autoReconnect  = true;  // always on — never let a stale NVS value disable reconnect
     deviceAddress  = p.getString("addr", "");
     deviceName     = p.getString("name", "");
     _addrType      = (uint8_t)p.getUChar("addrType", 0);
