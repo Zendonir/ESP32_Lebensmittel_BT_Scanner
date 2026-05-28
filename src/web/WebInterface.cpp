@@ -231,7 +231,7 @@ static void githubReleasesTask(void *) {
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(20);
+    client.setTimeout(20000);   // 20 s (milliseconds in Arduino-ESP32 v3)
     HTTPClient http;
     http.setTimeout(20000);
     http.setUserAgent("ESP32-OTA/1.0");
@@ -248,6 +248,16 @@ static void githubReleasesTask(void *) {
         _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
     }
 
+    // Read full body into String (handles chunked transfer encoding correctly).
+    // Streaming-parse via getStreamPtr() can stall on chunked responses.
+    String body = http.getString();
+    http.end();
+    Logger::info("OTA", String("GH releases body bytes: ") + body.length());
+    if (body.isEmpty()) {
+        Logger::error("OTA", "GH releases: empty body");
+        _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
+    }
+
     // Filter to only extract what we need (saves RAM)
     JsonDocument filter;
     filter[0]["tag_name"] = true;
@@ -255,16 +265,18 @@ static void githubReleasesTask(void *) {
     filter[0]["assets"][0]["browser_download_url"] = true;
 
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, *http.getStreamPtr(),
+    DeserializationError err = deserializeJson(doc, body,
                                                DeserializationOption::Filter(filter));
-    http.end();
+    body = String();   // free memory after parsing
 
     if (err) {
         Logger::error("OTA", String("GH releases JSON: ") + err.c_str());
         _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
     }
 
+    int releaseCount = 0, skipped = 0;
     for (JsonObject rel : doc.as<JsonArray>()) {
+        releaseCount++;
         String tag = rel["tag_name"] | "";
         String url;
         for (JsonObject asset : rel["assets"].as<JsonArray>()) {
@@ -282,9 +294,14 @@ static void githubReleasesTask(void *) {
         if (!tag.isEmpty() && !url.isEmpty()) {
             _ghReleases.tags.push_back(tag);
             _ghReleases.urls.push_back(url);
+        } else {
+            skipped++;
         }
         if ((int)_ghReleases.tags.size() >= 7) break;
     }
+    Logger::info("OTA", String("GH releases parsed=") + releaseCount
+                       + " usable=" + (int)_ghReleases.tags.size()
+                       + " skipped=" + skipped);
 
     _ghReleases.fetchOk   = !_ghReleases.tags.empty();
     _ghReleases.fetchDone = true;
