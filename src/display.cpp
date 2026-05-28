@@ -18,6 +18,7 @@
 
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>
+#include <esp_attr.h>
 #include "FreeSans22pt.h"  // GFX font 22pt – category tiles
 #include "FreeSans16.h"    // GFX font 16px – Font 2 replacement with umlaut support
 #include <qrcode.h>
