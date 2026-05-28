@@ -645,25 +645,53 @@ void WebInterface::begin() {
         }
     }
 
-    // Seed default categories once if file absent
-    if (!AppFS::fs().exists("/categories.json")) {
-        struct { const char* name; uint16_t bg; } defaults[] = {
-            { "Fleisch",    0xC1C5 },   // dark red
-            { "Gefl\xC3\xBCgel", 0xBC21 }, // golden
-            { "Fisch",      0x1DF3 },   // teal
-            { "Gem\xC3\xBCse",  0x256C },  // green
-            { "Backwaren",  0x7AA9 },   // brown
-            { "S\xC3\xBC\xC3\x9Fspeisen", 0xF81F }, // magenta
+    // Ensure all 8 standard categories exist.
+    // Adds missing ones; migrates renamed old defaults; keeps user-added categories.
+    {
+        // Old default names that have been renamed in the new standard set
+        static const char* const kOldDefaults[] = {
+            "Fleisch", "Backwaren", "S\xC3\xBC\xC3\x9Fspeisen"
         };
+        struct { const char* name; uint16_t bg; } standards[] = {
+            { "Tiefk\xC3\xBChlprodukte",         0x1B39 },  // ice blue
+            { "Gefl\xC3\xBCgel",                  0xBC21 },  // golden
+            { "Fisch",                             0x1DF3 },  // teal
+            { "Fleisch & Wurst",                   0xC1C5 },  // dark red
+            { "Gem\xC3\xBCse",                     0x256C },  // green
+            { "Brot & Backwaren",                  0x7AA9 },  // brown
+            { "Snacks & S\xC3\xBC\xC3\x9Fwaren", 0xF81F },  // magenta
+            { "Sonstiges",                         0x7BEF },  // gray
+        };
+
         JsonDocument doc;
-        JsonArray arr = doc.to<JsonArray>();
-        for (auto &d : defaults) {
-            JsonObject o = arr.add<JsonObject>();
-            o["name"]      = d.name;
-            o["bgColor"]   = d.bg;
-            o["textColor"] = 0xFFFF;
+        loadJson("/categories.json", doc, "[]");
+        if (!doc.is<JsonArray>()) doc.to<JsonArray>();
+        JsonArray arr = doc.as<JsonArray>();
+
+        // Remove outdated default entries that were renamed
+        bool anyOld = false;
+        for (const char* old : kOldDefaults) {
+            for (size_t i = 0; i < arr.size(); i++) {
+                if (String(arr[i]["name"] | "") == old) { arr.remove(i); anyOld = true; break; }
+            }
         }
-        saveJson("/categories.json", doc);
+
+        // Add any missing standard categories
+        bool anyNew = false;
+        for (auto& s : standards) {
+            bool found = false;
+            for (JsonVariant v : arr)
+                if (String(v["name"] | "") == s.name) { found = true; break; }
+            if (!found) {
+                JsonObject o = arr.add<JsonObject>();
+                o["name"]      = s.name;
+                o["bgColor"]   = s.bg;
+                o["textColor"] = 0xFFFF;
+                anyNew = true;
+            }
+        }
+
+        if (anyOld || anyNew) saveJson("/categories.json", doc);
     }
 
     _server.addHandler(new AuthHandler());   // muss vor allen anderen Handlern stehen
