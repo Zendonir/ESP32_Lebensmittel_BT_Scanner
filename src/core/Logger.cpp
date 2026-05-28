@@ -10,6 +10,9 @@ bool               Logger::_sdEnabled = false;
 char               Logger::_sdLogPath[48] = {};
 SemaphoreHandle_t  Logger::_sdMutex   = nullptr;
 fs::FS            *Logger::_sdFs      = nullptr;
+char               Logger::_sdBuf[Logger::SD_BUF_SIZE] = {};
+size_t             Logger::_sdBufLen  = 0;
+uint32_t           Logger::_sdLastFlush = 0;
 
 static constexpr size_t SD_MAX_FILE_BYTES = 512UL * 1024;
 static constexpr int    SD_KEEP_DAYS      = 7;
@@ -45,7 +48,9 @@ void Logger::enableSdLog(fs::FS *sdFs) {
     }
 
     pruneOldLogs();
-    _sdEnabled = true;
+    _sdEnabled  = true;
+    _sdBufLen   = 0;
+    _sdLastFlush = millis();
 
     // Boot separator
     char sep[80], tbuf[24] = "??:??:??";
@@ -53,7 +58,8 @@ void Logger::enableSdLog(fs::FS *sdFs) {
         strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S", &t);
     int len = snprintf(sep, sizeof(sep),
         "\n=== BOOT %s (up %lu s) ===\n", tbuf, (unsigned long)millis() / 1000);
-    writeSdLine(sep, len);
+    appendToSdBuffer(sep, (size_t)len);
+    flushSdBuffer();  // flush boot separator immediately
 }
 
 void Logger::rotateSdLogIfNeeded() {
@@ -76,11 +82,36 @@ void Logger::rotateSdLogIfNeeded() {
     xSemaphoreGive(_sdMutex);
 }
 
-void Logger::writeSdLine(const char *line, size_t len) {
-    if (!_sdEnabled || !_sdFs || !_sdMutex || len == 0) return;
-    if (xSemaphoreTake(_sdMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+// Append a formatted line to the in-RAM write buffer.
+// Must be called with _sdMutex held (or before _sdEnabled is true).
+void Logger::appendToSdBuffer(const char *line, size_t len) {
+    if (!line || len == 0) return;
+    if (_sdBufLen + len + 1 >= SD_BUF_SIZE) {
+        // Buffer full: flush first (recursive-safe: we only call flushSdBuffer
+        // which doesn't call appendToSdBuffer)
+        flushSdBuffer();
+    }
+    memcpy(_sdBuf + _sdBufLen, line, len);
+    _sdBufLen += len;
+}
+
+// Write the accumulated buffer to SD in one operation.
+void Logger::flushSdBuffer() {
+    if (!_sdEnabled || !_sdFs || _sdBufLen == 0) return;
     File f = _sdFs->open(_sdLogPath, FILE_APPEND);
-    if (f) { f.write((const uint8_t *)line, len); f.close(); }
+    if (f) {
+        f.write((const uint8_t *)_sdBuf, _sdBufLen);
+        f.close();
+    }
+    _sdBufLen    = 0;
+    _sdLastFlush = millis();
+}
+
+// Public flush — called from App::loop() every ~10 s
+void Logger::flushSd() {
+    if (!_sdEnabled || !_sdFs || !_sdMutex) return;
+    if (xSemaphoreTake(_sdMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+    flushSdBuffer();
     xSemaphoreGive(_sdMutex);
 }
 
@@ -131,19 +162,27 @@ void Logger::log(LogLevel level, const char *module, const String &message) {
     if (_ringCount < RING_SIZE) _ringCount++;
     portEXIT_CRITICAL(&_mux);
 
-    // Only persist WARN/ERROR to SD — INFO/DEBUG would cause blocking I/O on every render cycle
-    if (_sdEnabled && level >= LogLevel::WARN) {
-        char line[160];
-        time_t now = time(nullptr);
-        struct tm t;
-        localtime_r(&now, &t);
-        char tbuf[16] = "??:??:??";
-        if (t.tm_year >= 120)
-            snprintf(tbuf, sizeof(tbuf), "%02d:%02d:%02d",
-                     t.tm_hour, t.tm_min, t.tm_sec);
-        int len = snprintf(line, sizeof(line), "[%s] [%-5s] [%s] %s\n",
-                           tbuf, levelName(level), module, message.c_str());
-        if (len > 0) writeSdLine(line, (size_t)len);
+    // Write all levels INFO and above to SD via the write buffer.
+    // WARN/ERROR flush immediately; INFO/DEBUG accumulate until flushSd() is called.
+    if (_sdEnabled && level >= LogLevel::INFO && _sdMutex) {
+        if (xSemaphoreTake(_sdMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            char line[180];
+            time_t now = time(nullptr);
+            struct tm t;
+            localtime_r(&now, &t);
+            char tbuf[16] = "??:??:??";
+            if (t.tm_year >= 120)
+                snprintf(tbuf, sizeof(tbuf), "%02d:%02d:%02d",
+                         t.tm_hour, t.tm_min, t.tm_sec);
+            int len = snprintf(line, sizeof(line), "[%s] [%-5s] [%s] %s\n",
+                               tbuf, levelName(level), module, message.c_str());
+            if (len > 0) {
+                appendToSdBuffer(line, (size_t)len);
+                // Flush immediately for WARN/ERROR so they are never lost
+                if (level >= LogLevel::WARN) flushSdBuffer();
+            }
+            xSemaphoreGive(_sdMutex);
+        }
     }
 }
 
