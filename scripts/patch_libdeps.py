@@ -1,64 +1,69 @@
 """
-Pre-build script: patches library dependencies so their internal FreeRTOS
-tasks use PSRAM for their stacks instead of internal SRAM.
+Pre-build script: reverts the AsyncTCP PSRAM-stack patch if it is still present
+from a previous build.
 
-Applied patches:
-  AsyncTCP/src/AsyncTCP.cpp – replaces xTaskCreate[PinnedToCore] with
-      x...WithCaps(... MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) so the 16 KB
-      async_tcp task stack lives in PSRAM instead of internal DRAM.
+Background: an earlier version of this script replaced xTaskCreatePinnedToCore
+with xTaskCreatePinnedToCoreWithCaps(... MALLOC_CAP_SPIRAM) to move the async_tcp
+task stack into PSRAM. This caused a hard crash on ESP32-S3:
 
-The script marks patched files with a sentinel comment so it only patches
-once per library installation. Run `pio run --clean` to force re-patch.
+  assert failed: spi_flash_disable_interrupts_caches_and_other_cpu
+  cache_utils.c:127 (esp_task_stack_is_sane_cache_disabled())
+
+PSRAM is accessed via the same SPI cache controller as flash.  During any
+NVS / LittleFS write the cache is briefly disabled, making PSRAM inaccessible.
+FreeRTOS always needs the current task's stack to be reachable, so a PSRAM stack
+causes an immediate panic.
+
+This script detects and removes the old patch so existing local builds are fixed
+without requiring the user to delete .pio/libdeps manually.
 """
 
 Import("env")  # noqa: F821  (SCons variable, injected by PlatformIO)
-import os, re
+import os
 
-SENTINEL = "// PSRAM_TASK_PATCHED"
+OLD_SENTINEL    = "// PSRAM_TASK_PATCHED"
+REVERTED_MARKER = "// PSRAM_PATCH_REVERTED"
 
-def _patch(path: str, replacements: list[tuple[str, str]], extra_include: str = "") -> None:
+
+def _revert_async_tcp(path: str) -> None:
     if not os.path.isfile(path):
-        print(f"[patch_libdeps] SKIP (not found): {path}")
         return
     with open(path, "r", encoding="utf-8") as f:
         src = f.read()
-    if SENTINEL in src:
-        print(f"[patch_libdeps] Already patched: {os.path.basename(path)}")
+
+    if REVERTED_MARKER in src:
+        # Already clean
         return
-    for old, new in replacements:
-        if old not in src:
-            print(f"[patch_libdeps] WARNING: pattern not found in {os.path.basename(path)}: {old[:60]!r}")
-            return
-        src = src.replace(old, new, 1)
-    if extra_include:
-        # Insert after the last #include line at the top
-        lines = src.splitlines(keepends=True)
-        insert_at = 0
-        for i, line in enumerate(lines):
-            if line.startswith("#include"):
-                insert_at = i + 1
-        lines.insert(insert_at, extra_include + "\n")
-        src = "".join(lines)
-    src = SENTINEL + "\n" + src
+
+    if OLD_SENTINEL not in src:
+        # Was never patched — nothing to do
+        return
+
+    # Remove sentinel line
+    src = src.replace(OLD_SENTINEL + "\n", "")
+
+    # Undo the PSRAM function replacements
+    src = src.replace(
+        "xTaskCreatePinnedToCoreWithCaps(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask, xCoreID, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)",
+        "xTaskCreatePinnedToCore(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask, xCoreID)",
+    )
+    src = src.replace(
+        "xTaskCreateWithCaps(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)",
+        "xTaskCreate(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask)",
+    )
+
+    # Remove the esp_heap_caps.h include we injected
+    src = src.replace("#include <esp_heap_caps.h>\n", "")
+
+    # Mark as reverted so we don't process it again
+    src = REVERTED_MARKER + "\n" + src
+
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[patch_libdeps] Patched: {os.path.basename(path)}")
+    print("[patch_libdeps] Reverted stale PSRAM patch in AsyncTCP.cpp")
 
 
 libdeps_dir = os.path.join(env.subst("$PROJECT_LIBDEPS_DIR"), env.subst("$PIOENV"))
-
-# ── AsyncTCP: move 16 KB async_tcp task stack to PSRAM ─────────────────────
-_patch(
-    os.path.join(libdeps_dir, "AsyncTCP", "src", "AsyncTCP.cpp"),
-    [
-        (
-            "xTaskCreatePinnedToCore(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask, xCoreID)",
-            "xTaskCreatePinnedToCoreWithCaps(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask, xCoreID, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)",
-        ),
-        (
-            "xTaskCreate(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask)",
-            "xTaskCreateWithCaps(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)",
-        ),
-    ],
-    extra_include="#include <esp_heap_caps.h>",
+_revert_async_tcp(
+    os.path.join(libdeps_dir, "AsyncTCP", "src", "AsyncTCP.cpp")
 )
