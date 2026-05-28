@@ -1991,7 +1991,7 @@ void WebInterface::registerApiRoutes() {
         portENTER_CRITICAL(&_bleScanMux);
         _bleScanState = 1;
         portEXIT_CRITICAL(&_bleScanMux);
-        xTaskCreate([](void *) {
+        xTaskCreateWithCaps([](void *) {
             auto devices = ble_scanner.scanDevices(5);
             JsonDocument doc;
             JsonArray arr = doc.to<JsonArray>();
@@ -2007,7 +2007,7 @@ void WebInterface::registerApiRoutes() {
             _bleScanState = 2;
             portEXIT_CRITICAL(&_bleScanMux);
             vTaskDelete(nullptr);
-        }, "bleScan", 8192, nullptr, 1, nullptr);
+        }, "bleScan", 8192, nullptr, 1, nullptr, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         req->send(202, "application/json", "{\"scanning\":true}");
     });
     _server.on("/api/scanner/ble-connect", HTTP_POST,
@@ -2053,7 +2053,8 @@ void WebInterface::registerApiRoutes() {
             String url = doc["url"] | "";
             if (url.isEmpty()) { req->send(400, "application/json", "{\"ok\":false,\"error\":\"url missing\"}"); return; }
             char *urlBuf = strdup(url.c_str());
-            xTaskCreate(otaUrlTask, "ota_url", 32768, urlBuf, 3, nullptr);
+            xTaskCreateWithCaps(otaUrlTask, "ota_url", 32768, urlBuf, 3, nullptr,
+                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             req->send(202, "application/json", "{\"ok\":true}");
         }, nullptr, bodyCollect);
 
@@ -2080,7 +2081,8 @@ void WebInterface::registerApiRoutes() {
             String url = doc["url"] | "";
             if (url.isEmpty()) { req->send(400, "application/json", "{\"ok\":false,\"error\":\"url missing\"}"); return; }
             char *urlBuf = strdup(url.c_str());
-            xTaskCreate(otaFsUrlTask, "ota_fs_url", 32768, urlBuf, 3, nullptr);
+            xTaskCreateWithCaps(otaFsUrlTask, "ota_fs_url", 32768, urlBuf, 3, nullptr,
+                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             req->send(202, "application/json", "{\"ok\":true}");
         }, nullptr, bodyCollect);
 
@@ -2130,10 +2132,8 @@ void WebInterface::registerApiRoutes() {
                 req->send(500, "application/json", "{\"ok\":false,\"error\":\"Heap erschoepft\"}");
                 return;
             }
-            // Stack 8192: buf[4096] läuft im PSRAM-Heap (nicht Stack), daher reichen 8 KB.
-            // FreeRTOS allokiert den Stack aus internem SRAM; bei Fragmentierung scheitert
-            // ein zu großer Stack – 8 KB passt auch bei knappem internen SRAM.
-            BaseType_t rc = xTaskCreate(otaCombinedTask, "ota_comb", 8192, urls, 3, nullptr);
+            BaseType_t rc = xTaskCreateWithCaps(otaCombinedTask, "ota_comb", 8192, urls, 3,
+                                                 nullptr, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             if (rc != pdPASS) {
                 Logger::error("OTA", "xTaskCreate fehlgeschlagen! rc=" + String(rc)
                     + " freeHeap=" + String(esp_get_free_heap_size())
@@ -2461,7 +2461,8 @@ void WebInterface::startReleasesFetch() {
     _ghReleases.fetchOk   = false;
     _ghReleases.tags.clear();
     _ghReleases.urls.clear();
-    xTaskCreate(githubReleasesTask, "gh_rel", 16384, nullptr, 2, nullptr);
+    xTaskCreateWithCaps(githubReleasesTask, "gh_rel", 16384, nullptr, 2, nullptr,
+                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 bool WebInterface::isReleasesFetchDone()               const { return _ghReleases.fetchDone; }
 bool WebInterface::isReleasesFetchOk()                 const { return _ghReleases.fetchOk; }
@@ -2473,6 +2474,7 @@ bool WebInterface::startOtaFromUrl(const String &url, const String &version) {
     strncpy(_otaUrlVersion, version.c_str(), sizeof(_otaUrlVersion) - 1);
     _otaUrlVersion[sizeof(_otaUrlVersion) - 1] = '\0';
     char *urlBuf = strdup(url.c_str());
-    xTaskCreate(otaUrlTask, "ota_url", 32768, urlBuf, 3, nullptr);
+    xTaskCreateWithCaps(otaUrlTask, "ota_url", 32768, urlBuf, 3, nullptr,
+                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     return true;
 }
