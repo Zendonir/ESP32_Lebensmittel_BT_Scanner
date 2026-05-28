@@ -227,11 +227,6 @@ struct GhReleasesState {
 static GhReleasesState _ghReleases;
 
 static void githubReleasesTask(void *) {
-    _ghReleases.fetchDone = false;
-    _ghReleases.fetchOk   = false;
-    _ghReleases.tags.clear();
-    _ghReleases.urls.clear();
-
     _ota_ssl_use_psram();
 
     WiFiClientSecure client;
@@ -278,7 +273,8 @@ static void githubReleasesTask(void *) {
             if (name.endsWith(".bin")
                     && name.indexOf("littlefs") < 0
                     && name.indexOf("filesystem") < 0
-                    && name.indexOf("spiffs") < 0) {
+                    && name.indexOf("spiffs") < 0
+                    && name.indexOf("full_flash") < 0) {
                 url = asset["browser_download_url"] | "";
                 break;
             }
@@ -2446,6 +2442,8 @@ const char *WebInterface::otaTargetVersion() const {
 
 void WebInterface::startReleasesFetch() {
     if (!_ghReleases.fetchDone) return;
+    _ghReleases.fetchDone = false;   // mark in-progress before task starts
+    _ghReleases.fetchOk   = false;
     _ghReleases.tags.clear();
     _ghReleases.urls.clear();
     xTaskCreate(githubReleasesTask, "gh_rel", 16384, nullptr, 2, nullptr);
