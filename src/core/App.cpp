@@ -302,6 +302,15 @@ void App::loop() {
         Logger::rotateSdLogIfNeeded();  // roll to new day's file if midnight passed
     }
 
+    // Flush SD log write buffer roughly every 30 s (piggyback on WiFi watchdog cadence)
+    {
+        static uint32_t s_lastSdFlushMs = 0;
+        if (millis() - s_lastSdFlushMs >= 30000UL) {
+            s_lastSdFlushMs = millis();
+            Logger::flushSd();
+        }
+    }
+
     // Ntfy push check every 6 hours
     if (device_config.getNtfyTopic().length() > 0 &&
         millis() - _lastNtfyCheckMs >= NTFY_CHECK_INTERVAL_MS) {

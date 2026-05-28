@@ -373,7 +373,11 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
                     if (!avail) { delay(5); continue; }
                     int n = stream->readBytes(buf, min(avail, (int)BUF_SZ));
                     if (n > 0) {
-                        Update.write(buf, n);
+                        size_t written_n = Update.write(buf, n);
+                        if (written_n != (size_t)n) {
+                            Logger::error("OTA", String(label) + " write mismatch "
+                                + written_n + "/" + n + " err=" + Update.getError());
+                        }
                         received += n;
                         if (total > 0) {
                             int pct = received * 100 / total;
@@ -384,8 +388,16 @@ static bool _otaDownloadFlash(const String &startUrl, int slot,
                     }
                 }
                 http.end();
+                size_t written = Update.progress();
                 success = Update.end(true) && Update.isFinished();
-                Logger::info("OTA", String(label) + (success ? " OTA OK" : " OTA FAILED"));
+                if (success) {
+                    Logger::info("OTA", String(label) + " OTA OK – " + written + " bytes");
+                } else {
+                    Logger::error("OTA", String(label) + " OTA FAILED – err="
+                        + Update.getError() + " '" + Update.errorString()
+                        + "' written=" + written + "/" + total
+                        + " internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+                }
             }
         } // WiFiClientSecure und HTTPClient werden hier zerstört → TLS-Speicher frei
         if (redirect) continue;
@@ -413,6 +425,8 @@ static void otaCombinedTask(void *param) {
     strncpy(_otaCombo.targetVersion, version.c_str(), sizeof(_otaCombo.targetVersion) - 1);
 
     // ── Schritt 1: BLE trennen → internen SRAM freigeben ─────────────
+    // Save current setting; restore before restart so NVS is not wiped.
+    bool _prevAutoReconnect = ble_scanner.getAutoReconnect();
     strncpy(_otaCombo.phase, "BLE trennen...", sizeof(_otaCombo.phase) - 1);
     ble_scanner.setAutoReconnect(false);
     ble_scanner.disconnect();
@@ -445,6 +459,8 @@ static void otaCombinedTask(void *param) {
         strncpy(_otaCombo.phase, "Neustart...", sizeof(_otaCombo.phase) - 1);
         _otaCombo.pct = 100;
         _otaCombo.ok  = true;
+        // Restore BLE auto-reconnect setting before reboot so scanner re-connects
+        ble_scanner.setAutoReconnect(_prevAutoReconnect);
         delay(500);
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
@@ -2020,7 +2036,6 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
     _server.on("/api/scanner/ble-disconnect", HTTP_POST, [](AsyncWebServerRequest *req) {
-        ble_scanner.setAutoReconnect(false);
         ble_scanner.disconnect();
         req->send(200, "application/json", "{\"ok\":true}");
     });
