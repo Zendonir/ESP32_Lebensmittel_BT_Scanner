@@ -8,7 +8,6 @@
 
 #include <WiFi.h>
 #include <esp_log.h>
-#include <esp_heap_caps.h>
 #include <nvs_flash.h>
 #include <algorithm>
 #include <ArduinoJson.h>
@@ -1630,8 +1629,7 @@ void App::processWorkflow() {
         _fetchTaskHandle = nullptr;
         _fetchedProduct  = ProductInfo();
         _fetchStartedMs  = millis();
-        xTaskCreatePinnedToCoreWithCaps(fetchTaskFn, "api_fetch", 12288, this, 2,
-                                        &_fetchTaskHandle, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, &_fetchTaskHandle, 0);
         return;
     }
 
