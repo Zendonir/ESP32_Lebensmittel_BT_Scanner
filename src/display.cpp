@@ -133,8 +133,8 @@ static TFT_eSprite _spr(&_tft);
 static void draw_location_badge(int x_right = SCR_W - 8) {
     if (_s_active_location.isEmpty()) return;
     String label = _s_active_location;
-    if ((int)label.length() > 16) {  // UTF-8-safe: nicht mitten in Mehrbyte-Sequenz schneiden
-        int cut = 16;
+    if ((int)label.length() > 24) {  // UTF-8-safe: nicht mitten in Mehrbyte-Sequenz schneiden
+        int cut = 24;
         while (cut > 0 && ((uint8_t)label[cut] & 0xC0) == 0x80) cut--;
         label = label.substring(0, cut);
     }
@@ -1436,8 +1436,8 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     // to avoid conflicts with swipe-scroll gestures
     if (!_s_active_location.isEmpty()) {
         String lbl = _s_active_location;
-        if ((int)lbl.length() > 10) {  // UTF-8-safe: walk back past continuation bytes
-            int cut = 10;
+        if ((int)lbl.length() > 15) {  // UTF-8-safe: walk back past continuation bytes
+            int cut = 15;
             while (cut > 0 && ((uint8_t)lbl[cut] & 0xC0) == 0x80) cut--;
             lbl = lbl.substring(0, cut);
         }
@@ -1478,10 +1478,13 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     }
 
     // ── Column headers ──────────────────────────────────────
-    // Layout (SCR_W=480): columns adapt to expanded/collapsed state
+    // Layout (SCR_W=480):
+    //   Produkt   : 20..  390   (left-aligned, ~370 px für Name + Lagerort-Sublabel)
+    //   MHD       : 400.. 430   (right-aligned an COL_MHD)
+    //   Menge     : 440.. 472   (right-aligned an COL_MENGE)
     static constexpr int COL_H    = 24;
-    static constexpr int COL_MHD  = 445;   // right edge of MHD column
-    static constexpr int COL_MENGE= 475;   // right edge of Menge column
+    static constexpr int COL_MHD  = 430;   // right edge of MHD column
+    static constexpr int COL_MENGE= 472;   // right edge of Menge column
     int col_y = HDR_H + SEARCH_H;
     _spr.fillRect(0, col_y, SCR_W, COL_H, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
@@ -1599,12 +1602,12 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
             _spr.fillRect(0, ry, 4, ROW_H, sc);
 
-            // ▼ triangle + product name (col 1) — longer truncation, no brand
+            // ▼ triangle + product name (col 1) — truncated to fit before MHD column
             _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
             _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, row_bg);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(g.name, 24).c_str(), 20, ry + 11);
+            _spr.drawString(trunc(g.name, 22).c_str(), 20, ry + 11);
             _spr.setTextFont(4);
 
             // Location sub-line (col 1) — replaces brand
@@ -1612,7 +1615,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
                 _spr.setTextColor(C_SUBTEXT, row_bg);
                 _spr.setTextFont(2);
                 _spr.setTextDatum(ML_DATUM);
-                _spr.drawString(trunc(g.location, 22).c_str(), 20, ry + 27);
+                _spr.drawString(trunc(g.location, 30).c_str(), 20, ry + 27);
             }
 
             // MHD – right-aligned to COL_MHD (col 2)

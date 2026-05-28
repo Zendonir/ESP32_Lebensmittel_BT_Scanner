@@ -244,7 +244,8 @@ private:
     String _fifoRemovedExpiry;
 
     // OTA from display: GitHub release list
-    bool _otaListRendered = false;
+    bool     _otaListRendered     = false;
+    uint32_t _otaFetchStartedMs   = 0;     // for 30 s timeout
 };
 
 extern App app;

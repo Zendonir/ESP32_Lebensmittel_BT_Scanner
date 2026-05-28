@@ -425,10 +425,9 @@ static void otaCombinedTask(void *param) {
     strncpy(_otaCombo.targetVersion, version.c_str(), sizeof(_otaCombo.targetVersion) - 1);
 
     // ── Schritt 1: BLE trennen → internen SRAM freigeben ─────────────
-    // Save current setting; restore before restart so NVS is not wiped.
-    bool _prevAutoReconnect = ble_scanner.getAutoReconnect();
+    // Only disconnect — do NOT touch autoReconnect in NVS. loadSettings()
+    // always boots with autoReconnect=true regardless of NVS content.
     strncpy(_otaCombo.phase, "BLE trennen...", sizeof(_otaCombo.phase) - 1);
-    ble_scanner.setAutoReconnect(false);
     ble_scanner.disconnect();
     delay(800);  // NimBLE Zeit zum Aufräumen geben
 
@@ -459,8 +458,6 @@ static void otaCombinedTask(void *param) {
         strncpy(_otaCombo.phase, "Neustart...", sizeof(_otaCombo.phase) - 1);
         _otaCombo.pct = 100;
         _otaCombo.ok  = true;
-        // Restore BLE auto-reconnect setting before reboot so scanner re-connects
-        ble_scanner.setAutoReconnect(_prevAutoReconnect);
         delay(500);
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);

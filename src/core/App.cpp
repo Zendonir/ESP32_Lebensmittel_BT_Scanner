@@ -179,18 +179,24 @@ void App::loop() {
     }
 
     // OTA version list: update display when GitHub release fetch completes
-    if (workflow == WorkflowMode::OTA_VERSION_LIST
-            && web.isReleasesFetchDone() && !_otaListRendered) {
-        _otaListRendered = true;
-        const auto &tags = web.getReleasesTags();
-        if (tags.empty()) {
-            std::vector<String> err;
-            err.push_back(web.isReleasesFetchOk()
-                          ? "Keine Releases gefunden"
-                          : "Fehler beim Laden (WLAN pruefen)");
-            display_obj.showListScreen("FIRMWARE UPDATE", err, 0);
-        } else {
-            display_obj.showListScreen("FIRMWARE UPDATE", tags, 0);
+    if (workflow == WorkflowMode::OTA_VERSION_LIST && !_otaListRendered) {
+        bool done    = web.isReleasesFetchDone();
+        bool timeout = (millis() - _otaFetchStartedMs) > 30000;
+        if (done || timeout) {
+            _otaListRendered = true;
+            const auto &tags = web.getReleasesTags();
+            if (tags.empty()) {
+                std::vector<String> err;
+                if (timeout && !done)
+                    err.push_back("Timeout - WLAN pruefen");
+                else if (!web.isReleasesFetchOk())
+                    err.push_back("Fehler beim Laden");
+                else
+                    err.push_back("Keine Releases gefunden");
+                display_obj.showListScreen("FIRMWARE UPDATE", err, 0);
+            } else {
+                display_obj.showListScreen("FIRMWARE UPDATE", tags, 0);
+            }
         }
     }
 
@@ -1377,6 +1383,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             audio_obj.playClickTone();
             workflow = WorkflowMode::OTA_VERSION_LIST;
             _otaListRendered = false;
+            _otaFetchStartedMs = millis();
             _listScrollOffset = 0;
             web.startReleasesFetch();
             std::vector<String> loading;
