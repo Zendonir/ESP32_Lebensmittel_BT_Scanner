@@ -15,6 +15,18 @@ static void *ssl_calloc_psram(size_t n, size_t sz) {
     return p;
 }
 
+// Set the mbedTLS allocator to PSRAM ONCE, process-wide. heap_caps_free works
+// for both PSRAM and internal allocations, so all TLS users (this client, ntfy,
+// OTA) can safely share it. Swapping it per-request (set→restore) was a race:
+// a concurrent TLS session on another core could be torn down with the wrong
+// free() → heap corruption.
+static void ensureSslAllocPsram() {
+    static bool done = false;
+    if (done) return;
+    mbedtls_platform_set_calloc_free(ssl_calloc_psram, heap_caps_free);
+    done = true;
+}
+
 namespace {
 ApiResponse finishGet(HTTPClient &http) {
     ApiResponse response;
@@ -28,6 +40,7 @@ ApiResponse finishGet(HTTPClient &http) {
 ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
     HTTPClient http;
     http.setTimeout(timeoutMs);
+    http.setConnectTimeout(timeoutMs);   // bound the TCP connect phase too
     http.setReuse(false);
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.useHTTP10(true);
@@ -35,22 +48,18 @@ ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
     http.setUserAgent("ESP32-FoodScanner/1.0 (ESP32-S3; github.com/user/foodscanner)");
 
     if (url.startsWith("https://")) {
-        // Redirect mbedTLS allocations to PSRAM for this connection.
-        mbedtls_platform_set_calloc_free(ssl_calloc_psram, heap_caps_free);
+        ensureSslAllocPsram();   // one-time, process-wide (no per-request swap)
 
         WiFiClientSecure client;
         client.setInsecure();
-        client.setTimeout(timeoutMs / 1000);
-        ApiResponse r;
+        // setTimeout() is in seconds here; guarantee at least 1 s so sub-second
+        // timeoutMs values don't round down to 0 (= block forever).
+        client.setTimeout(timeoutMs < 1000 ? 1 : timeoutMs / 1000);
         if (!http.begin(client, url)) {
             Logger::error("ApiClient", "HTTPS begin failed");
-        } else {
-            r = finishGet(http);
+            return ApiResponse();
         }
-
-        // Restore default allocator so other mbedTLS users (MQTT etc.) are unaffected.
-        mbedtls_platform_set_calloc_free(calloc, free);
-        return r;
+        return finishGet(http);
     }
 
     WiFiClient client;

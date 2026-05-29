@@ -159,6 +159,7 @@ private:
     ProductInfo     _fetchedProduct;
     TaskHandle_t    _fetchTaskHandle = nullptr;
     uint32_t        _fetchStartedMs  = 0;
+    volatile uint32_t _fetchEpoch    = 0;   // bumped on each start/abort; stale tasks self-discard
     static constexpr uint32_t FETCH_TIMEOUT_MS = 30000;
 
     // Template workflow state

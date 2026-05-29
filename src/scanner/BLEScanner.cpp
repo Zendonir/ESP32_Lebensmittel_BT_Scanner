@@ -7,7 +7,7 @@
 static BLEScanner   *s_scanner    = nullptr;
 static NimBLEClient *s_client     = nullptr;
 static bool          s_nimInit    = false;
-static int           s_batteryLevel = -1;  // 0-100, -1 = unknown
+static volatile int  s_batteryLevel = -1;  // 0-100, -1 = unknown; written core0 cb, read core1
 
 // ── Discovery list (shared between scan callbacks) ───────────
 static std::vector<BLEScannerDevice> s_discovered;
@@ -478,7 +478,19 @@ String BLEScanner::getStatus() const {
 
 int BLEScanner::getBatteryLevel() const { return s_batteryLevel; }
 
+String BLEScanner::getLastScan() const {
+    if (!_mutex) return lastScan;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    String copy = lastScan;          // copy while the writer (injectCode) is locked out
+    xSemaphoreGive(_mutex);
+    return copy;
+}
+
 void BLEScanner::readBatteryNow() {
+    // s_client is created/deleted only by connectTask, which runs while
+    // connected==false. As long as connected==true here, s_client is stable
+    // (the disconnect callback flips connected=false before any new connectTask
+    // can delete it). Hence the connected-guard below is the synchronization.
     if (!connected || !s_client || !s_client->isConnected()) return;
     NimBLERemoteService *battSvc = s_client->getService(NimBLEUUID((uint16_t)0x180F));
     if (!battSvc) return;

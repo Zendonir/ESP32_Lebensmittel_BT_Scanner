@@ -45,7 +45,7 @@ public:
     bool isConnecting() const { return connecting || connectRequested; }
     String getDeviceAddress()  const { return deviceAddress; }
     String getDeviceName()     const { return deviceName; }
-    String getLastScan()       const { return lastScan; }
+    String getLastScan()       const;   // copies under _mutex (written from notify cb on core 0)
     String getLastError()      const { return lastError; }
     String getStatus()         const;
     int    getBatteryLevel()   const; // 0-100, or -1 if unknown

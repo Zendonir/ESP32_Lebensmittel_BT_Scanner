@@ -97,8 +97,13 @@ const InventoryItem *InventoryManager::findRecent(const String &barcode) const {
 }
 
 const InventoryItem *InventoryManager::findRecentByLabel(const String &labelBarcode) const {
-    for (const RemovedItem &ri : _recentlyRemoved)
-        if (ri.item.labelBarcode == labelBarcode) return &ri.item;
+    time_t now = time(nullptr);
+    for (const RemovedItem &ri : _recentlyRemoved) {
+        if (ri.item.labelBarcode == labelBarcode) {
+            time_t age = now - ri.removedAt;          // honour the 48h-Vertrag
+            if (age >= 0 && age < REMOVED_TTL_SECS) return &ri.item;
+        }
+    }
     return nullptr;
 }
 
@@ -108,6 +113,16 @@ bool InventoryManager::restoreByLabel(const String &labelBarcode, const Inventor
             _recentlyRemoved.erase(it);
             storage.saveRemoved(_recentlyRemoved);
             break;
+        }
+    }
+    // Dedup: ein Label ist eindeutig. Existiert es schon im Inventar,
+    // in-place aktualisieren statt ein Duplikat anzulegen (sonst nicht mehr
+    // editier-/löschbar in der UI + MySQL-UNIQUE-Konflikt beim Sync).
+    for (auto &it : inventory) {
+        if (it.labelBarcode == labelBarcode) {
+            it = restored;
+            it.labelBarcode = labelBarcode;
+            return storage.save(inventory);
         }
     }
     inventory.push_back(restored);
@@ -130,9 +145,12 @@ void InventoryManager::pruneOldRemoved() {
 }
 
 void InventoryManager::recordRemoval(const InventoryItem &item) {
-    // Remove any previous entry for the same barcode to avoid duplicates
+    // Dedup nach labelBarcode (nicht barcode): zwei physische Artikel desselben
+    // Produkts haben dieselbe barcode, aber unterschiedliche Label. Würde nach
+    // barcode dedupliziert, ginge beim Auslagern des zweiten der Restore-Eintrag
+    // des ersten verloren. Restore läuft über das Label – also auch hier so keyen.
     for (auto it = _recentlyRemoved.begin(); it != _recentlyRemoved.end(); ++it) {
-        if (it->item.barcode == item.barcode) {
+        if (it->item.labelBarcode == item.labelBarcode) {
             _recentlyRemoved.erase(it);
             break;
         }

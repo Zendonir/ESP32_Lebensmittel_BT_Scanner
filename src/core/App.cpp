@@ -1619,9 +1619,20 @@ void App::startProductLookup(const String &barcode) {
 
 void App::fetchTaskFn(void *param) {
     App *self = static_cast<App *>(param);
-    self->_fetchOk  = self->openFoodFacts.fetchProduct(self->_pendingBarcode, self->_fetchedProduct);
-    self->_fetchTaskHandle = nullptr; // clear before signalling done to avoid stale handle
-    self->_fetchDone = true;
+    uint32_t myEpoch = self->_fetchEpoch;   // snapshot at start
+
+    ProductInfo product;
+    bool ok = self->openFoodFacts.fetchProduct(self->_pendingBarcode, product);
+
+    // Only publish results if we are still the current fetch. If the main loop
+    // gave up on us (timeout → epoch bumped) and possibly started a new fetch,
+    // writing _fetchedProduct/_fetchDone/_fetchTaskHandle here would clobber it.
+    if (self->_fetchEpoch == myEpoch) {
+        self->_fetchedProduct  = product;
+        self->_fetchOk         = ok;
+        self->_fetchTaskHandle = nullptr;   // clear before signalling done
+        self->_fetchDone       = true;
+    }
     vTaskDelete(nullptr);
 }
 
@@ -1636,6 +1647,7 @@ void App::processWorkflow() {
         _fetchTaskHandle = nullptr;
         _fetchedProduct  = ProductInfo();
         _fetchStartedMs  = millis();
+        _fetchEpoch++;   // new generation – any abandoned prior task will self-discard
         xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, &_fetchTaskHandle, 0);
         return;
     }
@@ -1643,11 +1655,13 @@ void App::processWorkflow() {
     if (!_fetchDone) {
         // Abort if the fetch task has been running too long (network stall / server down)
         if (millis() - _fetchStartedMs >= FETCH_TIMEOUT_MS) {
-            Logger::warn("Fetch", "Product fetch timed out – aborting task");
-            if (_fetchTaskHandle) {
-                vTaskDelete(_fetchTaskHandle);
-                _fetchTaskHandle = nullptr;
-            }
+            Logger::warn("Fetch", "Product fetch timed out – abandoning task");
+            // Do NOT vTaskDelete a task blocked inside mbedTLS/socket – that leaks
+            // the TLS context and can corrupt mbedTLS state. Instead bump the epoch
+            // so the task discards its result and self-deletes when it returns
+            // (bounded by ApiClient's connect/read timeouts).
+            _fetchEpoch++;
+            _fetchTaskHandle = nullptr;
             _fetchDone = true;
             _fetchOk   = false;
         } else {
