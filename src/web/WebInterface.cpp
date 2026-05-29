@@ -899,7 +899,7 @@ static void bodyCollect(AsyncWebServerRequest *req, uint8_t *data, size_t len,
         if (total <= MAX_BODY) _body.reserve(total > 0 ? total : 512);
     }
     if (_body.length() + len <= MAX_BODY)
-        _body += String(reinterpret_cast<char *>(data), len);
+        _body.concat(reinterpret_cast<const char *>(data), len);  // no temp String per chunk
     // If oversized: body stays partial; JSON parse will fail cleanly
     (void)req; (void)total;
 }

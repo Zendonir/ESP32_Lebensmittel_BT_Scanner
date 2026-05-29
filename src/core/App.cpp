@@ -1691,6 +1691,12 @@ bool App::formatDateDraft(String &formatted) const {
     int month = _pendingDateDraft.substring(2, 4).toInt();
     int year  = 2000 + _pendingDateDraft.substring(4, 6).toInt();
     if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2000 || year > 2099) return false;
+    // Tage pro Monat prüfen (inkl. Schaltjahr) – verhindert z.B. 31.02.
+    static const int dpm[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    int maxDay = dpm[month - 1];
+    bool leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    if (month == 2 && leap) maxDay = 29;
+    if (day > maxDay) return false;
     char buf[12];
     snprintf(buf, sizeof(buf), "%02d.%02d.%04d", day, month, year);
     formatted = buf;
