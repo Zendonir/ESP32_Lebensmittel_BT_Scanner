@@ -272,9 +272,8 @@ void BLEScanner::loop() {
     // ── Scan-Watchdog (Erstkopplung – Adresse noch unbekannt) ─────────────────
     if (!connected && !connecting && deviceAddress.isEmpty()
             && autoReconnect && !reconnectPaused && !s_discovering) {
-        static uint32_t s_wMs = 0;
-        if (millis() - s_wMs >= 500) {
-            s_wMs = millis();
+        if (millis() - _watchNoAddrMs >= 500) {
+            _watchNoAddrMs = millis();
             if (!NimBLEDevice::getScan()->isScanning()) _startScan();
         }
     }
@@ -283,9 +282,8 @@ void BLEScanner::loop() {
     if (!connected && !connecting && !connectRequested
             && autoReconnect && !deviceAddress.isEmpty()
             && !reconnectPaused && !s_discovering) {
-        static uint32_t s_watchMs = 0;
-        if (millis() - s_watchMs >= 1000) {
-            s_watchMs = millis();
+        if (millis() - _watchAddrMs >= 1000) {
+            _watchAddrMs = millis();
             if (!NimBLEDevice::getScan()->isScanning()) {
                 Serial.println("[BLE] Watchdog: Scan gestoppt – starte neu");
                 _startScan();

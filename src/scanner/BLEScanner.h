@@ -57,10 +57,10 @@ private:
 
     bool initialized      = false;
     bool autoReconnect    = true;
-    bool connected        = false;
-    bool connecting       = false;
-    bool connectRequested = false;
-    bool reconnectPaused  = false;
+    volatile bool connected        = false;
+    volatile bool connecting       = false;
+    volatile bool connectRequested = false;
+    volatile bool reconnectPaused  = false;  // written Core1, read Core0 (NimBLE CB)
     String deviceAddress;
     String deviceName;
     String requestedAddress;
@@ -70,9 +70,11 @@ private:
     String lastScan;
     String lastError;
     uint8_t  reconnectFailures = 0;
-    uint32_t _idleTimeoutMs   = 0;   // 0 = disabled
-    uint32_t _lastActivityMs  = 0;
+    uint32_t _idleTimeoutMs    = 0;   // 0 = disabled
+    uint32_t _lastActivityMs   = 0;
     uint32_t _reconnectAfterMs = 0;  // millis() target for post-idle reconnect; 0 = not pending
+    uint32_t _watchNoAddrMs    = 0;  // watchdog: last fire when address unknown
+    uint32_t _watchAddrMs      = 0;  // watchdog: last fire when address known
 
     SemaphoreHandle_t _mutex = nullptr;
 };
