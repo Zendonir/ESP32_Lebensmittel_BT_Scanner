@@ -10,6 +10,15 @@ SyncManager sync_manager;
 static constexpr const char *QUEUE_FILE  = "/sync_queue.json";
 static constexpr const char *CONFIG_FILE = "/server_sync_config.json";
 
+// RAII scoped lock for the queue mutex.
+namespace {
+struct QLock {
+    SemaphoreHandle_t m;
+    explicit QLock(SemaphoreHandle_t mm) : m(mm) { if (m) xSemaphoreTake(m, portMAX_DELAY); }
+    ~QLock()                                      { if (m) xSemaphoreGive(m); }
+};
+}
+
 static String sqlEsc(const String &s) {
     String r;
     r.reserve(s.length());
@@ -23,27 +32,45 @@ static String sqlEsc(const String &s) {
 }
 
 void SyncManager::begin() {
+    if (!_queueMutex) _queueMutex = xSemaphoreCreateMutex();
     loadConfig();
-    loadQueue();
+    loadQueue();   // runs before other tasks start; no lock needed
     Logger::info("Sync", String("begin ip=") + _ip + " queued=" + _queue.size());
 }
 
+// Drop the current front event iff it is still the one we just processed.
+// (clearQueue() from the web task may have emptied/changed the queue while we
+//  were blocked in MySQL.)
+void SyncManager::dropFrontIfMatches(const String &payload) {
+    QLock lk(_queueMutex);
+    if (!_queue.empty() && _queue.front().payload == payload) {
+        _queue.erase(_queue.begin());
+        saveQueue();
+    }
+}
+
 void SyncManager::loop() {
-    if (_queue.empty()) return;
     if (WiFi.status() != WL_CONNECTED) return;
     if (_ip.isEmpty()) return;
 
     uint32_t now = millis();
     if (now - _lastAttemptMs < RETRY_INTERVAL_MS) return;
-    _lastAttemptMs = now;
 
-    SyncEvent &ev = _queue.front();
+    // Snapshot the front event under lock; do the blocking MySQL work WITHOUT
+    // holding the lock so a concurrent web getQueueJson()/clearQueue() can't
+    // race with an erase (vector realloc → use-after-free).
+    SyncEvent ev;
+    {
+        QLock lk(_queueMutex);
+        if (_queue.empty()) return;
+        ev = _queue.front();   // copy
+    }
+    _lastAttemptMs = now;
 
     JsonDocument doc;
     if (deserializeJson(doc, ev.payload) != DeserializationError::Ok) {
         Logger::error("Sync", String("bad payload type=") + ev.type);
-        _queue.erase(_queue.begin());
-        saveQueue();
+        dropFrontIfMatches(ev.payload);
         return;
     }
 
@@ -103,12 +130,16 @@ void SyncManager::loop() {
 
     } else {
         Logger::warn("Sync", String("unknown event type=") + ev.type + ", dropping");
-        _queue.erase(_queue.begin());
-        saveQueue();
+        dropFrontIfMatches(ev.payload);
         return;
     }
 
     bool ok = execDirectMySQL(sql);
+
+    QLock lk(_queueMutex);
+    // The event may have been cleared/changed by the web task while we were in MySQL.
+    if (_queue.empty() || _queue.front().payload != ev.payload) return;
+
     if (ok) {
         Logger::info("Sync", String("sent type=") + ev.type);
         _lastSyncTime = time(nullptr);
@@ -116,9 +147,10 @@ void SyncManager::loop() {
         _queue.erase(_queue.begin());
         saveQueue();
     } else {
-        ev.retries++;
-        Logger::warn("Sync", String("failed retries=") + ev.retries);
-        if (ev.retries >= MAX_RETRIES) {
+        SyncEvent &front = _queue.front();
+        front.retries++;
+        Logger::warn("Sync", String("failed retries=") + front.retries);
+        if (front.retries >= MAX_RETRIES) {
             Logger::error("Sync", String("dropping event type=") + ev.type);
             _queue.erase(_queue.begin());
             saveQueue();
@@ -127,6 +159,7 @@ void SyncManager::loop() {
 }
 
 void SyncManager::enqueue(const String &type, const String &jsonPayload) {
+    QLock lk(_queueMutex);
     SyncEvent ev;
     ev.type      = type;
     ev.payload   = jsonPayload;
@@ -138,11 +171,18 @@ void SyncManager::enqueue(const String &type, const String &jsonPayload) {
 }
 
 void SyncManager::clearQueue() {
+    QLock lk(_queueMutex);
     _queue.clear();
     saveQueue();
 }
 
+size_t SyncManager::pending() const {
+    QLock lk(_queueMutex);
+    return _queue.size();
+}
+
 String SyncManager::getQueueJson() const {
+    QLock lk(_queueMutex);
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
     for (const auto &ev : _queue) {

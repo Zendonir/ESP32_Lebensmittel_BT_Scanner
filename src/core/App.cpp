@@ -589,7 +589,7 @@ uint32_t App::buildUiHash() const {
         ble_scanner.getDeviceName() + "|" +
         barcode_manager.getLastScan() + "|" +
         barcode_manager.getLastType() + "|" +
-        String(static_cast<unsigned>(inventory.items().size())) + "|" +
+        String(static_cast<unsigned>(inventory.count())) + "|" +
         String(ble_scanner.getBatteryLevel()) + "|" +
         _statusMessage;
     return fnv1a(sig);
@@ -639,7 +639,7 @@ void App::renderActiveTab(const String &message, bool force) {
         scannerName,
         barcode_manager.getLastScan(),
         barcode_manager.getLastType(),
-        inventory.items().size(),
+        inventory.count(),
         countExpiringSoon(7),
         _statusMessage,
         AppFS::usingSD(),
@@ -2177,7 +2177,7 @@ void App::handleSerialCommand(const String &command) {
         Serial.print("SSID: ");
         Serial.println(wifi_manager.getSSID());
         Serial.print("Inventory: ");
-        Serial.println(static_cast<unsigned>(inventory.items().size()));
+        Serial.println(static_cast<unsigned>(inventory.count()));
         Serial.print("Scanner: ");
         Serial.print(ble_scanner.getStatus());
         Serial.print(" ");
