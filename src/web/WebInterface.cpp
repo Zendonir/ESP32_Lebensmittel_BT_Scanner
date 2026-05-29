@@ -610,11 +610,14 @@ static void sendScanResult(AsyncWebServerRequest *req) {
 // ═══════════════════════════════════════════════════════════════════════════
 class AuthHandler : public AsyncWebHandler {
     // Gibt die effektive Client-IP zurück.
-    // Bei Reverse-Proxy: X-Forwarded-For enthält die echte externe IP.
-    // Direkt: Verbindungs-IP der TCP-Session.
+    // X-Forwarded-For ist client-kontrolliert und darf NUR vertraut werden,
+    // wenn der echte TCP-Peer (remoteIP) selbst der lokale Reverse-Proxy ist.
+    // Sonst könnte jeder externe Angreifer per "X-Forwarded-For: 192.168.x"
+    // die Auth umgehen (Header-Spoofing).
     static IPAddress effectiveIP(AsyncWebServerRequest *req) {
+        IPAddress peer = req->client()->remoteIP();
         const AsyncWebHeader *xff = req->getHeader("X-Forwarded-For");
-        if (xff) {
+        if (xff && isLocalIP(peer)) {          // nur vom lokalen Proxy akzeptieren
             String first = xff->value();
             int c = first.indexOf(',');
             if (c > 0) first = first.substring(0, c);
@@ -622,7 +625,7 @@ class AuthHandler : public AsyncWebHandler {
             IPAddress ip;
             if (ip.fromString(first)) return ip;
         }
-        return req->client()->remoteIP();
+        return peer;
     }
 
     static bool isLocalIP(const IPAddress &ip) {
