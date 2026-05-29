@@ -277,49 +277,6 @@
       </div>
     </div>
 
-  <!-- Bottom-Sheet: Neue Vorlage -->
-  <div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
-  <div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:90vh;overflow-y:auto;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-      <span style="font-weight:700;font-size:16px">Neue Vorlage</span>
-      <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;padding:0;line-height:1">&times;</button>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
-          <option value="">Kategorie…</option>
-        </select>
-        <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
-          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
-        <label class="toggle">
-          <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
-          <span class="slider"></span>
-        </label>
-        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
-      </div>
-      <div id="tmpl-unit-row" style="display:none">
-        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
-          <option value="St.">Stück (St.)</option>
-          <option value="g">Gramm (g)</option>
-          <option value="ml">Milliliter (ml)</option>
-          <option value="kg">Kilogramm (kg)</option>
-        </select>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
-        <label class="toggle">
-          <input type="checkbox" id="tmpl-sorten">
-          <span class="slider"></span>
-        </label>
-        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl</span>
-      </div>
-      <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
-    </div>
-  </div>
-
     <!-- EINSTELLUNGEN TAB -->
     <div id="tab-sys" class="tab-pane">
       <div class="card">
@@ -395,6 +352,50 @@
       SYSTEM
     </button>
   </nav>
+
+  <!-- Bottom-Sheet: Neue Vorlage (außerhalb #content, sonst clippt iOS Safari den
+       fixed-Sheet im overflow-scroll-Container und der Speichern-Button verschwindet) -->
+  <div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
+  <div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <span style="font-weight:700;font-size:16px">Neue Vorlage</span>
+      <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;padding:0;line-height:1">&times;</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
+          <option value="">Kategorie…</option>
+        </select>
+        <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
+        <label class="toggle">
+          <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
+          <span class="slider"></span>
+        </label>
+        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
+      </div>
+      <div id="tmpl-unit-row" style="display:none">
+        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
+          <option value="St.">Stück (St.)</option>
+          <option value="g">Gramm (g)</option>
+          <option value="ml">Milliliter (ml)</option>
+          <option value="kg">Kilogramm (kg)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
+        <label class="toggle">
+          <input type="checkbox" id="tmpl-sorten">
+          <span class="slider"></span>
+        </label>
+        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl</span>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>

@@ -34,15 +34,27 @@ bool LittleFSManager::readFile(const char *path, String &out) const {
 bool LittleFSManager::writeFileAtomic(const char *path, const String &content) const {
     String tmpPath = String(path) + ".tmp";
     File file = AppFS::fs().open(tmpPath, "w");
-    if (!file) return false;
+    if (!file) {
+        Logger::error("LittleFS", String("open tmp failed: ") + tmpPath);
+        return false;
+    }
     size_t written = file.print(content);
     file.close();
     if (written != content.length()) {
+        Logger::error("LittleFS", String("short write (") + written + "/"
+                      + content.length() + "): " + path);
         AppFS::fs().remove(tmpPath);
         return false;
     }
-    AppFS::fs().remove(path);
-    return AppFS::fs().rename(tmpPath, path);
+    // rename() replaces an existing destination atomically on LittleFS.
+    // Do NOT remove(path) first – that would open a window where a power loss
+    // leaves neither the old nor the new file (permanent data loss).
+    if (!AppFS::fs().rename(tmpPath, path)) {
+        Logger::error("LittleFS", String("rename failed: ") + tmpPath + " -> " + path);
+        AppFS::fs().remove(tmpPath);
+        return false;
+    }
+    return true;
 }
 
 bool LittleFSManager::ensureJsonFile(const char *path, const char *defaultJson) const {

@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <vector>
 #include <time.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "../models/ProductInfo.h"
 #include "../models/InventoryItem.h"
 #include "../storage/LittleFSManager.h"
@@ -20,7 +22,7 @@ public:
     void   loadConfig();   // public so WebInterface can reload after a settings save
     void   loop();
     void   enqueue(const String &type, const String &jsonPayload);
-    size_t pending() const { return _queue.size(); }
+    size_t pending() const;             // locked
     void   clearQueue();
     String getQueueJson() const;
     bool   testConnection(String &outMsg);
@@ -43,15 +45,17 @@ public:
 private:
     String _ip, _user, _pass;
     std::vector<SyncEvent> _queue;
-    time_t   _lastSyncTime  = 0;
-    bool     _lastSyncOk    = false;
+    SemaphoreHandle_t _queueMutex = nullptr;  // guards _queue (core1 loop/enqueue vs web TCP task)
+    volatile time_t   _lastSyncTime  = 0;
+    volatile bool     _lastSyncOk    = false;
     uint32_t _lastAttemptMs = 0;
 
     static constexpr uint32_t RETRY_INTERVAL_MS = 30000;
     static constexpr uint8_t  MAX_RETRIES        = 5;
 
-    void saveQueue();
+    void saveQueue();    // caller must hold _queueMutex
     void loadQueue();
+    void dropFrontIfMatches(const String &payload);   // locks internally
     bool execDirectMySQL(const String &sql);
 
     static String labelsToString(const std::vector<String> &labels);

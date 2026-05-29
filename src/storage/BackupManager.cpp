@@ -13,10 +13,22 @@ static bool copyFile(fs::FS &src, fs::FS &dst, const char *srcPath, const char *
     File out = dst.open(dstPath, "w");
     if (!out) { in.close(); return false; }
     uint8_t buf[256];
-    while (int n = in.read(buf, sizeof(buf)))
-        out.write(buf, n);
+    bool ok = true;
+    int n;
+    // read() returns -1 on error (truthy!) and 0 at EOF; loop only on n > 0.
+    while ((n = in.read(buf, sizeof(buf))) > 0) {
+        if (out.write(buf, (size_t)n) != (size_t)n) {   // full SD / write error
+            ok = false;
+            break;
+        }
+    }
+    if (n < 0) ok = false;   // read error mid-file
     in.close(); out.close();
-    return true;
+    if (!ok) {
+        dst.remove(dstPath);  // don't leave a truncated backup behind
+        Logger::warn("Backup", String("copyFile failed: ") + srcPath);
+    }
+    return ok;
 }
 
 static void ensureDir(fs::FS &fs, const char *path) {

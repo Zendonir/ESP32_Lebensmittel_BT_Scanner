@@ -231,7 +231,7 @@ static void githubReleasesTask(void *) {
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(20);
+    client.setTimeout(20000);   // 20 s (milliseconds in Arduino-ESP32 v3)
     HTTPClient http;
     http.setTimeout(20000);
     http.setUserAgent("ESP32-OTA/1.0");
@@ -248,6 +248,16 @@ static void githubReleasesTask(void *) {
         _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
     }
 
+    // Read full body into String (handles chunked transfer encoding correctly).
+    // Streaming-parse via getStreamPtr() can stall on chunked responses.
+    String body = http.getString();
+    http.end();
+    Logger::info("OTA", String("GH releases body bytes: ") + body.length());
+    if (body.isEmpty()) {
+        Logger::error("OTA", "GH releases: empty body");
+        _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
+    }
+
     // Filter to only extract what we need (saves RAM)
     JsonDocument filter;
     filter[0]["tag_name"] = true;
@@ -255,16 +265,18 @@ static void githubReleasesTask(void *) {
     filter[0]["assets"][0]["browser_download_url"] = true;
 
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, *http.getStreamPtr(),
+    DeserializationError err = deserializeJson(doc, body,
                                                DeserializationOption::Filter(filter));
-    http.end();
+    body = String();   // free memory after parsing
 
     if (err) {
         Logger::error("OTA", String("GH releases JSON: ") + err.c_str());
         _ghReleases.fetchDone = true; vTaskDelete(nullptr); return;
     }
 
+    int releaseCount = 0, skipped = 0;
     for (JsonObject rel : doc.as<JsonArray>()) {
+        releaseCount++;
         String tag = rel["tag_name"] | "";
         String url;
         for (JsonObject asset : rel["assets"].as<JsonArray>()) {
@@ -282,9 +294,14 @@ static void githubReleasesTask(void *) {
         if (!tag.isEmpty() && !url.isEmpty()) {
             _ghReleases.tags.push_back(tag);
             _ghReleases.urls.push_back(url);
+        } else {
+            skipped++;
         }
         if ((int)_ghReleases.tags.size() >= 7) break;
     }
+    Logger::info("OTA", String("GH releases parsed=") + releaseCount
+                       + " usable=" + (int)_ghReleases.tags.size()
+                       + " skipped=" + skipped);
 
     _ghReleases.fetchOk   = !_ghReleases.tags.empty();
     _ghReleases.fetchDone = true;
@@ -593,11 +610,14 @@ static void sendScanResult(AsyncWebServerRequest *req) {
 // ═══════════════════════════════════════════════════════════════════════════
 class AuthHandler : public AsyncWebHandler {
     // Gibt die effektive Client-IP zurück.
-    // Bei Reverse-Proxy: X-Forwarded-For enthält die echte externe IP.
-    // Direkt: Verbindungs-IP der TCP-Session.
+    // X-Forwarded-For ist client-kontrolliert und darf NUR vertraut werden,
+    // wenn der echte TCP-Peer (remoteIP) selbst der lokale Reverse-Proxy ist.
+    // Sonst könnte jeder externe Angreifer per "X-Forwarded-For: 192.168.x"
+    // die Auth umgehen (Header-Spoofing).
     static IPAddress effectiveIP(AsyncWebServerRequest *req) {
+        IPAddress peer = req->client()->remoteIP();
         const AsyncWebHeader *xff = req->getHeader("X-Forwarded-For");
-        if (xff) {
+        if (xff && isLocalIP(peer)) {          // nur vom lokalen Proxy akzeptieren
             String first = xff->value();
             int c = first.indexOf(',');
             if (c > 0) first = first.substring(0, c);
@@ -605,7 +625,7 @@ class AuthHandler : public AsyncWebHandler {
             IPAddress ip;
             if (ip.fromString(first)) return ip;
         }
-        return req->client()->remoteIP();
+        return peer;
     }
 
     static bool isLocalIP(const IPAddress &ip) {
@@ -879,7 +899,7 @@ static void bodyCollect(AsyncWebServerRequest *req, uint8_t *data, size_t len,
         if (total <= MAX_BODY) _body.reserve(total > 0 ? total : 512);
     }
     if (_body.length() + len <= MAX_BODY)
-        _body += String(reinterpret_cast<char *>(data), len);
+        _body.concat(reinterpret_cast<const char *>(data), len);  // no temp String per chunk
     // If oversized: body stays partial; JSON parse will fail cleanly
     (void)req; (void)total;
 }

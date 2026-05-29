@@ -589,7 +589,7 @@ uint32_t App::buildUiHash() const {
         ble_scanner.getDeviceName() + "|" +
         barcode_manager.getLastScan() + "|" +
         barcode_manager.getLastType() + "|" +
-        String(static_cast<unsigned>(inventory.items().size())) + "|" +
+        String(static_cast<unsigned>(inventory.count())) + "|" +
         String(ble_scanner.getBatteryLevel()) + "|" +
         _statusMessage;
     return fnv1a(sig);
@@ -639,7 +639,7 @@ void App::renderActiveTab(const String &message, bool force) {
         scannerName,
         barcode_manager.getLastScan(),
         barcode_manager.getLastType(),
-        inventory.items().size(),
+        inventory.count(),
         countExpiringSoon(7),
         _statusMessage,
         AppFS::usingSD(),
@@ -1619,9 +1619,20 @@ void App::startProductLookup(const String &barcode) {
 
 void App::fetchTaskFn(void *param) {
     App *self = static_cast<App *>(param);
-    self->_fetchOk  = self->openFoodFacts.fetchProduct(self->_pendingBarcode, self->_fetchedProduct);
-    self->_fetchTaskHandle = nullptr; // clear before signalling done to avoid stale handle
-    self->_fetchDone = true;
+    uint32_t myEpoch = self->_fetchEpoch;   // snapshot at start
+
+    ProductInfo product;
+    bool ok = self->openFoodFacts.fetchProduct(self->_pendingBarcode, product);
+
+    // Only publish results if we are still the current fetch. If the main loop
+    // gave up on us (timeout → epoch bumped) and possibly started a new fetch,
+    // writing _fetchedProduct/_fetchDone/_fetchTaskHandle here would clobber it.
+    if (self->_fetchEpoch == myEpoch) {
+        self->_fetchedProduct  = product;
+        self->_fetchOk         = ok;
+        self->_fetchTaskHandle = nullptr;   // clear before signalling done
+        self->_fetchDone       = true;
+    }
     vTaskDelete(nullptr);
 }
 
@@ -1636,6 +1647,7 @@ void App::processWorkflow() {
         _fetchTaskHandle = nullptr;
         _fetchedProduct  = ProductInfo();
         _fetchStartedMs  = millis();
+        _fetchEpoch++;   // new generation – any abandoned prior task will self-discard
         xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, &_fetchTaskHandle, 0);
         return;
     }
@@ -1643,11 +1655,13 @@ void App::processWorkflow() {
     if (!_fetchDone) {
         // Abort if the fetch task has been running too long (network stall / server down)
         if (millis() - _fetchStartedMs >= FETCH_TIMEOUT_MS) {
-            Logger::warn("Fetch", "Product fetch timed out – aborting task");
-            if (_fetchTaskHandle) {
-                vTaskDelete(_fetchTaskHandle);
-                _fetchTaskHandle = nullptr;
-            }
+            Logger::warn("Fetch", "Product fetch timed out – abandoning task");
+            // Do NOT vTaskDelete a task blocked inside mbedTLS/socket – that leaks
+            // the TLS context and can corrupt mbedTLS state. Instead bump the epoch
+            // so the task discards its result and self-deletes when it returns
+            // (bounded by ApiClient's connect/read timeouts).
+            _fetchEpoch++;
+            _fetchTaskHandle = nullptr;
             _fetchDone = true;
             _fetchOk   = false;
         } else {
@@ -1677,6 +1691,12 @@ bool App::formatDateDraft(String &formatted) const {
     int month = _pendingDateDraft.substring(2, 4).toInt();
     int year  = 2000 + _pendingDateDraft.substring(4, 6).toInt();
     if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2000 || year > 2099) return false;
+    // Tage pro Monat prüfen (inkl. Schaltjahr) – verhindert z.B. 31.02.
+    static const int dpm[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    int maxDay = dpm[month - 1];
+    bool leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    if (month == 2 && leap) maxDay = 29;
+    if (day > maxDay) return false;
     char buf[12];
     snprintf(buf, sizeof(buf), "%02d.%02d.%04d", day, month, year);
     formatted = buf;
@@ -2163,7 +2183,7 @@ void App::handleSerialCommand(const String &command) {
         Serial.print("SSID: ");
         Serial.println(wifi_manager.getSSID());
         Serial.print("Inventory: ");
-        Serial.println(static_cast<unsigned>(inventory.items().size()));
+        Serial.println(static_cast<unsigned>(inventory.count()));
         Serial.print("Scanner: ");
         Serial.print(ble_scanner.getStatus());
         Serial.print(" ");
