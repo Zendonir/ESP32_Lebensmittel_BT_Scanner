@@ -207,6 +207,20 @@ static String trunc(const String &s, int maxBytes) {
     return s.substring(0, cut) + "~";
 }
 
+// Pixel-width-aware truncation: caller must set the target font BEFORE calling.
+// Trims chars (UTF-8-safe) from the end until the string + "~" fits within maxPx.
+static String truncPx(TFT_eSprite &spr, const String &s, int maxPx) {
+    if ((int)spr.textWidth(s.c_str()) <= maxPx) return s;
+    int tailW  = spr.textWidth("~");
+    int budget = maxPx - tailW;
+    int cut    = (int)s.length();
+    while (cut > 0 && (int)spr.textWidth(s.substring(0, cut).c_str()) > budget) {
+        cut--;
+        while (cut > 0 && ((uint8_t)s[cut] & 0xC0) == 0x80) cut--;
+    }
+    return s.substring(0, cut) + "~";
+}
+
 static void draw_button(int x, int y, int w, int h,
                         const char *label, uint16_t bg, uint16_t fg,
                         uint8_t font, OnscreenAction action) {
@@ -1338,9 +1352,17 @@ static const OnscreenAction LIST_ACTIONS[7] = {
 
 // ─────────────────────────────────────────────────────────
 
+// Format a quantity with its unit: "4160 g", "2 kg", or "3x" for plain pieces.
+static String fmtInvQty(int qty, const String &unit) {
+    if (unit == "g" || unit == "kg" || unit == "ml" || unit == "l")
+        return String(qty) + " " + unit;
+    return String(qty) + "x";
+}
+
 void Display::showInventoryList(const std::vector<InventoryItem> &items,
                                 const String &filter, const String &hhAbbr,
-                                const String &expandedGroup, int scrollOffset) {
+                                const String &expandedGroup, int scrollOffset,
+                                int sortMode) {
     if (!_initialized) return;
     _scrollEnabled = true;   // Scroll-Gesten nur hier aktiv
     _spr.fillSprite(C_BG);
@@ -1351,8 +1373,9 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         String name;
         String brand;
         String location;  // location of first item (shown in collapsed row)
+        String unit;      // amount unit of first item ("g", "kg", "" = pieces)
         String mhd;      // earliest MHD
-        int    count  = 0;
+        int    count  = 0;  // summed quantity (pieces or grams)
         int    status = 0;  // 0=ok, 1=warn (<7d), 2=expired
         std::vector<int> indices; // indices into items[] for expansion
     };
@@ -1396,11 +1419,12 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         }
         long key = mhdKey(item.expiryDate);
         int  st  = (key > 0 && key < today) ? 2 : (key > 0 && key <= warnDay) ? 1 : 0;
+        int  qty = item.quantity > 0 ? item.quantity : 1;  // sum quantity (g/kg/pieces)
 
         bool found = false;
         for (auto &g : groups) {
             if (g.name == item.name) {
-                g.count++;
+                g.count += qty;
                 if (g.mhd.isEmpty() || key < mhdKey(g.mhd)) g.mhd = item.expiryDate;
                 if (st > g.status) g.status = st;
                 g.indices.push_back(ii);
@@ -1413,16 +1437,31 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             ng.name     = item.name;
             ng.brand    = item.brand;
             ng.location = item.location;
+            ng.unit     = item.unit;
             ng.mhd      = item.expiryDate;
-            ng.count   = 1;
+            ng.count   = qty;
             ng.status  = st;
             ng.indices.push_back(ii);
             groups.push_back(ng);
         }
     }
-    // Sort by earliest MHD
-    std::sort(groups.begin(), groups.end(), [&mhdKey](const DispGroup &a, const DispGroup &b) {
-        return mhdKey(a.mhd) < mhdKey(b.mhd);
+    // Sort by the active mode. Empty MHD always sinks to the bottom so missing
+    // dates never crowd out the soon-to-expire items at the top.
+    auto nameKey = [](const String &s) { String t = s; t.toLowerCase(); return t; };
+    std::sort(groups.begin(), groups.end(),
+              [&mhdKey, &nameKey, sortMode](const DispGroup &a, const DispGroup &b) {
+        if (sortMode == 1) {                       // Name (A→Z)
+            return nameKey(a.name) < nameKey(b.name);
+        }
+        if (sortMode == 2) {                       // Lagerort, dann Name
+            String la = nameKey(a.location), lb = nameKey(b.location);
+            if (la != lb) return la < lb;
+            return nameKey(a.name) < nameKey(b.name);
+        }
+        // MHD (default): earliest first, empty dates last
+        long ka = mhdKey(a.mhd), kb = mhdKey(b.mhd);
+        if ((ka == 0) != (kb == 0)) return kb == 0;  // non-empty before empty
+        return ka < kb;
     });
 
     // ── Header ──────────────────────────────────────────────
@@ -1480,12 +1519,16 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
 
     // ── Column headers ──────────────────────────────────────
     // Layout (SCR_W=480):
-    //   Produkt   : 20..  390   (left-aligned, ~370 px für Name + Lagerort-Sublabel)
-    //   MHD       : 400.. 430   (right-aligned an COL_MHD)
-    //   Menge     : 440.. 472   (right-aligned an COL_MENGE)
-    static constexpr int COL_H    = 24;
-    static constexpr int COL_MHD  = 430;   // right edge of MHD column
-    static constexpr int COL_MENGE= 472;   // right edge of Menge column
+    //   Name      : x=18.. (pixel-capped at NAME_MAX_PX right edge)
+    //   MHD       : right-aligned at COL_MHD  (Font 2, "17.10.26" ≈ 65px → left edge ~335)
+    //   Menge     : right-aligned at COL_MENGE (Font 2, "4160 g"  ≈ 52px → left edge ~420)
+    //   Gap name→MHD: at least 20px so nothing overlaps
+    static constexpr int COL_H      = 24;
+    static constexpr int COL_MHD    = 400;   // right edge of MHD column
+    static constexpr int COL_MENGE  = 472;   // right edge of Menge column
+    static constexpr int NAME_X     = 18;    // left edge of product name text
+    // Max pixel width for product name: leaves ≥20px gap before MHD left edge (~335px)
+    static constexpr int NAME_MAX_PX = COL_MHD - 85;  // = 315px from x=18 → right edge ~333
     int col_y = HDR_H + SEARCH_H;
     _spr.fillRect(0, col_y, SCR_W, COL_H, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
@@ -1495,15 +1538,31 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextDatum(TL_DATUM);
         _spr.drawString("Lagerort", 8, col_y + 5);
         _spr.setTextDatum(TR_DATUM);
-        _spr.drawString("Marke/HH", 290, col_y + 5);
+        _spr.drawString("Marke/HH", COL_MHD - 90, col_y + 5);
         _spr.drawString("MHD", COL_MHD, col_y + 5);
     } else {
-        // Collapsed view: Produkt | MHD | Menge
+        // Collapsed view: tappable sort toggle (left) | MHD | Menge
+        static const char *SORT_NAMES[3] = { "MHD", "Name", "Lagerort" };
+        const char *activeSort = SORT_NAMES[(sortMode >= 0 && sortMode <= 2) ? sortMode : 0];
+        // Left: "Sortiert: <mode> v" in accent — signals the header is tappable
         _spr.setTextDatum(TL_DATUM);
-        _spr.drawString("Produkt", 8, col_y + 5);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
+        _spr.drawString("Sortiert:", 8, col_y + 5);
+        int lblX = 8 + (int)_spr.textWidth("Sortiert: ");
+        _spr.setTextColor(C_ACCENT, C_SURFACE2);
+        _spr.drawString(activeSort, lblX, col_y + 5);
+        // Small down-chevron after the active sort name
+        int chX = lblX + (int)_spr.textWidth(activeSort) + 6;
+        int chY = col_y + COL_H / 2 - 1;
+        _spr.fillTriangle(chX, chY - 2, chX + 8, chY - 2, chX + 4, chY + 3, C_ACCENT);
+        // Right: column labels (active "MHD" highlighted when sorting by MHD)
         _spr.setTextDatum(TR_DATUM);
+        _spr.setTextColor(sortMode == 0 ? C_ACCENT : C_SUBTEXT, C_SURFACE2);
         _spr.drawString("MHD",   COL_MHD,   col_y + 5);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
         _spr.drawString("Menge", COL_MENGE, col_y + 5);
+        // Whole header row toggles the sort mode
+        add_region(0, col_y, SCR_W, COL_H, OnscreenAction::INV_SORT);
     }
     _spr.drawFastHLine(0, col_y + COL_H - 1, SCR_W, C_BORDER);
 
@@ -1528,12 +1587,13 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextDatum(ML_DATUM);
         // Small up-pointing filled triangle (▲ = expanded, tap to collapse)
         _spr.fillTriangle(6, list_y+14, 14, list_y+14, 10, list_y+7, sc);
-        _spr.drawString(trunc(eg.name, 21).c_str(), 20, list_y + 11);
+        // Full row width available in expanded view (no MHD/Menge columns)
+        _spr.drawString(truncPx(_spr, eg.name, SCR_W - 30).c_str(), 20, list_y + 11);
         _spr.setTextFont(4);
         if (eg.count > 1) {
             _spr.setTextColor(C_SUBTEXT, C_SURFACE);
             _spr.setTextFont(1);
-            _spr.drawString((String(eg.count) + "x").c_str(), 20, list_y + 27);
+            _spr.drawString(fmtInvQty(eg.count, eg.unit).c_str(), 20, list_y + 27);
         }
         _spr.drawFastHLine(0, list_y + ROW_H - 1, SCR_W, C_BORDER);
         add_region(0, list_y, SCR_W, ROW_H, OnscreenAction::LIST_ITEM_0);
@@ -1554,12 +1614,12 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             uint16_t mc = (k > 0 && k < today) ? C_RED : (k > 0 && k <= warnDay) ? C_YELLOW : C_GREEN;
             _spr.fillRect(0, ry, 4, SUB_H, mc);
 
-            // Lagerort – top line left, big (FreeSans16)
+            // Lagerort – top line left, big (FreeSans16); MHD column starts ~335px
             String locLabel = it.location.isEmpty() ? "-" : it.location;
             _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, rb);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(locLabel, 18).c_str(), 10, ry + 13);
+            _spr.drawString(truncPx(_spr, locLabel, COL_MHD - 85).c_str(), 10, ry + 13);
             _spr.setTextFont(4);
 
             // Marke · Haushalt – second line left, small
@@ -1571,9 +1631,10 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             }
             if (!meta.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, rb);
-                _spr.setTextFont(1);
+                _spr.setTextFont(2);
                 _spr.setTextDatum(ML_DATUM);
-                _spr.drawString(trunc(meta, 28).c_str(), 10, ry + 30);
+                _spr.drawString(truncPx(_spr, meta, COL_MHD - 85).c_str(), 10, ry + 30);
+                _spr.setTextFont(4);
             }
 
             // MHD – right-aligned (colour-coded)
@@ -1603,35 +1664,49 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
             _spr.fillRect(0, ry, 4, ROW_H, sc);
 
-            // ▼ triangle + product name (col 1) — truncated to fit before MHD column
+            // ▼ triangle + product name — pixel-capped so it never overlaps MHD column
             _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
             _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, row_bg);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(g.name, 22).c_str(), 20, ry + 11);
+            _spr.drawString(truncPx(_spr, g.name, NAME_MAX_PX).c_str(), NAME_X, ry + 11);
             _spr.setTextFont(4);
 
-            // Location sub-line (col 1) — replaces brand
-            if (!g.location.isEmpty()) {
-                _spr.setTextColor(C_SUBTEXT, row_bg);
-                _spr.setTextFont(2);
-                _spr.setTextDatum(ML_DATUM);
-                _spr.drawString(trunc(g.location, 30).c_str(), 20, ry + 27);
+            // Location + (optional) brand sub-line — Font 2, pixel-capped to same column
+            {
+                String sub = g.location;
+                if (!g.brand.isEmpty()) {
+                    if (!sub.isEmpty()) sub += "  \xB7  ";
+                    sub += g.brand;
+                }
+                if (!sub.isEmpty()) {
+                    _spr.setTextColor(C_SUBTEXT, row_bg);
+                    _spr.setTextFont(2);
+                    _spr.setTextDatum(ML_DATUM);
+                    // Font 2 is ~7px/char; NAME_MAX_PX stays safe here too
+                    _spr.drawString(truncPx(_spr, sub, NAME_MAX_PX).c_str(), NAME_X, ry + 27);
+                    _spr.setTextFont(4);
+                }
             }
 
-            // MHD – right-aligned to COL_MHD (col 2)
+            // MHD – right-aligned to COL_MHD (col 2), colour-coded by status:
+            // expired = red, expiring soon = yellow, otherwise normal text.
+            _spr.setTextFont(2);
+            _spr.setTextDatum(MR_DATUM);
             if (!g.mhd.isEmpty()) {
-                _spr.setTextColor(C_TEXT, row_bg);
-                _spr.setTextFont(2);
-                _spr.setTextDatum(MR_DATUM);
+                uint16_t mhdCol = g.status == 2 ? C_RED : g.status == 1 ? C_YELLOW : C_TEXT;
+                _spr.setTextColor(mhdCol, row_bg);
                 _spr.drawString(g.mhd.c_str(), COL_MHD, ry + ROW_H / 2);
+            } else {
+                _spr.setTextColor(C_SUBTEXT, row_bg);
+                _spr.drawString("-", COL_MHD, ry + ROW_H / 2);  // ASCII dash (font 2 = ASCII only)
             }
 
-            // Menge – right-aligned to COL_MENGE (col 3)
+            // Menge – right-aligned to COL_MENGE (col 3), with unit (g/kg) when set
             _spr.setTextColor(sc, row_bg);
             _spr.setTextFont(2);
             _spr.setTextDatum(MR_DATUM);
-            _spr.drawString((String(g.count) + "x").c_str(), COL_MENGE, ry + ROW_H / 2);
+            _spr.drawString(fmtInvQty(g.count, g.unit).c_str(), COL_MENGE, ry + ROW_H / 2);
 
             _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
             add_region(0, ry, SCR_W, ROW_H, LIST_ACTIONS[shown]);

@@ -401,7 +401,7 @@ void App::loop() {
             _lastUiRefreshMs = millis();   // suppress 2-s auto-refresh during drag
             int tempOff = _invScrollOffset - liveDelta / INV_ROW_H;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff);
+                device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff, _invSortMode);
         }
 
         int16_t committed = display_obj.drainScrollCommit();
@@ -415,7 +415,7 @@ void App::loop() {
             if (_invScrollOffset < 0)      _invScrollOffset = 0;
             if (_invScrollOffset > maxOff) _invScrollOffset = maxOff;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+                device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
         }
     }
 
@@ -635,7 +635,7 @@ void App::renderActiveTab(const String &message, bool force) {
     // INVENTORY tab always shows the live list, not the empty-placeholder panel
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
         display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
         _lastUiHash = buildUiHash();
         _lastUiRefreshMs = millis();
         return;
@@ -982,8 +982,20 @@ void App::processOnscreenAction(OnscreenAction action) {
             else
                 _invExpandedGroup = tapped;  // expand
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset);
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
         }
+        return;
+    }
+
+    // Inventory column-header tap → cycle sort mode (MHD → Name → Lagerort)
+    if (action == OnscreenAction::INV_SORT &&
+        _activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
+        audio_obj.playClickTone();
+        _invSortMode = (_invSortMode + 1) % 3;
+        _invScrollOffset  = 0;       // jump back to top after re-sorting
+        _invExpandedGroup = "";      // collapse any open group
+        display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
+            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
         return;
     }
 
@@ -1138,7 +1150,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invScrollOffset = 0;
             _invExpireDays = 0;
             display_obj.showInventoryList(inventoryDisplayItems(), "",
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup, 0);
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup, 0, _invSortMode);
             _lastUiRefreshMs = millis();
             break;
 
@@ -1150,7 +1162,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invScrollOffset = 0;
             _invExpireDays = 7;
             display_obj.showInventoryList(inventoryDisplayItems(), "",
-                                          device_config.getHouseholdAbbr(), "", 0);
+                                          device_config.getHouseholdAbbr(), "", 0, _invSortMode);
             _lastUiRefreshMs = millis();
             break;
 
@@ -1162,7 +1174,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invScrollOffset = 0;
             _invExpireDays = 3;
             display_obj.showInventoryList(inventoryDisplayItems(), "",
-                                          device_config.getHouseholdAbbr(), "", 0);
+                                          device_config.getHouseholdAbbr(), "", 0, _invSortMode);
             _lastUiRefreshMs = millis();
             break;
 
@@ -1516,7 +1528,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                     _invExpandedGroup = "";
                     _invScrollOffset = 0;
                     display_obj.showInventoryList(filtered, _invFilter,
-                                                  device_config.getHouseholdAbbr(), _invExpandedGroup, 0);
+                                                  device_config.getHouseholdAbbr(), _invExpandedGroup, 0, _invSortMode);
                 }
                 break;
             }
