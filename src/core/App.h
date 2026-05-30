@@ -31,7 +31,8 @@ public:
     App();
     void begin();
     void loop();
-    void loadDisplayConfig();   // called from WebInterface after display-config POST
+    void loadDisplayConfig();    // called from WebInterface after display-config POST
+    void triggerSyncPullNow();   // called from WebInterface /api/server-sync/pull
 
 private:
     enum class WorkflowMode {
@@ -90,6 +91,7 @@ private:
     bool formatDateDraft(String &formatted) const;
     char digitForAction(OnscreenAction action) const;
     static void fetchTaskFn(void *param);
+    static void pullTaskFn(void *param);
 
     // Template workflow helpers
     void loadTemplates();
@@ -110,7 +112,8 @@ private:
     std::vector<String> loadLocationNames() const;
     String              loadLocationColor(const String &name) const;
     void showLocationSelect();
-    void doInventoryPull();
+    void doInventoryPull();          // actual pull logic (called from pullTaskFn)
+    void triggerInventoryPull();     // spawns a FreeRTOS task; no-op if one is running
 
     // Inventory search helper
     String bestMatchForSearch(const String &query) const;
@@ -188,8 +191,8 @@ private:
     uint32_t            _wifiConnectStartMs = 0;
 
     // Inventory pull sync timer
-    uint32_t _lastInventorySyncMs = 0;
-    static constexpr uint32_t INVENTORY_SYNC_INTERVAL_MS = 120000; // 2 minutes
+    uint32_t         _lastInventorySyncMs = 0;
+    volatile bool    _pullTaskRunning     = false;  // guards concurrent pull tasks
 
     // WiFi reconnect watchdog
     uint32_t _wifiDisconnectedSince = 0;   // millis() when disconnect was first noticed

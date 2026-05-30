@@ -2100,9 +2100,10 @@ Pages.serversync = {
   async load() {
     try {
       const cfg = await API.get('/api/server-sync');
-      document.getElementById('syncIp').value   = cfg.ip   || '';
-      document.getElementById('syncUser').value = cfg.user || '';
-      document.getElementById('syncPass').value = cfg.pass || '';
+      document.getElementById('syncIp').value          = cfg.ip   || '';
+      document.getElementById('syncUser').value        = cfg.user || '';
+      document.getElementById('syncPass').value        = cfg.pass || '';
+      document.getElementById('syncIntervalMin').value = cfg.syncIntervalMin ?? 10;
       document.getElementById('syncLastSync').textContent = cfg.lastSync ? formatDate(cfg.lastSync) : '—';
       const dot = cfg.connected ? 'ok' : 'danger';
       document.getElementById('syncStatus').innerHTML =
@@ -2115,10 +2116,12 @@ Pages.serversync = {
   async save(e) {
     e.preventDefault();
     try {
+      const intervalVal = parseInt(document.getElementById('syncIntervalMin').value, 10);
       await API.post('/api/server-sync', {
-        ip:   document.getElementById('syncIp').value.trim(),
-        user: document.getElementById('syncUser').value.trim(),
-        pass: document.getElementById('syncPass').value,
+        ip:              document.getElementById('syncIp').value.trim(),
+        user:            document.getElementById('syncUser').value.trim(),
+        pass:            document.getElementById('syncPass').value,
+        syncIntervalMin: isNaN(intervalVal) ? 10 : Math.min(60, Math.max(1, intervalVal)),
       });
       Toast.success('Verbindungseinstellungen gespeichert');
     } catch(e) {
@@ -2175,6 +2178,22 @@ Pages.serversync = {
         Toast.error('Fehler: ' + e.message);
       }
     });
+  },
+
+  async pullNow() {
+    const btn = document.getElementById('btnPullNow');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Wird ausgelöst…';
+    try {
+      await API.post('/api/server-sync/pull', {});
+      Toast.success('Inventar-Sync angestoßen');
+    } catch(e) {
+      Toast.error('Sync-Fehler: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
   },
 
   toggleSetup() {

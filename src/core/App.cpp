@@ -112,7 +112,7 @@ void App::begin() {
         int n = sync_manager.pullProductsToCache(fs);
         if (n >= 0)
             Logger::info("Sync", String("Boot: ") + n + " products pulled from MySQL");
-        doInventoryPull();
+        triggerInventoryPull();
         _lastInventorySyncMs = millis();
     }
 
@@ -208,7 +208,7 @@ void App::loop() {
             _activeTab = UiTab::STORE;
             renderDashboard("WLAN verbunden!");
             if (sync_manager.hasConfig()) {
-                doInventoryPull();
+                triggerInventoryPull();
                 _lastInventorySyncMs = millis();
             }
         } else if (millis() - _wifiConnectStartMs > 15000) {
@@ -229,12 +229,12 @@ void App::loop() {
     sync_manager.loop();
     barcode_manager.loop();
 
-    // Periodic inventory pull from MySQL (every 2 minutes, background merge)
+    // Periodic inventory pull from MySQL (interval configurable, default 10 min)
     if (sync_manager.hasConfig() && wifi_manager.isConnected()) {
         uint32_t now = millis();
-        if (now - _lastInventorySyncMs > INVENTORY_SYNC_INTERVAL_MS) {
+        if (now - _lastInventorySyncMs > sync_manager.getSyncIntervalMs()) {
             _lastInventorySyncMs = now;
-            doInventoryPull();
+            triggerInventoryPull();
         }
     }
 
@@ -2149,6 +2149,28 @@ void App::doInventoryPull() {
 
     if (removed || added)
         Logger::info("Sync", String("Pull: +") + added + " items, -" + removed + " removals");
+}
+
+/* static */ void App::pullTaskFn(void *arg) {
+    App *self = static_cast<App *>(arg);
+    self->doInventoryPull();
+    self->_pullTaskRunning = false;
+    vTaskDelete(nullptr);
+}
+
+void App::triggerInventoryPull() {
+    if (_pullTaskRunning) return;
+    _pullTaskRunning = true;
+    // Stack allocated in DRAM (not PSRAM) — 6 KB is sufficient for MySQL + LittleFS calls.
+    // Pinned to Core 1 so LittleFS writes stay on the same core as App::loop().
+    xTaskCreatePinnedToCore(pullTaskFn, "inv_pull", 6144, this, 1, nullptr, 1);
+}
+
+void App::triggerSyncPullNow() {
+    // Called from the ESPAsyncWebServer TCP task — just reset the timer so
+    // App::loop() (Core 1) picks it up on the next iteration.  This avoids any
+    // race between the web task and the pull task guard flag.
+    _lastInventorySyncMs = 0;
 }
 
 void App::initWebServer() {

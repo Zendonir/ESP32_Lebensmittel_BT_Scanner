@@ -1753,20 +1753,27 @@ void WebInterface::registerApiRoutes() {
 
     }, nullptr, bodyCollect);
 
+    // Trigger an immediate inventory pull in the background (resets the timer so
+    // App::loop() will call triggerInventoryPull() on the very next iteration).
+    _server.on("/api/server-sync/pull", HTTP_POST, [](AsyncWebServerRequest *req) {
+        app.triggerSyncPullNow();
+        req->send(200, "application/json", "{\"ok\":true}");
+    }, nullptr, bodyCollect);
     _server.on("/api/server-sync", HTTP_GET, [](AsyncWebServerRequest *req) {
         Serial.println("[Sync] GET /api/server-sync");
         Serial.flush();
         JsonDocument doc;
         loadJson("/server_sync_config.json", doc, "{}");
-        doc["connected"] = sync_manager.wasLastSyncOk();
-        doc["lastSync"]  = (long)sync_manager.getLastSync();
-        doc["pending"]   = (int)sync_manager.pending();
+        doc["connected"]      = sync_manager.wasLastSyncOk();
+        doc["lastSync"]       = (long)sync_manager.getLastSync();
+        doc["pending"]        = (int)sync_manager.pending();
+        doc["syncIntervalMin"] = sync_manager.getSyncIntervalMs() / 60000UL;
         String body; serializeJson(doc, body);
         req->send(200, "application/json", body);
     });
     _server.on("/api/server-sync",   HTTP_POST, [](AsyncWebServerRequest *req) {
         mergePost(req, "/server_sync_config.json", "{}");
-        // Reload config so the next loop() picks up the new ip/user/pass
+        // Reload config so the next loop() picks up the new ip/user/pass/syncIntervalMin
         sync_manager.loadConfig();
     }, nullptr, bodyCollect);
 
