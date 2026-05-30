@@ -30,6 +30,10 @@ public:
     bool   wasLastSyncOk() const { return _lastSyncOk; }
     bool   hasConfig()     const { return !_ip.isEmpty(); }
 
+    // Sync interval (configurable via server_sync_config.json, default 10 min)
+    uint32_t getSyncIntervalMs() const { return _syncIntervalMin * 60000UL; }
+    void     triggerNow()        { _lastAttemptMs = 0; }
+
     // Product cache — MySQL product_cache table
     bool pushProduct(const ProductInfo &product);
     bool fetchProductFromMySQL(const String &barcode, ProductInfo &out);
@@ -44,6 +48,7 @@ public:
 
 private:
     String _ip, _user, _pass;
+    uint32_t _syncIntervalMin = 10;           // configurable sync interval (minutes)
     std::vector<SyncEvent> _queue;
     SemaphoreHandle_t _queueMutex = nullptr;  // guards _queue (core1 loop/enqueue vs web TCP task)
     volatile time_t   _lastSyncTime  = 0;

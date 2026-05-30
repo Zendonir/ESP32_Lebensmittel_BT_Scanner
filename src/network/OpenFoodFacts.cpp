@@ -225,19 +225,32 @@ bool OpenFoodFacts::fetchProduct(const String &barcode, ProductInfo &product) {
     // 2. OpenFoodFacts API — only for truly unknown products
     // Request only the fields we actually use – drops response from ~200 KB
     // down to ~1-2 KB, making the fetch 5-10× faster on slow connections.
-    String url = "https://world.openfoodfacts.org/api/v2/product/" + barcode
-               + "?fields=product_name,product_name_de,brands,quantity"
-                 ",categories_tags,nutriscore_grade,labels_tags";
+    const String fields = "?fields=product_name,product_name_de,brands,quantity"
+                          ",categories_tags,nutriscore_grade,labels_tags";
+    String url = "https://world.openfoodfacts.org/api/v2/product/" + barcode + fields;
 
     ApiResponse response = api.get(url);
     if (response.status <= 0) {
-        Logger::warn("OpenFoodFacts", "First attempt failed, retrying...");
-        delay(1000);
+        Logger::warn("OpenFoodFacts", String("v2 attempt 1 failed (") + response.status + "), retrying...");
+        vTaskDelay(pdMS_TO_TICKS(1500));
         response = api.get(url);
     }
     if (response.status != 200) {
-        Logger::warn("OpenFoodFacts", String("HTTP status ") + response.status);
-        return false;
+        // Log truncated body to help diagnose unexpected 404/redirect responses
+        String snippet = response.body.substring(0, 120);
+        snippet.replace("\n", " ");
+        Logger::warn("OpenFoodFacts", String("v2 HTTP ") + response.status + ": " + snippet);
+
+        // Fallback: try the stable v0 API which has no ?fields restriction and
+        // handles products that the v2 endpoint redirects or returns 404 for.
+        String urlV0 = "https://world.openfoodfacts.org/api/v0/product/" + barcode + ".json";
+        Logger::info("OpenFoodFacts", "Trying v0 fallback: " + urlV0);
+        response = api.get(urlV0, 8000);
+        if (response.status != 200) {
+            Logger::warn("OpenFoodFacts", String("v0 HTTP ") + response.status);
+            return false;
+        }
+        Logger::info("OpenFoodFacts", "v0 fallback succeeded");
     }
 
     // JSON filter: skip everything except the fields we requested.

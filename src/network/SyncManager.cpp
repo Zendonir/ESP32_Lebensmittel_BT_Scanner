@@ -225,6 +225,9 @@ void SyncManager::loadConfig() {
     _ip   = doc["ip"]   | "";
     _user = doc["user"] | "";
     _pass = doc["pass"] | "";
+    _syncIntervalMin = doc["syncIntervalMin"] | 10u;
+    if (_syncIntervalMin < 1)  _syncIntervalMin = 1;
+    if (_syncIntervalMin > 60) _syncIntervalMin = 60;
 }
 
 void SyncManager::saveQueue() {
@@ -358,7 +361,7 @@ int SyncManager::pullProductsToCache(LittleFSManager &fs) {
     if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return -1;
 
     MySQLDirect db;
-    if (!db.connect(_ip, 3306, _user, _pass, 6000)) {
+    if (!db.connect(_ip, 3306, _user, _pass, 2000)) {
         Logger::warn("Sync", String("pullProductsToCache connect failed: ") + db.lastError());
         return -1;
     }
@@ -412,7 +415,7 @@ std::vector<InventoryItem> SyncManager::pullInventory(const String &household, c
     if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return out;
 
     MySQLDirect db;
-    if (!db.connect(_ip, 3306, _user, _pass, 5000)) {
+    if (!db.connect(_ip, 3306, _user, _pass, 2000)) {
         Logger::warn("Sync", String("pullInventory connect failed: ") + db.lastError());
         return out;
     }
@@ -458,7 +461,7 @@ std::vector<String> SyncManager::pullRemovals(const String &household, const Str
     if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return out;
 
     MySQLDirect db;
-    if (!db.connect(_ip, 3306, _user, _pass, 5000)) {
+    if (!db.connect(_ip, 3306, _user, _pass, 2000)) {
         Logger::warn("Sync", String("pullRemovals connect failed: ") + db.lastError());
         return out;
     }

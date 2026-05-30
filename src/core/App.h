@@ -31,7 +31,8 @@ public:
     App();
     void begin();
     void loop();
-    void loadDisplayConfig();   // called from WebInterface after display-config POST
+    void loadDisplayConfig();    // called from WebInterface after display-config POST
+    void triggerSyncPullNow();   // called from WebInterface /api/server-sync/pull
 
 private:
     enum class WorkflowMode {
@@ -69,6 +70,8 @@ private:
         NEW_ROLL_CONFIRM,  // "same roll type as before?" dialog
         // OTA firmware update via display
         OTA_VERSION_LIST,  // showing GitHub release list
+        // Unknown barcode — ask user before proceeding with manual entry
+        ASK_MANUAL_ENTRY,
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -90,6 +93,7 @@ private:
     bool formatDateDraft(String &formatted) const;
     char digitForAction(OnscreenAction action) const;
     static void fetchTaskFn(void *param);
+    static void pullTaskFn(void *param);
 
     // Template workflow helpers
     void loadTemplates();
@@ -110,7 +114,8 @@ private:
     std::vector<String> loadLocationNames() const;
     String              loadLocationColor(const String &name) const;
     void showLocationSelect();
-    void doInventoryPull();
+    void doInventoryPull();          // actual pull logic (called from pullTaskFn)
+    void triggerInventoryPull();     // spawns a FreeRTOS task; no-op if one is running
 
     // Inventory search helper
     String bestMatchForSearch(const String &query) const;
@@ -188,15 +193,15 @@ private:
     uint32_t            _wifiConnectStartMs = 0;
 
     // Inventory pull sync timer
-    uint32_t _lastInventorySyncMs = 0;
-    static constexpr uint32_t INVENTORY_SYNC_INTERVAL_MS = 120000; // 2 minutes
+    uint32_t         _lastInventorySyncMs = 0;
+    volatile bool    _pullTaskRunning     = false;  // guards concurrent pull tasks
 
     // WiFi reconnect watchdog
     uint32_t _wifiDisconnectedSince = 0;   // millis() when disconnect was first noticed
     uint32_t _wifiLastReconnectMs   = 0;   // millis() of last reconnect attempt
-    static constexpr uint32_t WIFI_CHECK_MS     = 15000;  // check every 15 s
-    static constexpr uint32_t WIFI_RECONNECT_MS = 20000;  // first reconnect after 20 s gone
-    static constexpr uint32_t WIFI_RETRY_MS     = 60000;  // retry every 60 s if still down
+    static constexpr uint32_t WIFI_CHECK_MS     =  5000;  // check every 5 s
+    static constexpr uint32_t WIFI_RECONNECT_MS =  5000;  // first reconnect after 5 s gone
+    static constexpr uint32_t WIFI_RETRY_MS     = 15000;  // retry every 15 s if still down
     uint32_t _lastWifiCheckMs = 0;
 
     // Ntfy push notification timer

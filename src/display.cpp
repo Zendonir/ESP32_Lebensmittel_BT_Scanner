@@ -714,7 +714,8 @@ static void touch_task_fn(void * /*param*/) {
 }
 
 void Display::startTouchTask() {
-    xTaskCreatePinnedToCore(touch_task_fn, "touch_poll", 4096, nullptr, 5, nullptr, 0);
+    // Core 1 keeps I2C polling off the WiFi/BLE radio core (Core 0).
+    xTaskCreatePinnedToCore(touch_task_fn, "touch_poll", 4096, nullptr, 5, nullptr, 1);
 }
 
 OnscreenAction Display::hitTest(uint16_t /*x*/, uint16_t /*y*/) const {

@@ -15,6 +15,9 @@
 
 App app;
 
+// Set by the WiFi-disconnect event handler (Core 0); cleared in App::loop() (Core 1).
+volatile bool g_wifiDropped = false;
+
 App::App()
     : i2c_bus(0),
       json(fs),
@@ -68,6 +71,13 @@ void App::begin() {
     Logger::info("WiFi", "Initializing network manager");
     wifi_manager.init();
 
+    // Fast disconnect detection: the WiFi event fires on the network task (Core 0)
+    // so we only set a flag here — App::loop() does the actual reconnect call.
+    WiFi.onEvent([](WiFiEvent_t /*evt*/, WiFiEventInfo_t /*info*/) {
+        extern volatile bool g_wifiDropped;
+        g_wifiDropped = true;
+    }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+
     state.setState(AppState::MAIN);
 
     initFilesystem();
@@ -112,7 +122,7 @@ void App::begin() {
         int n = sync_manager.pullProductsToCache(fs);
         if (n >= 0)
             Logger::info("Sync", String("Boot: ") + n + " products pulled from MySQL");
-        doInventoryPull();
+        triggerInventoryPull();
         _lastInventorySyncMs = millis();
     }
 
@@ -208,7 +218,7 @@ void App::loop() {
             _activeTab = UiTab::STORE;
             renderDashboard("WLAN verbunden!");
             if (sync_manager.hasConfig()) {
-                doInventoryPull();
+                triggerInventoryPull();
                 _lastInventorySyncMs = millis();
             }
         } else if (millis() - _wifiConnectStartMs > 15000) {
@@ -229,24 +239,39 @@ void App::loop() {
     sync_manager.loop();
     barcode_manager.loop();
 
-    // Periodic inventory pull from MySQL (every 2 minutes, background merge)
+    // Periodic inventory pull from MySQL (interval configurable, default 10 min)
     if (sync_manager.hasConfig() && wifi_manager.isConnected()) {
         uint32_t now = millis();
-        if (now - _lastInventorySyncMs > INVENTORY_SYNC_INTERVAL_MS) {
+        if (now - _lastInventorySyncMs > sync_manager.getSyncIntervalMs()) {
             _lastInventorySyncMs = now;
-            doInventoryPull();
+            triggerInventoryPull();
         }
     }
 
     // WiFi reconnect watchdog — re-trigger connection if the link silently dropped.
     // setAutoReconnect(true) is unreliable on IDF 5.x; we watch manually.
+    // g_wifiDropped is set immediately by the DISCONNECTED event handler so we
+    // don't have to wait for the next WIFI_CHECK_MS tick to notice a drop.
     {
+        extern volatile bool g_wifiDropped;
         bool inSetup = (workflow == WorkflowMode::WIFI_SETUP_SCAN
                      || workflow == WorkflowMode::WIFI_SETUP_LIST
                      || workflow == WorkflowMode::WIFI_SETUP_PASS
                      || workflow == WorkflowMode::WIFI_SETUP_CONFIRM
                      || workflow == WorkflowMode::WIFI_SETUP_CONN);
         uint32_t now = millis();
+
+        // Fast path: event handler detected a disconnect — arm the watchdog immediately.
+        if (!inSetup && g_wifiDropped) {
+            g_wifiDropped = false;
+            if (_wifiDisconnectedSince == 0) {
+                _wifiDisconnectedSince = now - WIFI_RECONNECT_MS; // trigger on next tick
+                _wifiLastReconnectMs   = 0;
+                _lastWifiCheckMs       = 0; // force check next loop iteration
+                Logger::warn("WiFi", "Verbindung verloren (Event) – Reconnect wird eingeleitet");
+            }
+        }
+
         if (!inSetup && wifi_manager.hasCredentials()
                 && now - _lastWifiCheckMs >= WIFI_CHECK_MS) {
             _lastWifiCheckMs = now;
@@ -1398,7 +1423,17 @@ void App::processOnscreenAction(OnscreenAction action) {
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
         case OnscreenAction::CONFIRM_YES:
-            if (_kbConfirmPending) {
+            if (workflow == WorkflowMode::ASK_MANUAL_ENTRY) {
+                _pendingProduct.name    = "Unbekanntes Produkt";
+                _pendingProduct.brand   = "";
+                _pendingDateDraft       = "";
+                _pendingExpiryDate      = "";
+                _pendingQuantity        = 1;
+                _pendingUnit            = "";
+                workflow = WorkflowMode::ENTER_DATE;
+                state.setState(AppState::ENTER_DATE);
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            } else if (_kbConfirmPending) {
                 _kbConfirmPending = false;
                 saveManualName(_kbText);
                 _pendingProduct.name    = _kbText;
@@ -1431,7 +1466,13 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             break;
         case OnscreenAction::CONFIRM_NO:
-            if (_kbConfirmPending) {
+            if (workflow == WorkflowMode::ASK_MANUAL_ENTRY) {
+                _pendingProduct = ProductInfo();
+                _pendingBarcode = "";
+                _pendingDateDraft = "";
+                workflow = WorkflowMode::HOME;
+                renderActiveTab("Scan abgebrochen");
+            } else if (_kbConfirmPending) {
                 _kbConfirmPending = false;
                 // Return to keyboard with text still intact
                 display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, kbEntrySuggestion());
@@ -1673,9 +1714,16 @@ void App::processWorkflow() {
     _fetchStarted = false;
     ProductInfo product = _fetchedProduct;
     if (!_fetchOk) {
+        // Product not found or network error — ask user before proceeding
         product.barcode = _pendingBarcode;
-        product.name = "Unbekanntes Produkt";
-        product.brand = "Manuell pruefen";
+        product.name    = "";
+        product.brand   = "";
+        _pendingProduct = product;
+        workflow = WorkflowMode::ASK_MANUAL_ENTRY;
+        display_obj.showConfirmDialog("Unbekanntes Produkt",
+            "Barcode " + _pendingBarcode + " nicht gefunden.\nManuell einlagern?");
+        _lastUiRefreshMs = millis();
+        return;
     }
 
     _pendingProduct = product;
@@ -2149,6 +2197,28 @@ void App::doInventoryPull() {
 
     if (removed || added)
         Logger::info("Sync", String("Pull: +") + added + " items, -" + removed + " removals");
+}
+
+/* static */ void App::pullTaskFn(void *arg) {
+    App *self = static_cast<App *>(arg);
+    self->doInventoryPull();
+    self->_pullTaskRunning = false;
+    vTaskDelete(nullptr);
+}
+
+void App::triggerInventoryPull() {
+    if (_pullTaskRunning) return;
+    _pullTaskRunning = true;
+    // Stack allocated in DRAM (not PSRAM) — 6 KB is sufficient for MySQL + LittleFS calls.
+    // Pinned to Core 1 so LittleFS writes stay on the same core as App::loop().
+    xTaskCreatePinnedToCore(pullTaskFn, "inv_pull", 6144, this, 1, nullptr, 1);
+}
+
+void App::triggerSyncPullNow() {
+    // Called from the ESPAsyncWebServer TCP task — just reset the timer so
+    // App::loop() (Core 1) picks it up on the next iteration.  This avoids any
+    // race between the web task and the pull task guard flag.
+    _lastInventorySyncMs = 0;
 }
 
 void App::initWebServer() {
