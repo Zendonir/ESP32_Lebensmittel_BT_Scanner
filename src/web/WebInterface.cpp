@@ -1134,11 +1134,21 @@ void WebInterface::registerApiRoutes() {
             String lb = key["labelBarcode"] | "";
             String bc = key["barcode"]      | "";
             Serial.printf("[Web] DELETE inventory lb='%s' bc='%s'\n", lb.c_str(), bc.c_str());
-            if (!lb.isEmpty())
+            if (!lb.isEmpty()) {
                 // Permanent delete: skip 48h buffer so the item is not re-created on next scan
                 _invMgr->removeByLabelPermanent(lb);
-            else if (!bc.isEmpty())
+                // Sync deletion to MySQL so pullInventory() doesn't re-add the item
+                JsonDocument sdoc;
+                sdoc["type"]         = "REMOVE_LABEL";
+                sdoc["labelBarcode"] = lb;
+                sdoc["household"]    = device_config.getHousehold();
+                sdoc["deviceName"]   = device_config.getDeviceName();
+                sdoc["timestamp"]    = (long)time(nullptr);
+                String sp; serializeJson(sdoc, sp);
+                sync_manager.enqueue("REMOVE_LABEL", sp);
+            } else if (!bc.isEmpty()) {
                 _invMgr->removeByBarcode(bc);
+            }
             sendOk(req);
         },
         nullptr, bodyCollect);
