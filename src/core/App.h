@@ -197,9 +197,9 @@ private:
     // WiFi reconnect watchdog
     uint32_t _wifiDisconnectedSince = 0;   // millis() when disconnect was first noticed
     uint32_t _wifiLastReconnectMs   = 0;   // millis() of last reconnect attempt
-    static constexpr uint32_t WIFI_CHECK_MS     = 15000;  // check every 15 s
-    static constexpr uint32_t WIFI_RECONNECT_MS = 20000;  // first reconnect after 20 s gone
-    static constexpr uint32_t WIFI_RETRY_MS     = 60000;  // retry every 60 s if still down
+    static constexpr uint32_t WIFI_CHECK_MS     =  5000;  // check every 5 s
+    static constexpr uint32_t WIFI_RECONNECT_MS =  5000;  // first reconnect after 5 s gone
+    static constexpr uint32_t WIFI_RETRY_MS     = 15000;  // retry every 15 s if still down
     uint32_t _lastWifiCheckMs = 0;
 
     // Ntfy push notification timer

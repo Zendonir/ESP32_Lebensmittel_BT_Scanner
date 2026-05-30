@@ -15,6 +15,9 @@
 
 App app;
 
+// Set by the WiFi-disconnect event handler (Core 0); cleared in App::loop() (Core 1).
+volatile bool g_wifiDropped = false;
+
 App::App()
     : i2c_bus(0),
       json(fs),
@@ -67,6 +70,13 @@ void App::begin() {
     state.setState(AppState::WIFI_CONNECTING);
     Logger::info("WiFi", "Initializing network manager");
     wifi_manager.init();
+
+    // Fast disconnect detection: the WiFi event fires on the network task (Core 0)
+    // so we only set a flag here — App::loop() does the actual reconnect call.
+    WiFi.onEvent([](WiFiEvent_t /*evt*/, WiFiEventInfo_t /*info*/) {
+        extern volatile bool g_wifiDropped;
+        g_wifiDropped = true;
+    }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 
     state.setState(AppState::MAIN);
 
@@ -240,13 +250,28 @@ void App::loop() {
 
     // WiFi reconnect watchdog — re-trigger connection if the link silently dropped.
     // setAutoReconnect(true) is unreliable on IDF 5.x; we watch manually.
+    // g_wifiDropped is set immediately by the DISCONNECTED event handler so we
+    // don't have to wait for the next WIFI_CHECK_MS tick to notice a drop.
     {
+        extern volatile bool g_wifiDropped;
         bool inSetup = (workflow == WorkflowMode::WIFI_SETUP_SCAN
                      || workflow == WorkflowMode::WIFI_SETUP_LIST
                      || workflow == WorkflowMode::WIFI_SETUP_PASS
                      || workflow == WorkflowMode::WIFI_SETUP_CONFIRM
                      || workflow == WorkflowMode::WIFI_SETUP_CONN);
         uint32_t now = millis();
+
+        // Fast path: event handler detected a disconnect — arm the watchdog immediately.
+        if (!inSetup && g_wifiDropped) {
+            g_wifiDropped = false;
+            if (_wifiDisconnectedSince == 0) {
+                _wifiDisconnectedSince = now - WIFI_RECONNECT_MS; // trigger on next tick
+                _wifiLastReconnectMs   = 0;
+                _lastWifiCheckMs       = 0; // force check next loop iteration
+                Logger::warn("WiFi", "Verbindung verloren (Event) – Reconnect wird eingeleitet");
+            }
+        }
+
         if (!inSetup && wifi_manager.hasCredentials()
                 && now - _lastWifiCheckMs >= WIFI_CHECK_MS) {
             _lastWifiCheckMs = now;
