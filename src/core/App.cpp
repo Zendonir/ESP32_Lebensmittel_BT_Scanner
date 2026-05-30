@@ -1423,7 +1423,17 @@ void App::processOnscreenAction(OnscreenAction action) {
 
         // ── Keyboard entry confirm / backspace ─────────────────────────────
         case OnscreenAction::CONFIRM_YES:
-            if (_kbConfirmPending) {
+            if (workflow == WorkflowMode::ASK_MANUAL_ENTRY) {
+                _pendingProduct.name    = "Unbekanntes Produkt";
+                _pendingProduct.brand   = "";
+                _pendingDateDraft       = "";
+                _pendingExpiryDate      = "";
+                _pendingQuantity        = 1;
+                _pendingUnit            = "";
+                workflow = WorkflowMode::ENTER_DATE;
+                state.setState(AppState::ENTER_DATE);
+                display_obj.showDateEntry(_pendingProduct, _pendingDateDraft);
+            } else if (_kbConfirmPending) {
                 _kbConfirmPending = false;
                 saveManualName(_kbText);
                 _pendingProduct.name    = _kbText;
@@ -1456,7 +1466,13 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             break;
         case OnscreenAction::CONFIRM_NO:
-            if (_kbConfirmPending) {
+            if (workflow == WorkflowMode::ASK_MANUAL_ENTRY) {
+                _pendingProduct = ProductInfo();
+                _pendingBarcode = "";
+                _pendingDateDraft = "";
+                workflow = WorkflowMode::HOME;
+                renderActiveTab("Scan abgebrochen");
+            } else if (_kbConfirmPending) {
                 _kbConfirmPending = false;
                 // Return to keyboard with text still intact
                 display_obj.showKeyboardEntry(kbEntryTitle(), _kbText, kbEntrySuggestion());
@@ -1698,9 +1714,16 @@ void App::processWorkflow() {
     _fetchStarted = false;
     ProductInfo product = _fetchedProduct;
     if (!_fetchOk) {
+        // Product not found or network error — ask user before proceeding
         product.barcode = _pendingBarcode;
-        product.name = "Unbekanntes Produkt";
-        product.brand = "Manuell pruefen";
+        product.name    = "";
+        product.brand   = "";
+        _pendingProduct = product;
+        workflow = WorkflowMode::ASK_MANUAL_ENTRY;
+        display_obj.showConfirmDialog("Unbekanntes Produkt",
+            "Barcode " + _pendingBarcode + " nicht gefunden.\nManuell einlagern?");
+        _lastUiRefreshMs = millis();
+        return;
     }
 
     _pendingProduct = product;

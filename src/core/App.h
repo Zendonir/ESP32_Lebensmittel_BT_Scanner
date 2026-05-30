@@ -70,6 +70,8 @@ private:
         NEW_ROLL_CONFIRM,  // "same roll type as before?" dialog
         // OTA firmware update via display
         OTA_VERSION_LIST,  // showing GitHub release list
+        // Unknown barcode — ask user before proceeding with manual entry
+        ASK_MANUAL_ENTRY,
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
