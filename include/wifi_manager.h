@@ -28,7 +28,7 @@ public:
     void scan();
     String getSSID();
     void disconnect();
-    void reconnect();  // non-blocking: disconnect + begin with saved credentials
+    void reconnect(bool hardReset = false);  // non-blocking; hardReset re-inits the WiFi driver
 
 private:
     Preferences prefs;

@@ -216,18 +216,34 @@ void WiFiManager::disconnect() {
     current_mode = MODE_OFF;
 }
 
-void WiFiManager::reconnect() {
+void WiFiManager::reconnect(bool hardReset) {
     char ssid[64] = {}, pass[64] = {};
     loadCredentials(ssid, sizeof(ssid), pass, sizeof(pass));
     if (ssid[0] == '\0') return;
+
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);  // we drive reconnection manually
     WiFi.setSleep(false);
-    WiFi.setAutoReconnect(false); // take manual control
-    WiFi.disconnect(false, false);
+
+    if (hardReset) {
+        // Soft reconnect (disconnect+begin) can get stuck on IDF 5.x: disconnect()
+        // is asynchronous, so an immediate begin() may be rejected with
+        // ESP_ERR_WIFI_STATE and never actually associate — the exact state a
+        // device power-cycle recovers from.  Fully re-initialise the WiFi driver
+        // instead.  This touches ONLY the WiFi driver, not the BLE controller
+        // (NimBLE runs on the separate Bluetooth controller and is unaffected).
+        WiFi.disconnect(true, false);   // wifioff=true → tear the radio down
+        WiFi.mode(WIFI_MODE_NULL);      // release the WiFi driver completely
+        WiFi.mode(WIFI_MODE_STA);       // bring it back up clean
+        Serial.println("[WiFi] Hard reset of WiFi driver (BLE untouched)");
+    }
+    // No disconnect() before begin() on the soft path: after an AP-side drop the
+    // stack is already in WL_DISCONNECTED, so begin() associates immediately —
+    // mirroring the working initial autoConnect() path.
     WiFi.begin(ssid, pass[0] ? pass : nullptr);
-    WiFi.setAutoReconnect(true);
     current_ssid = ssid;
     current_mode = MODE_STATION;
-    Serial.printf("[WiFi] Reconnect gestartet: %s\n", ssid);
+    Serial.printf("[WiFi] Reconnect%s started: %s\n", hardReset ? " (hard)" : "", ssid);
     Serial.flush();
 }
 
