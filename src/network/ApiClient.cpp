@@ -42,10 +42,9 @@ ApiResponse ApiClient::get(const String &url, uint32_t timeoutMs) {
     http.setTimeout(timeoutMs);
     http.setConnectTimeout(timeoutMs);   // bound the TCP connect phase too
     http.setReuse(false);
-    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.useHTTP10(true);
-    // Required by OpenFoodFacts – requests without a User-Agent are throttled.
-    http.setUserAgent("ESP32-FoodScanner/1.0 (ESP32-S3; github.com/user/foodscanner)");
+    http.setUserAgent("ESP32-Lebensmittel-Scanner/1.0 (ESP32-S3; github.com/Zendonir/ESP32_Lebensmittel_BT_Scanner)");
 
     if (url.startsWith("https://")) {
         ensureSslAllocPsram();   // one-time, process-wide (no per-request swap)
