@@ -207,6 +207,20 @@ static String trunc(const String &s, int maxBytes) {
     return s.substring(0, cut) + "~";
 }
 
+// Pixel-width-aware truncation: caller must set the target font BEFORE calling.
+// Trims chars (UTF-8-safe) from the end until the string + "~" fits within maxPx.
+static String truncPx(TFT_eSprite &spr, const String &s, int maxPx) {
+    if ((int)spr.textWidth(s.c_str()) <= maxPx) return s;
+    int tailW  = spr.textWidth("~");
+    int budget = maxPx - tailW;
+    int cut    = (int)s.length();
+    while (cut > 0 && (int)spr.textWidth(s.substring(0, cut).c_str()) > budget) {
+        cut--;
+        while (cut > 0 && ((uint8_t)s[cut] & 0xC0) == 0x80) cut--;
+    }
+    return s.substring(0, cut) + "~";
+}
+
 static void draw_button(int x, int y, int w, int h,
                         const char *label, uint16_t bg, uint16_t fg,
                         uint8_t font, OnscreenAction action) {
@@ -1505,12 +1519,16 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
 
     // ── Column headers ──────────────────────────────────────
     // Layout (SCR_W=480):
-    //   Produkt   : 20..  390   (left-aligned, ~370 px für Name + Lagerort-Sublabel)
-    //   MHD       : 400.. 430   (right-aligned an COL_MHD)
-    //   Menge     : 440.. 472   (right-aligned an COL_MENGE)
-    static constexpr int COL_H    = 24;
-    static constexpr int COL_MHD  = 430;   // right edge of MHD column
-    static constexpr int COL_MENGE= 472;   // right edge of Menge column
+    //   Name      : x=18.. (pixel-capped at NAME_MAX_PX right edge)
+    //   MHD       : right-aligned at COL_MHD  (Font 2, "17.10.26" ≈ 65px → left edge ~335)
+    //   Menge     : right-aligned at COL_MENGE (Font 2, "4160 g"  ≈ 52px → left edge ~420)
+    //   Gap name→MHD: at least 20px so nothing overlaps
+    static constexpr int COL_H      = 24;
+    static constexpr int COL_MHD    = 400;   // right edge of MHD column
+    static constexpr int COL_MENGE  = 472;   // right edge of Menge column
+    static constexpr int NAME_X     = 18;    // left edge of product name text
+    // Max pixel width for product name: leaves ≥20px gap before MHD left edge (~335px)
+    static constexpr int NAME_MAX_PX = COL_MHD - 85;  // = 315px from x=18 → right edge ~333
     int col_y = HDR_H + SEARCH_H;
     _spr.fillRect(0, col_y, SCR_W, COL_H, C_SURFACE2);
     _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
@@ -1520,7 +1538,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextDatum(TL_DATUM);
         _spr.drawString("Lagerort", 8, col_y + 5);
         _spr.setTextDatum(TR_DATUM);
-        _spr.drawString("Marke/HH", 290, col_y + 5);
+        _spr.drawString("Marke/HH", COL_MHD - 90, col_y + 5);
         _spr.drawString("MHD", COL_MHD, col_y + 5);
     } else {
         // Collapsed view: tappable sort toggle (left) | MHD | Menge
@@ -1569,7 +1587,8 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextDatum(ML_DATUM);
         // Small up-pointing filled triangle (▲ = expanded, tap to collapse)
         _spr.fillTriangle(6, list_y+14, 14, list_y+14, 10, list_y+7, sc);
-        _spr.drawString(trunc(eg.name, 21).c_str(), 20, list_y + 11);
+        // Full row width available in expanded view (no MHD/Menge columns)
+        _spr.drawString(truncPx(_spr, eg.name, SCR_W - 30).c_str(), 20, list_y + 11);
         _spr.setTextFont(4);
         if (eg.count > 1) {
             _spr.setTextColor(C_SUBTEXT, C_SURFACE);
@@ -1595,12 +1614,12 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             uint16_t mc = (k > 0 && k < today) ? C_RED : (k > 0 && k <= warnDay) ? C_YELLOW : C_GREEN;
             _spr.fillRect(0, ry, 4, SUB_H, mc);
 
-            // Lagerort – top line left, big (FreeSans16)
+            // Lagerort – top line left, big (FreeSans16); MHD column starts ~335px
             String locLabel = it.location.isEmpty() ? "-" : it.location;
             _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, rb);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(locLabel, 18).c_str(), 10, ry + 13);
+            _spr.drawString(truncPx(_spr, locLabel, COL_MHD - 85).c_str(), 10, ry + 13);
             _spr.setTextFont(4);
 
             // Marke · Haushalt – second line left, small
@@ -1612,9 +1631,10 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             }
             if (!meta.isEmpty()) {
                 _spr.setTextColor(C_SUBTEXT, rb);
-                _spr.setTextFont(1);
+                _spr.setTextFont(2);
                 _spr.setTextDatum(ML_DATUM);
-                _spr.drawString(trunc(meta, 28).c_str(), 10, ry + 30);
+                _spr.drawString(truncPx(_spr, meta, COL_MHD - 85).c_str(), 10, ry + 30);
+                _spr.setTextFont(4);
             }
 
             // MHD – right-aligned (colour-coded)
@@ -1644,20 +1664,29 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.fillRect(0, ry, SCR_W, ROW_H, row_bg);
             _spr.fillRect(0, ry, 4, ROW_H, sc);
 
-            // ▼ triangle + product name (col 1) — truncated to fit before MHD column
+            // ▼ triangle + product name — pixel-capped so it never overlaps MHD column
             _spr.fillTriangle(6, ry+7, 14, ry+7, 10, ry+14, C_SUBTEXT);
             _spr.setFreeFont(&FreeSans16);
             _spr.setTextColor(C_TEXT, row_bg);
             _spr.setTextDatum(ML_DATUM);
-            _spr.drawString(trunc(g.name, 22).c_str(), 20, ry + 11);
+            _spr.drawString(truncPx(_spr, g.name, NAME_MAX_PX).c_str(), NAME_X, ry + 11);
             _spr.setTextFont(4);
 
-            // Location sub-line (col 1) — replaces brand
-            if (!g.location.isEmpty()) {
-                _spr.setTextColor(C_SUBTEXT, row_bg);
-                _spr.setTextFont(2);
-                _spr.setTextDatum(ML_DATUM);
-                _spr.drawString(trunc(g.location, 30).c_str(), 20, ry + 27);
+            // Location + (optional) brand sub-line — Font 2, pixel-capped to same column
+            {
+                String sub = g.location;
+                if (!g.brand.isEmpty()) {
+                    if (!sub.isEmpty()) sub += "  \xB7  ";
+                    sub += g.brand;
+                }
+                if (!sub.isEmpty()) {
+                    _spr.setTextColor(C_SUBTEXT, row_bg);
+                    _spr.setTextFont(2);
+                    _spr.setTextDatum(ML_DATUM);
+                    // Font 2 is ~7px/char; NAME_MAX_PX stays safe here too
+                    _spr.drawString(truncPx(_spr, sub, NAME_MAX_PX).c_str(), NAME_X, ry + 27);
+                    _spr.setTextFont(4);
+                }
             }
 
             // MHD – right-aligned to COL_MHD (col 2), colour-coded by status:
