@@ -480,6 +480,11 @@ function fmtDate(str) {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
+function fmtQty(qty, unit) {
+  if (unit === 'g' || unit === 'kg') return qty + ' ' + unit;
+  return qty + 'x';
+}
+
 function expiryClass(str) {
   const days = daysUntil(parseExpiry(str));
   if (days === null) return '';
@@ -582,6 +587,7 @@ function renderInventory() {
   el.innerHTML = groups.map((g, gi) => {
     const cls   = expiryClass(g.firstExpiry);
     const total = g.items.reduce((s, it) => s + (it.quantity || 1), 0);
+    const unit  = g.items[0].unit || '';
     const loc   = g.items[0].location ? ' · ' + g.items[0].location : '';
     const solo  = g.items.length === 1;
     // Gruppe aufgeklappt lassen, wenn sie vorher offen war
@@ -611,7 +617,7 @@ function renderInventory() {
         <div class="inv-name">${esc(g.name)}</div>
         <div class="inv-meta">${g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD'}${esc(loc)}</div>
       </div>
-      <div class="inv-qty">${total}x</div>
+      <div class="inv-qty">${fmtQty(total, unit)}</div>
       ${solo ? '' : `<div class="inv-chevron"${chevronStyle}>›</div>`}`;
 
     const groupHead = solo
@@ -761,6 +767,7 @@ function renderExpiring() {
     const name = it.name || it.product_name || 'Unbekannt';
     const exp  = getExpiry(it);
     const qty  = it.quantity || 1;
+    const unit = it.unit || '';
     const days = daysUntil(parseExpiry(exp));
     const cls  = days !== null && days < 0 ? 'expired' : 'expiring';
     const dayStr = days === null ? '' : days < 0
@@ -774,7 +781,7 @@ function renderExpiring() {
           <div class="inv-name">${esc(name)}</div>
           <div class="inv-meta">${fmtDate(exp)} &mdash; ${dayStr}</div>
         </div>
-        <div class="inv-qty">${qty}x</div>
+        <div class="inv-qty">${fmtQty(qty, unit)}</div>
       </div>
       ${lb ? `<div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>` : ''}
     </div>`;
