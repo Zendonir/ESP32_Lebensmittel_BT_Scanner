@@ -1338,9 +1338,17 @@ static const OnscreenAction LIST_ACTIONS[7] = {
 
 // ─────────────────────────────────────────────────────────
 
+// Format a quantity with its unit: "4160 g", "2 kg", or "3x" for plain pieces.
+static String fmtInvQty(int qty, const String &unit) {
+    if (unit == "g" || unit == "kg" || unit == "ml" || unit == "l")
+        return String(qty) + " " + unit;
+    return String(qty) + "x";
+}
+
 void Display::showInventoryList(const std::vector<InventoryItem> &items,
                                 const String &filter, const String &hhAbbr,
-                                const String &expandedGroup, int scrollOffset) {
+                                const String &expandedGroup, int scrollOffset,
+                                int sortMode) {
     if (!_initialized) return;
     _scrollEnabled = true;   // Scroll-Gesten nur hier aktiv
     _spr.fillSprite(C_BG);
@@ -1351,8 +1359,9 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         String name;
         String brand;
         String location;  // location of first item (shown in collapsed row)
+        String unit;      // amount unit of first item ("g", "kg", "" = pieces)
         String mhd;      // earliest MHD
-        int    count  = 0;
+        int    count  = 0;  // summed quantity (pieces or grams)
         int    status = 0;  // 0=ok, 1=warn (<7d), 2=expired
         std::vector<int> indices; // indices into items[] for expansion
     };
@@ -1396,11 +1405,12 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         }
         long key = mhdKey(item.expiryDate);
         int  st  = (key > 0 && key < today) ? 2 : (key > 0 && key <= warnDay) ? 1 : 0;
+        int  qty = item.quantity > 0 ? item.quantity : 1;  // sum quantity (g/kg/pieces)
 
         bool found = false;
         for (auto &g : groups) {
             if (g.name == item.name) {
-                g.count++;
+                g.count += qty;
                 if (g.mhd.isEmpty() || key < mhdKey(g.mhd)) g.mhd = item.expiryDate;
                 if (st > g.status) g.status = st;
                 g.indices.push_back(ii);
@@ -1413,16 +1423,31 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             ng.name     = item.name;
             ng.brand    = item.brand;
             ng.location = item.location;
+            ng.unit     = item.unit;
             ng.mhd      = item.expiryDate;
-            ng.count   = 1;
+            ng.count   = qty;
             ng.status  = st;
             ng.indices.push_back(ii);
             groups.push_back(ng);
         }
     }
-    // Sort by earliest MHD
-    std::sort(groups.begin(), groups.end(), [&mhdKey](const DispGroup &a, const DispGroup &b) {
-        return mhdKey(a.mhd) < mhdKey(b.mhd);
+    // Sort by the active mode. Empty MHD always sinks to the bottom so missing
+    // dates never crowd out the soon-to-expire items at the top.
+    auto nameKey = [](const String &s) { String t = s; t.toLowerCase(); return t; };
+    std::sort(groups.begin(), groups.end(),
+              [&mhdKey, &nameKey, sortMode](const DispGroup &a, const DispGroup &b) {
+        if (sortMode == 1) {                       // Name (A→Z)
+            return nameKey(a.name) < nameKey(b.name);
+        }
+        if (sortMode == 2) {                       // Lagerort, dann Name
+            String la = nameKey(a.location), lb = nameKey(b.location);
+            if (la != lb) return la < lb;
+            return nameKey(a.name) < nameKey(b.name);
+        }
+        // MHD (default): earliest first, empty dates last
+        long ka = mhdKey(a.mhd), kb = mhdKey(b.mhd);
+        if ((ka == 0) != (kb == 0)) return kb == 0;  // non-empty before empty
+        return ka < kb;
     });
 
     // ── Header ──────────────────────────────────────────────
@@ -1498,12 +1523,28 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.drawString("Marke/HH", 290, col_y + 5);
         _spr.drawString("MHD", COL_MHD, col_y + 5);
     } else {
-        // Collapsed view: Produkt | MHD | Menge
+        // Collapsed view: tappable sort toggle (left) | MHD | Menge
+        static const char *SORT_NAMES[3] = { "MHD", "Name", "Lagerort" };
+        const char *activeSort = SORT_NAMES[(sortMode >= 0 && sortMode <= 2) ? sortMode : 0];
+        // Left: "Sortiert: <mode> v" in accent — signals the header is tappable
         _spr.setTextDatum(TL_DATUM);
-        _spr.drawString("Produkt", 8, col_y + 5);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
+        _spr.drawString("Sortiert:", 8, col_y + 5);
+        int lblX = 8 + (int)_spr.textWidth("Sortiert: ");
+        _spr.setTextColor(C_ACCENT, C_SURFACE2);
+        _spr.drawString(activeSort, lblX, col_y + 5);
+        // Small down-chevron after the active sort name
+        int chX = lblX + (int)_spr.textWidth(activeSort) + 6;
+        int chY = col_y + COL_H / 2 - 1;
+        _spr.fillTriangle(chX, chY - 2, chX + 8, chY - 2, chX + 4, chY + 3, C_ACCENT);
+        // Right: column labels (active "MHD" highlighted when sorting by MHD)
         _spr.setTextDatum(TR_DATUM);
+        _spr.setTextColor(sortMode == 0 ? C_ACCENT : C_SUBTEXT, C_SURFACE2);
         _spr.drawString("MHD",   COL_MHD,   col_y + 5);
+        _spr.setTextColor(C_SUBTEXT, C_SURFACE2);
         _spr.drawString("Menge", COL_MENGE, col_y + 5);
+        // Whole header row toggles the sort mode
+        add_region(0, col_y, SCR_W, COL_H, OnscreenAction::INV_SORT);
     }
     _spr.drawFastHLine(0, col_y + COL_H - 1, SCR_W, C_BORDER);
 
@@ -1533,7 +1574,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         if (eg.count > 1) {
             _spr.setTextColor(C_SUBTEXT, C_SURFACE);
             _spr.setTextFont(1);
-            _spr.drawString((String(eg.count) + "x").c_str(), 20, list_y + 27);
+            _spr.drawString(fmtInvQty(eg.count, eg.unit).c_str(), 20, list_y + 27);
         }
         _spr.drawFastHLine(0, list_y + ROW_H - 1, SCR_W, C_BORDER);
         add_region(0, list_y, SCR_W, ROW_H, OnscreenAction::LIST_ITEM_0);
@@ -1619,19 +1660,24 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
                 _spr.drawString(trunc(g.location, 30).c_str(), 20, ry + 27);
             }
 
-            // MHD – right-aligned to COL_MHD (col 2)
+            // MHD – right-aligned to COL_MHD (col 2), colour-coded by status:
+            // expired = red, expiring soon = yellow, otherwise normal text.
+            _spr.setTextFont(2);
+            _spr.setTextDatum(MR_DATUM);
             if (!g.mhd.isEmpty()) {
-                _spr.setTextColor(C_TEXT, row_bg);
-                _spr.setTextFont(2);
-                _spr.setTextDatum(MR_DATUM);
+                uint16_t mhdCol = g.status == 2 ? C_RED : g.status == 1 ? C_YELLOW : C_TEXT;
+                _spr.setTextColor(mhdCol, row_bg);
                 _spr.drawString(g.mhd.c_str(), COL_MHD, ry + ROW_H / 2);
+            } else {
+                _spr.setTextColor(C_SUBTEXT, row_bg);
+                _spr.drawString("-", COL_MHD, ry + ROW_H / 2);  // ASCII dash (font 2 = ASCII only)
             }
 
-            // Menge – right-aligned to COL_MENGE (col 3)
+            // Menge – right-aligned to COL_MENGE (col 3), with unit (g/kg) when set
             _spr.setTextColor(sc, row_bg);
             _spr.setTextFont(2);
             _spr.setTextDatum(MR_DATUM);
-            _spr.drawString((String(g.count) + "x").c_str(), COL_MENGE, ry + ROW_H / 2);
+            _spr.drawString(fmtInvQty(g.count, g.unit).c_str(), COL_MENGE, ry + ROW_H / 2);
 
             _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
             add_region(0, ry, SCR_W, ROW_H, LIST_ACTIONS[shown]);
