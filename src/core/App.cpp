@@ -267,6 +267,7 @@ void App::loop() {
             if (_wifiDisconnectedSince == 0) {
                 _wifiDisconnectedSince = now - WIFI_RECONNECT_MS; // trigger on next tick
                 _wifiLastReconnectMs   = 0;
+                _wifiReconnectTries    = 0;
                 _lastWifiCheckMs       = 0; // force check next loop iteration
                 Logger::warn("WiFi", "Verbindung verloren (Event) – Reconnect wird eingeleitet");
             }
@@ -279,6 +280,7 @@ void App::loop() {
                 if (_wifiDisconnectedSince == 0) {
                     _wifiDisconnectedSince = now;
                     _wifiLastReconnectMs   = 0;
+                    _wifiReconnectTries    = 0;
                     Logger::warn("WiFi", "Verbindung verloren – warte auf Reconnect");
                 }
                 uint32_t downFor    = now - _wifiDisconnectedSince;
@@ -287,13 +289,29 @@ void App::loop() {
                 bool retryDue  = (_wifiLastReconnectMs != 0 && sinceLast >= WIFI_RETRY_MS);
                 if (firstTry || retryDue) {
                     _wifiLastReconnectMs = now;
-                    Logger::info("WiFi", String("Reconnect-Versuch (down ") + downFor / 1000 + "s)");
-                    wifi_manager.reconnect();
+                    _wifiReconnectTries++;
+                    // Escalate: the first couple of attempts are soft begin()s;
+                    // after that, fully re-init the WiFi driver (recovers the
+                    // wedged state that previously needed a manual reset).
+                    bool hard = (_wifiReconnectTries > WIFI_HARD_AFTER);
+                    Logger::warn("WiFi", String("Reconnect #") + _wifiReconnectTries
+                                 + (hard ? " (HART)" : "") + " (down " + downFor / 1000 + "s)");
+                    wifi_manager.reconnect(hard);
+                }
+                // Last resort: if we have been offline far too long despite hard
+                // resets, reboot the device — this is exactly what the user does
+                // manually today, and it restores connectivity reliably.
+                if (downFor >= WIFI_REBOOT_MS) {
+                    Logger::error("WiFi", "Seit 15 min offline trotz Reconnect – Neustart");
+                    Serial.flush();
+                    delay(100);
+                    ESP.restart();
                 }
             } else if (_wifiDisconnectedSince != 0) {
                 Logger::info("WiFi", "Wiederverbunden: " + WiFi.localIP().toString());
                 _wifiDisconnectedSince = 0;
                 _wifiLastReconnectMs   = 0;
+                _wifiReconnectTries    = 0;
             }
         }
     }
