@@ -1107,22 +1107,13 @@ void App::processOnscreenAction(OnscreenAction action) {
             return;
         } else if (workflow == WorkflowMode::LOCATION_SELECT) {
             auto locs = loadLocationNames();
-            // idx 0 = "Kein Lagerort" (clear), then actual locations
-            if (idx == 0) {
-                device_config.setActiveLocation("");
-                device_config.setActiveLocationColor("");
-                display_obj.setActiveLocation("");
-                display_obj.setActiveLocationColor("");
-            } else {
-                int locIdx = idx - 1;
-                if (locIdx < (int)locs.size()) {
-                    const String &locName = locs[locIdx];
-                    String color = loadLocationColor(locName);
-                    device_config.setActiveLocation(locName);
-                    device_config.setActiveLocationColor(color);
-                    display_obj.setActiveLocation(locName);
-                    display_obj.setActiveLocationColor(color);
-                }
+            if (idx < (int)locs.size()) {
+                const String &locName = locs[idx];
+                String color = loadLocationColor(locName);
+                device_config.setActiveLocation(locName);
+                device_config.setActiveLocationColor(color);
+                display_obj.setActiveLocation(locName);
+                display_obj.setActiveLocationColor(color);
             }
             audio_obj.playClickTone();
             workflow = WorkflowMode::HOME;
