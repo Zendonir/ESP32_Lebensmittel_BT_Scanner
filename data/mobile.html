@@ -70,8 +70,31 @@
     --radius: 12px;
     --tab-h: 60px;
   }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  *, *::before, *::after {
+    box-sizing: border-box; margin: 0; padding: 0;
+    /* Doppeltipp-Zoom + 300ms-Tap-Delay killen, kein blauer Tap-Blitz */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    /* kein iOS "Kopieren/Nachschlagen"-Popup bei Langdruck */
+    -webkit-touch-callout: none;
+  }
+  html, body {
+    /* 100dvh: Tab-Leiste bleibt sichtbar, auch wenn Safaris Adressleiste ein-/ausfährt */
+    height: 100%; height: 100dvh;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    /* kein Gummiband-/Bounce-Effekt der ganzen Seite */
+    overscroll-behavior: none;
+    /* iOS soll Schrift im Querformat nicht eigenmächtig vergrößern */
+    -webkit-text-size-adjust: 100%;
+    /* UI-Text nicht markierbar (App-Gefühl); Eingabefelder unten wieder erlaubt */
+    -webkit-user-select: none; user-select: none;
+  }
+  /* Eingaben müssen markierbar bleiben, sonst nervt das Editieren */
+  input, textarea { -webkit-user-select: text; user-select: text; }
+  /* iOS zoomt automatisch hinein, wenn ein fokussiertes Feld <16px hat.
+     Daher ALLE Eingaben global auf min. 16px zwingen. */
+  input, select, textarea, button { font-size: 16px; }
 
   /* ── Layout ── */
   #app { display: flex; flex-direction: column; height: 100%; padding-top: env(safe-area-inset-top, 0px); }
@@ -80,7 +103,7 @@
   #header-right { display: flex; align-items: center; gap: 10px; }
   #wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
   #wifi-dot.ok { background: var(--green); }
-  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
+  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
   #tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
   .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
   .tab-btn.active { color: var(--accent); }
@@ -104,7 +127,7 @@
 
   /* ── Search bar ── */
   .search-wrap { position: relative; margin-bottom: 12px; }
-  .search-wrap input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 24px; padding: 10px 16px 10px 40px; color: var(--text); font-size: 15px; outline: none; -webkit-appearance: none; }
+  .search-wrap input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 24px; padding: 10px 16px 10px 40px; color: var(--text); font-size: 16px; outline: none; -webkit-appearance: none; }
   .search-wrap input:focus { border-color: var(--accent); }
   .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--sub); pointer-events: none; }
 
@@ -188,7 +211,7 @@
   .add-row { display: flex; gap: 8px; margin-top: 10px; }
   .add-row input, .add-row select {
     flex: 1; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 14px;
+    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 16px;
     outline: none; -webkit-appearance: none; min-width: 0;
   }
   .add-row input:focus, .add-row select:focus { border-color: var(--accent); }
@@ -196,7 +219,7 @@
   .hh-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .btn { padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .btn-primary { background: var(--accent); color: #fff; }
-  .btn-danger  { background: none; border: 1px solid var(--border); color: var(--red); padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  .btn-danger  { background: none; border: 1px solid var(--border); color: var(--red); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0; min-height: 40px; display: inline-flex; align-items: center; -webkit-tap-highlight-color: transparent; }
   .mgmt-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .mgmt-item:last-child { border-bottom: none; }
   .mgmt-item-info { flex: 1; min-width: 0; }
@@ -207,9 +230,9 @@
   .sorten-section { margin-top: 8px; }
   .sorten-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
   .sorte-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px 3px 10px; font-size: 12px; }
-  .sorte-chip button { background: none; border: none; color: var(--sub); cursor: pointer; padding: 0; font-size: 14px; line-height: 1; -webkit-tap-highlight-color: transparent; }
+  .sorte-chip button { background: none; border: none; color: var(--sub); cursor: pointer; padding: 6px; margin: -6px -4px -6px 0; font-size: 16px; line-height: 1; -webkit-tap-highlight-color: transparent; }
   .sorte-add-row { display: flex; gap: 6px; }
-  .sorte-add-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 5px 10px; font-size: 13px; min-width: 0; }
+  .sorte-add-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 10px; font-size: 16px; min-width: 0; }
   .sorte-add-row button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   /* Vorlage-Hinzufügen-Button im Kartenkopf */
   .tmpl-add-btn {
@@ -224,7 +247,7 @@
   .cat-filter-wrap { margin-bottom: 10px; }
   .cat-filter-wrap select {
     width: 100%; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 13px;
+    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 16px;
     outline: none; -webkit-appearance: none;
   }
 </style>
@@ -322,7 +345,7 @@
         <div class="card-title">Display</div>
         <div class="setting-row">
           <div><div class="setting-label">Standby</div><div class="setting-sub">Display abschalten nach</div></div>
-          <select id="mob-standby" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;-webkit-appearance:none" onchange="saveStandby(this.value)">
+          <select id="mob-standby" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none" onchange="saveStandby(this.value)">
             <option value="0">Nie</option>
             <option value="60">1 Min</option>
             <option value="120">2 Min</option>
@@ -333,7 +356,7 @@
         </div>
       </div>
 
-      <a href="/" class="admin-link">&#x2699;&#xFE0F; Zur vollst&auml;ndigen Verwaltung</a>
+      <a href="/" target="_blank" rel="noopener" class="admin-link">&#x2699;&#xFE0F; Zur vollst&auml;ndigen Verwaltung</a>
     </div>
   </div>
 
@@ -366,13 +389,13 @@
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:16px;outline:none;width:100%;box-sizing:border-box">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
+        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none">
           <option value="">Kategorie…</option>
         </select>
         <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
-          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box">
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;width:100%;box-sizing:border-box">
       </div>
       <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
         <label class="toggle">
@@ -382,7 +405,7 @@
         <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
       </div>
       <div id="tmpl-unit-row" style="display:none">
-        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
+        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none">
           <option value="St.">Stück (St.)</option>
           <option value="Port.">Portionen (Port.)</option>
           <option value="g">Gramm (g)</option>
@@ -756,23 +779,36 @@ function initSwipe(container) {
   container.querySelectorAll('.swipe-wrap').forEach(wrap => {
     const inner = wrap.querySelector('.swipe-inner');
     if (!inner) return;
-    let startX = 0, curX = 0, swiping = false;
+    // dir: 0 = noch unklar, 1 = horizontal (Swipe), -1 = vertikal (Scrollen)
+    let startX = 0, startY = 0, curX = 0, dir = 0;
     inner.addEventListener('touchstart', e => {
-      startX = e.touches[0].clientX; curX = 0; swiping = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      curX = 0; dir = 0;
     }, { passive: true });
     inner.addEventListener('touchmove', e => {
-      if (!swiping) return;
-      curX = e.touches[0].clientX - startX;
-      if (curX > 0) curX = 0;           // only left swipe
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      // Richtung erst festlegen, wenn die Geste eindeutig ist (>8px) —
+      // so wird vertikales Scrollen nicht als Swipe missinterpretiert.
+      if (dir === 0) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8)
+          dir = Math.abs(dx) > Math.abs(dy) ? 1 : -1;
+        else return;
+      }
+      if (dir !== 1) return;            // vertikal → Scrollen zulassen
+      curX = dx;
+      if (curX > 0) curX = 0;           // nur nach links
       if (curX < -80) curX = -80;
       inner.style.transition = 'none';
       inner.style.transform = `translateX(${curX}px)`;
     }, { passive: true });
     inner.addEventListener('touchend', () => {
-      swiping = false;
+      if (dir !== 1) { dir = 0; return; }
       inner.style.transition = 'transform .2s';
       // snap open at -40px threshold, close otherwise
       inner.style.transform = curX < -40 ? 'translateX(-80px)' : 'translateX(0)';
+      dir = 0;
     });
   });
 }
@@ -1107,6 +1143,14 @@ setInterval(async () => { await _flushPendingDelete(); loadInventory(); }, 60000
 
 // Bei Seitenverlassen ausstehende Löschungen flushen (best effort)
 window.addEventListener('pagehide', () => { _flushPendingDelete(); });
+
+// ── iPhone: Pinch-Zoom hart unterbinden ───────────────────────
+// iOS Safari ignoriert user-scalable=no/maximum-scale im Viewport-Tag.
+// Doppeltipp-Zoom ist bereits über CSS touch-action:manipulation deaktiviert,
+// Pinch-Zoom muss zusätzlich über die Gesture-Events geblockt werden.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false })
+);
 
 // ── Init ──────────────────────────────────────────────────────
 loadInventory();
