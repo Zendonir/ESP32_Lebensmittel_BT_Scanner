@@ -2023,6 +2023,21 @@ void WebInterface::registerApiRoutes() {
             req->send(200, "application/json", "{\"ok\":true,\"message\":\"Gedruckt\"}");
         }, nullptr, bodyCollect);
 
+    _server.on("/api/print-last", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            if (!_printer) {
+                req->send(503, "application/json", "{\"ok\":false,\"message\":\"Kein Drucker\"}");
+                return;
+            }
+            if (!_printer->hasLastPrint()) {
+                req->send(404, "application/json", "{\"ok\":false,\"message\":\"Kein letztes Label verfügbar\"}");
+                return;
+            }
+            bool ok = _printer->printLast();
+            req->send(200, "application/json",
+                      ok ? "{\"ok\":true}" : "{\"ok\":false,\"message\":\"Druckfehler\"}");
+        }, nullptr, bodyCollect);
+
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *req) {
         String json;

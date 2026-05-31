@@ -187,6 +187,7 @@ struct HomeState {
     int    rollRemaining   = -1;  // -1 = no roll configured
     int    scannerBattery  = -1;  // 0-100, -1 = unknown
     String message;
+    bool   hasLastPrint = false;
     bool   valid = false;
 };
 static HomeState _homeState;
@@ -520,6 +521,11 @@ static void draw_panel_system(const HomeState &s) {
         if (s.rollRemaining >= 0) {
             String roll = "Labels: " + String(s.rollRemaining) + " verbl.";
             _spr.drawString(roll.c_str(), cx + 10, cy + 84);
+        }
+        if (s.hasLastPrint) {
+            draw_button(cx + 10, cy + 98, QW - 20, 26,
+                        "Letztes Label nochmal", C_ACCENT, C_BG, 2,
+                        OnscreenAction::PRINT_LABEL_LAST);
         }
     }
 }
@@ -2493,6 +2499,10 @@ void Display::showSearchEntry(const String &current, const String &suggestion) {
 // ─────────────────────────────────────────────────────────
 //   Location selection
 // ─────────────────────────────────────────────────────────
+
+void Display::setLastPrintAvailable(bool v) {
+    _homeState.hasLastPrint = v;
+}
 
 void Display::setActiveLocation(const String &loc) {
     _s_active_location = loc;

@@ -1873,6 +1873,8 @@ Pages.printer = {
     } catch(e) {
       Toast.error('Drucker: ' + e.message);
     }
+    const btn = document.getElementById('btnPrintLast');
+    if (btn) btn.disabled = false;
   },
 
   async save(e) {
@@ -1893,6 +1895,13 @@ Pages.printer = {
       const res = await API.post('/api/test-print', { type: 'label' });
       Toast.success(res.message || 'Testlabel gesendet');
     } catch(e) { Toast.error('Fehler: ' + e.message); }
+  },
+
+  async printLast() {
+    try {
+      const res = await API.post('/api/print-last', {});
+      res.ok ? Toast.success('Letztes Label gedruckt') : Toast.error(res.message || 'Fehler');
+    } catch(e) { Toast.error(e.message || 'Kein letztes Label verfügbar'); }
   },
 
   async printManual() {

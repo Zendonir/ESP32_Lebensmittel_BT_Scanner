@@ -673,6 +673,7 @@ void App::renderActiveTab(const String &message, bool force) {
     if (scannerName.isEmpty()) scannerName = ble_scanner.getDeviceAddress();
     if (scannerName.isEmpty()) scannerName = "nicht gekoppelt";
 
+    display_obj.setLastPrintAvailable(printer.hasLastPrint());
     display_obj.showHome(
         _activeTab,
         wifi_ssid,
@@ -1468,6 +1469,21 @@ void App::processOnscreenAction(OnscreenAction action) {
         case OnscreenAction::PRINTER_FEED_5:
             printer.feed(5);
             break;
+
+        case OnscreenAction::PRINT_LABEL_LAST:
+            printer.printLast();
+            break;
+        case OnscreenAction::PRINT_LABEL_1:
+        case OnscreenAction::PRINT_LABEL_2:
+        case OnscreenAction::PRINT_LABEL_3:
+        case OnscreenAction::PRINT_LABEL_5:
+        case OnscreenAction::PRINT_LABEL_10: {
+            static constexpr int COUNTS[] = {1, 2, 3, 5, 10};
+            int idx = static_cast<int>(action) - static_cast<int>(OnscreenAction::PRINT_LABEL_1);
+            int cnt = (idx >= 0 && idx < 5) ? COUNTS[idx] : 1;
+            for (int i = 0; i < cnt; i++) printer.printLast();
+            break;
+        }
         case OnscreenAction::LOCATION_BADGE:
             audio_obj.playClickTone();
             workflow = WorkflowMode::LOCATION_SELECT;
