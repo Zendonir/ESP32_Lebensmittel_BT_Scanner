@@ -1,14 +1,5 @@
 #include "InventoryManager.h"
 
-// RAII scoped lock for the recursive inventory mutex.
-namespace {
-struct InvLock {
-    SemaphoreHandle_t m;
-    explicit InvLock(SemaphoreHandle_t mm) : m(mm) { if (m) xSemaphoreTakeRecursive(m, portMAX_DELAY); }
-    ~InvLock()                                       { if (m) xSemaphoreGiveRecursive(m); }
-};
-}
-
 InventoryManager::InventoryManager(InventoryStorage &storage) : storage(storage) {}
 
 bool InventoryManager::begin() {

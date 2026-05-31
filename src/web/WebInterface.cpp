@@ -1122,29 +1122,39 @@ void WebInterface::registerApiRoutes() {
         }
         bool isOwn = (hh == device_config.getHousehold());
 
-        JsonDocument doc;
-        JsonArray arr = doc.to<JsonArray>();
-
         if (isOwn || !sync_manager.hasConfig() || !wifi_manager.isConnected()) {
-            // Serve from local inventory (own household)
+            // Stream local inventory item-by-item: avoids one giant JsonDocument + String
+            // allocation. Each item is serialized into a small per-item JsonDocument and
+            // written directly into the AsyncResponseStream (extends Print).
+            AsyncResponseStream *resp = req->beginResponseStream("application/json");
+            resp->print('[');
             if (_invMgr) {
-                for (const auto &it : _invMgr->items()) {
-                    JsonObject obj = arr.add<JsonObject>();
-                    obj["barcode"]      = it.barcode;
-                    obj["name"]         = it.name;
-                    obj["brand"]        = it.brand;
-                    obj["category"]     = it.category;
-                    obj["expiryDate"]   = it.expiryDate;
-                    obj["addedDate"]    = it.addedDate;
-                    obj["quantity"]     = it.quantity;
-                    obj["unit"]         = it.unit;
-                    obj["labelBarcode"] = it.labelBarcode;
-                    obj["location"]     = it.location;
-                    obj["household"]    = device_config.getHousehold();
-                }
+                bool first = true;
+                const String &ownHh = device_config.getHousehold();
+                _invMgr->forEachItem([&](const InventoryItem &it) {
+                    JsonDocument item;
+                    item["barcode"]      = it.barcode;
+                    item["name"]         = it.name;
+                    item["brand"]        = it.brand;
+                    item["category"]     = it.category;
+                    item["expiryDate"]   = it.expiryDate;
+                    item["addedDate"]    = it.addedDate;
+                    item["quantity"]     = it.quantity;
+                    item["unit"]         = it.unit;
+                    item["labelBarcode"] = it.labelBarcode;
+                    item["location"]     = it.location;
+                    item["household"]    = ownHh;
+                    if (!first) resp->print(',');
+                    serializeJson(item, *resp);
+                    first = false;
+                });
             }
+            resp->print(']');
+            req->send(resp);
         } else {
             // Fetch from MySQL for other household (blocking but acceptable)
+            JsonDocument doc;
+            JsonArray arr = doc.to<JsonArray>();
             auto pulled = sync_manager.pullInventory(hh, "");
             for (const auto &it : pulled) {
                 JsonObject obj = arr.add<JsonObject>();
@@ -1160,8 +1170,8 @@ void WebInterface::registerApiRoutes() {
                 obj["location"]     = it.location;
                 obj["household"]    = hh;
             }
+            sendJson(req, doc);
         }
-        sendJson(req, doc);
     });
 
     // ---- INVENTORY DELETE (register BEFORE /api/inventory POST — ESPAsyncWebServer prefix matching) ----

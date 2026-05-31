@@ -791,11 +791,19 @@ static bool isSubseq(const String &needle, const String &hay) {
 String App::bestMatchForSearch(const String &query) const {
     if (query.isEmpty()) return "";
     String q = normalizeSearch(query);
-    for (const auto &item : inventory.items())
-        if (normalizeSearch(item.name).indexOf(q) >= 0) return item.name;
-    for (const auto &item : inventory.items())
-        if (isSubseq(q, normalizeSearch(item.name))) return item.name;
-    return "";
+    String found;
+    // Pass 1: substring match
+    inventory.forEachItem([&](const InventoryItem &item) {
+        if (found.isEmpty() && normalizeSearch(item.name).indexOf(q) >= 0)
+            found = item.name;
+    });
+    if (!found.isEmpty()) return found;
+    // Pass 2: subsequence match
+    inventory.forEachItem([&](const InventoryItem &item) {
+        if (found.isEmpty() && isSubseq(q, normalizeSearch(item.name)))
+            found = item.name;
+    });
+    return found;
 }
 
 void App::loadManualNames() {
@@ -1680,19 +1688,31 @@ void App::handleScan(const ScanResult &scan) {
             }
         }
 
-        // Find item details BEFORE deciding to remove
+        // Find item details BEFORE deciding to remove — no full copy
         String removedName, removedBarcode, removedExpiry;
-        for (const auto &it : inventory.items()) {
-            if (it.labelBarcode == scan.code) {
+        inventory.forEachItem([&](const InventoryItem &it) {
+            if (removedBarcode.isEmpty() && it.labelBarcode == scan.code) {
                 removedName    = it.name;
                 removedBarcode = it.barcode;
                 removedExpiry  = it.expiryDate;
-                break;
             }
-        }
+        });
 
-        // FIFO check BEFORE removal: warn if older same-product item still in storage
-        String olderExpiry = findEarlierExpiry(inventory.items(), removedBarcode, scan.code, removedExpiry);
+        // FIFO check BEFORE removal — no full copy
+        String olderExpiry;
+        if (!removedBarcode.isEmpty() && !removedExpiry.isEmpty()) {
+            long limitInt    = dmyToInt(removedExpiry);
+            long earliestInt = LONG_MAX;
+            const String &lbl = scan.code;
+            inventory.forEachItem([&](const InventoryItem &it) {
+                if (it.barcode != removedBarcode || it.labelBarcode == lbl) return;
+                long v = dmyToInt(it.expiryDate);
+                if (v > 0 && v < limitInt && v < earliestInt) {
+                    earliestInt = v;
+                    olderExpiry = it.expiryDate;
+                }
+            });
+        }
         if (!olderExpiry.isEmpty()) {
             _fifoLabelCode    = scan.code;
             _fifoProductName  = removedName;
@@ -2270,7 +2290,6 @@ String App::loadLocationColor(const String &name) const {
 }
 
 int App::countExpiringSoon(int days) const {
-    // time_manager returns ISO (YYYY-MM-DD); convert to YYYYMMDD int for comparison
     auto isoToInt = [](const String &iso) -> long {
         if (iso.length() < 10) return 0;
         return iso.substring(0, 4).toInt() * 10000L
@@ -2279,14 +2298,11 @@ int App::countExpiringSoon(int days) const {
     };
     long todayInt = isoToInt(time_manager.today());
     long limitInt = isoToInt(time_manager.addDays(days));
-    int n = 0;
-    for (const auto &item : inventory.items()) {
-        if (!item.expiryDate.isEmpty()) {
-            long v = dmyToInt(item.expiryDate); // expiryDate is always DD.MM.YYYY
-            if (v > 0 && v >= todayInt && v <= limitInt) n++;
-        }
-    }
-    return n;
+    return inventory.countWhere([todayInt, limitInt](const InventoryItem &item) -> bool {
+        if (item.expiryDate.isEmpty()) return false;
+        long v = dmyToInt(item.expiryDate);
+        return v > 0 && v >= todayInt && v <= limitInt;
+    });
 }
 
 std::vector<InventoryItem> App::inventoryDisplayItems() const {
@@ -2302,13 +2318,11 @@ std::vector<InventoryItem> App::inventoryDisplayItems() const {
     };
     long todayInt = isoToInt(time_manager.today());
     long limitInt = isoToInt(time_manager.addDays(_invExpireDays));
-    std::vector<InventoryItem> result;
-    for (const auto &item : inventory.items()) {
-        if (item.expiryDate.isEmpty()) continue;
+    std::vector<InventoryItem> result = inventory.copyWhere([todayInt, limitInt](const InventoryItem &item) -> bool {
+        if (item.expiryDate.isEmpty()) return false;
         long v = dmyToInt(item.expiryDate);
-        if (v > 0 && v >= todayInt && v <= limitInt)
-            result.push_back(item);
-    }
+        return v > 0 && v >= todayInt && v <= limitInt;
+    });
     return result;
 }
 

@@ -226,6 +226,11 @@ void SyncManager::loop() {
 
 void SyncManager::enqueue(const String &type, const String &jsonPayload) {
     QLock lk(_queueMutex);
+    static constexpr size_t MAX_QUEUE_SIZE = 50;
+    if (_queue.size() >= MAX_QUEUE_SIZE) {
+        Logger::warn("Sync", String("Queue voll – DROP: ") + type);
+        return;
+    }
     SyncEvent ev;
     ev.type      = type;
     ev.payload   = jsonPayload;
