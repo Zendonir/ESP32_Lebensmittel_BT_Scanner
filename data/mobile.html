@@ -598,12 +598,14 @@ function renderInventory() {
       const subCls = expiryClass(exp);
       const lb     = esc(it.labelBarcode || '');
       const locStr = it.location ? `<span style="opacity:.7"> · ${esc(it.location)}</span>` : '';
+      const subQty = fmtQty(it.quantity || 1, it.unit || '');
       return `<div class="swipe-wrap">
         <div class="swipe-inner inv-sub-item ${subCls}" data-lb="${lb}">
           <div class="inv-dot"></div>
           <div class="inv-info">
             <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}${locStr}</div>
           </div>
+          <div class="inv-qty" style="font-size:13px">${subQty}</div>
         </div>
         <div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>
       </div>`;
@@ -740,7 +742,7 @@ function updateStats() {
   const now = new Date(); now.setHours(0,0,0,0);
   let total = 0, soon = 0, expired = 0;
   _allItems.forEach(it => {
-    total += (it.quantity || 1);
+    total += 1;
     const d = parseExpiry(getExpiry(it));
     const days = daysUntil(d);
     if (days !== null) {
