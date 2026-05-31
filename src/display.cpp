@@ -1352,9 +1352,11 @@ static const OnscreenAction LIST_ACTIONS[7] = {
 
 // ─────────────────────────────────────────────────────────
 
-// Format a quantity with its unit: "4160 g", "2 kg", or "3x" for plain pieces.
+// Format a quantity with its unit: "4160 g", "2 Port.", or "3x" for plain pieces.
 static String fmtInvQty(int qty, const String &unit) {
     if (unit == "g" || unit == "kg" || unit == "ml" || unit == "l")
+        return String(qty) + " " + unit;
+    if (unit == "St." || unit == "Port.")
         return String(qty) + " " + unit;
     return String(qty) + "x";
 }
@@ -1996,7 +1998,7 @@ void Display::showAmountEntry(const String &productName,
     _spr.setTextDatum(ML_DATUM);
     _spr.setTextFont(4);
     _spr.setTextColor(C_ACCENT, C_SURFACE);
-    String hdr = unit == "g" || unit == "ml" || unit == "kg" ? "MENGE EINGEBEN" : "ANZAHL EINGEBEN";
+    String hdr = (unit == "g" || unit == "ml" || unit == "kg" || unit == "l") ? "MENGE EINGEBEN" : "ANZAHL EINGEBEN";
     _spr.drawString(hdr.c_str(), 10, HDR_H / 2);
     draw_wifi_dot();
     draw_location_badge(SCR_W - 22);

@@ -305,6 +305,7 @@ function formatBytes(b) {
 function fmtQty(qty, unit) {
   if (unit === 'g' || unit === 'kg' || unit === 'ml' || unit === 'l') return qty + ' ' + unit;
   if (unit === 'St.') return qty + ' St.';
+  if (unit === 'Port.') return qty + ' Port.';
   return qty + 'x';
 }
 
@@ -908,6 +909,7 @@ Pages.templates = {
             <label>Einheit</label>
             <select class="select" id="tfUnit">
               <option value="St." ${t?.unit==='St.'?'selected':''}>Stück (St.)</option>
+              <option value="Port." ${t?.unit==='Port.'?'selected':''}>Portionen (Port.)</option>
               <option value="g"   ${t?.unit==='g'  ?'selected':''}>Gramm (g)</option>
               <option value="ml"  ${t?.unit==='ml' ?'selected':''}>Milliliter (ml)</option>
               <option value="kg"  ${t?.unit==='kg' ?'selected':''}>Kilogramm (kg)</option>

@@ -384,6 +384,7 @@
       <div id="tmpl-unit-row" style="display:none">
         <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;-webkit-appearance:none">
           <option value="St.">Stück (St.)</option>
+          <option value="Port.">Portionen (Port.)</option>
           <option value="g">Gramm (g)</option>
           <option value="ml">Milliliter (ml)</option>
           <option value="kg">Kilogramm (kg)</option>
@@ -487,7 +488,9 @@ function fmtDate(str) {
 }
 
 function fmtQty(qty, unit) {
-  if (unit === 'g' || unit === 'kg') return qty + ' ' + unit;
+  if (unit === 'g' || unit === 'kg' || unit === 'ml' || unit === 'l') return qty + ' ' + unit;
+  if (unit === 'St.') return qty + ' St.';
+  if (unit === 'Port.') return qty + ' Port.';
   return qty + 'x';
 }
 
