@@ -72,6 +72,9 @@ private:
         OTA_VERSION_LIST,  // showing GitHub release list
         // Unknown barcode — ask user before proceeding with manual entry
         ASK_MANUAL_ENTRY,
+        // Household browsing (view another household's items from MySQL)
+        HH_LIST,     // showing list of available households (or loading)
+        HH_BROWSE,   // browsing another household's items
     } workflow = WorkflowMode::HOME;
 
     void initBacklight();
@@ -256,6 +259,17 @@ private:
     // OTA from display: GitHub release list
     bool     _otaListRendered     = false;
     uint32_t _otaFetchStartedMs   = 0;     // for 30 s timeout
+
+    // Household browser state
+    String   _browseHousehold;                    // empty = own; else = HH being browsed
+    std::vector<InventoryItem> _browsedItems;     // items fetched for _browseHousehold
+    std::vector<String> _householdList;           // available other households from MySQL
+    volatile bool _hhListFetchDone  = false;
+    volatile bool _hhItemsFetchDone = false;
+    TaskHandle_t  _hhTaskHandle     = nullptr;
+
+    static void hhListTaskFn(void *param);
+    static void hhItemsTaskFn(void *param);
 };
 
 extern App app;

@@ -1362,7 +1362,7 @@ static String fmtInvQty(int qty, const String &unit) {
 void Display::showInventoryList(const std::vector<InventoryItem> &items,
                                 const String &filter, const String &hhAbbr,
                                 const String &expandedGroup, int scrollOffset,
-                                int sortMode) {
+                                int sortMode, const String &hhBrowse) {
     if (!_initialized) return;
     _scrollEnabled = true;   // Scroll-Gesten nur hier aktiv
     _spr.fillSprite(C_BG);
@@ -1493,12 +1493,14 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextFont(4);
     }
 
-    // ── Search bar ──────────────────────────────────────────
+    // ── Search bar + HH button ──────────────────────────────
     static constexpr int SEARCH_H = 30;
+    static constexpr int HH_BTN_W = 86;   // width reserved for HH button
     int sb_y = HDR_H;
     uint16_t sb_bg = RGB(0x0E, 0x14, 0x1C);
     _spr.fillRect(0, sb_y, SCR_W, SEARCH_H, sb_bg);
-    _spr.drawRoundRect(6, sb_y + 4, SCR_W - 12, SEARCH_H - 8, 4, C_BORDER);
+    // Search field (narrower to make room for HH button)
+    _spr.drawRoundRect(6, sb_y + 4, SCR_W - HH_BTN_W - 12, SEARCH_H - 8, 4, C_BORDER);
     _spr.setTextFont(2);
     _spr.setTextDatum(ML_DATUM);
     if (filter.isEmpty()) {
@@ -1508,8 +1510,24 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         _spr.setTextColor(C_TEXT, sb_bg);
         _spr.drawString(("> " + filter).c_str(), 14, sb_y + SEARCH_H / 2);
     }
+    // HH button (right side)
+    {
+        bool browsing = !hhBrowse.isEmpty();
+        uint16_t hh_bg = browsing ? RGB(0x3A, 0x2A, 0x00) : RGB(0x12, 0x18, 0x22);
+        uint16_t hh_fg = browsing ? C_YELLOW : C_SUBTEXT;
+        int bx = SCR_W - HH_BTN_W;
+        _spr.drawFastVLine(bx, sb_y, SEARCH_H, C_BORDER);
+        _spr.fillRect(bx + 1, sb_y, HH_BTN_W - 1, SEARCH_H, hh_bg);
+        String hhLabel = browsing ? ("< " + hhBrowse) : hhAbbr;
+        // Truncate label if needed
+        if ((int)hhLabel.length() > 10) hhLabel = hhLabel.substring(0, 9) + "~";
+        _spr.setTextDatum(MC_DATUM);
+        _spr.setTextColor(hh_fg, hh_bg);
+        _spr.drawString(hhLabel.c_str(), bx + HH_BTN_W / 2, sb_y + SEARCH_H / 2);
+    }
     _spr.drawFastHLine(0, sb_y + SEARCH_H - 1, SCR_W, C_BORDER);
-    add_region(0, sb_y, SCR_W, SEARCH_H, OnscreenAction::INV_SEARCH);
+    add_region(0, sb_y, SCR_W - HH_BTN_W, SEARCH_H, OnscreenAction::INV_SEARCH);
+    add_region(SCR_W - HH_BTN_W, sb_y, HH_BTN_W, SEARCH_H, OnscreenAction::INV_HH);
 
     // ── Determine if any group is expanded (needed for column header) ──
     int expandedIdx = -1;
