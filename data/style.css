@@ -708,6 +708,7 @@ img { max-width: 100%; }
   justify-content: space-between;
   padding: 18px 20px 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .modal-title { font-size: 1rem; font-weight: 700; }
 .modal-close {
@@ -723,6 +724,7 @@ img { max-width: 100%; }
   padding: 20px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 .modal-footer {
   padding: 14px 20px;
@@ -731,6 +733,7 @@ img { max-width: 100%; }
   gap: 10px;
   justify-content: flex-end;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 /* ---- Toast ---- */
