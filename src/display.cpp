@@ -2525,46 +2525,78 @@ void Display::showLocationSelect(const String &current, const std::vector<String
     _spr.setTextDatum(ML_DATUM);
     _spr.drawString("LAGERORTE", 12, HDR_H / 2);
     if (!current.isEmpty()) {
+        _spr.setFreeFont(&FreeSans16);
         _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-        _spr.setFreeFont(&FreeSans16);  // Umlaute in Lagerort-Namen
         _spr.setTextDatum(MR_DATUM);
         _spr.drawString(("Aktiv: " + current).c_str(), SCR_W - 8, HDR_H / 2);
         _spr.setTextFont(4);
     }
 
-    // Build list: "Kein Lagerort" first, then actual locations
-    std::vector<String> rows;
-    rows.push_back("-- Kein Lagerort --");
-    for (const String &l : locations) rows.push_back(l);
+    // 2 Spalten × 3 Reihen = 6 Kacheln
+    // content area: 480 × 276 (HDR_H=44)
+    static constexpr int COLS      = 2;
+    static constexpr int TILE_W    = 228;  // (480 - 2×8 - 8) / 2
+    static constexpr int TILE_H    = 84;   // (276 - 2×6 - 2×6) / 3
+    static constexpr int GAP_X     = 8;
+    static constexpr int GAP_Y     = 6;
+    static constexpr int MARGIN_X  = 8;
+    static constexpr int MARGIN_Y  = 6;
+    static constexpr int MAX_SHOW  = 6;
+    static constexpr int MAX_TXT_W = TILE_W - 22;  // 14 left (accent bar) + 8 right
 
-    static constexpr int ITEM_H   = 55;
-    static constexpr int MAX_SHOW = 5;
-    int shown = (int)rows.size() < MAX_SHOW ? (int)rows.size() : MAX_SHOW;
-    int list_y = HDR_H;
+    int shown = (int)locations.size() < MAX_SHOW ? (int)locations.size() : MAX_SHOW;
 
     for (int i = 0; i < shown; i++) {
-        int iy = list_y + i * ITEM_H;
-        bool isActive = (i == 0 && current.isEmpty()) ||
-                        (i > 0 && rows[i] == current);
-        uint16_t bg = isActive ? C_ACCENT : (i % 2 == 0 ? C_SURFACE : C_SURFACE2);
-        uint16_t fg = isActive ? C_BG     : C_TEXT;
-        _spr.fillRect(0, iy, SCR_W, ITEM_H, bg);
-        _spr.fillRect(0, iy, 3, ITEM_H, isActive ? C_BG : C_ACCENT);
-        _spr.setTextColor(fg, bg);
-        _spr.setFreeFont(&FreeSans16);  // GFX font – unterstützt Umlaute (ä/ö/ü/ß)
-        _spr.setTextDatum(ML_DATUM);
-        _spr.drawString(trunc(rows[i], 36).c_str(), 12, iy + ITEM_H / 2);
-        if (isActive) {
-            _spr.setTextColor(C_BG, bg);
-            _spr.setTextDatum(MR_DATUM);
-            _spr.drawString("*", SCR_W - 12, iy + ITEM_H / 2);
+        int col      = i % COLS;
+        int row      = i / COLS;
+        int tx       = MARGIN_X + col * (TILE_W + GAP_X);
+        int ty       = HDR_H + MARGIN_Y + row * (TILE_H + GAP_Y);
+        bool active  = (locations[i] == current);
+        uint16_t acc = TILE_ACCENTS[i % 7];
+
+        // Tile background
+        if (active) {
+            _spr.fillRoundRect(tx, ty, TILE_W, TILE_H, 10, acc);
+        } else {
+            _spr.fillRoundRect(tx, ty, TILE_W, TILE_H, 10, C_SURFACE);
+            _spr.drawRoundRect(tx,     ty,     TILE_W,     TILE_H,     10, acc);
+            _spr.drawRoundRect(tx + 1, ty + 1, TILE_W - 2, TILE_H - 2,  9, acc);
+            // Linker Akzentstreifen
+            _spr.fillRoundRect(tx + 1, ty + 1, 5, TILE_H - 2, 9, acc);
         }
-        _spr.setTextFont(2);  // zurück zu Bitmap-Font für weitere Zeichenoperationen
-        _spr.drawFastHLine(0, iy + ITEM_H - 1, SCR_W, C_BORDER);
-        add_region(0, iy, SCR_W, ITEM_H, LIST_ACTIONS[i]);
+
+        // Text — FreeSans16 für Umlaut-Unterstützung
+        uint16_t fg = active ? C_BG : C_TEXT;
+        uint16_t bg = active ? acc  : C_SURFACE;
+        _spr.setFreeFont(&FreeSans16);
+        _spr.setTextColor(fg, bg);
+        _spr.setTextDatum(ML_DATUM);
+        int txtX  = tx + 14;
+        int centY = ty + TILE_H / 2;
+
+        if ((int)_spr.textWidth(locations[i].c_str()) <= MAX_TXT_W) {
+            _spr.drawString(locations[i].c_str(), txtX, centY);
+        } else {
+            // Zeilenumbruch nahe der Mitte am nächsten Leerzeichen
+            int mid = locations[i].length() / 2;
+            int sp  = -1;
+            for (int d = 0; d <= mid; d++) {
+                if (mid - d >= 0 && locations[i][mid - d] == ' ') { sp = mid - d; break; }
+                if (mid + d < (int)locations[i].length() && locations[i][mid + d] == ' ') { sp = mid + d; break; }
+            }
+            if (sp < 0) {
+                _spr.drawString(trunc(locations[i], 20).c_str(), txtX, centY);
+            } else {
+                _spr.drawString(locations[i].substring(0, sp).c_str(),    txtX, centY - 12);
+                _spr.drawString(locations[i].substring(sp + 1).c_str(),   txtX, centY + 12);
+            }
+        }
+        _spr.setTextFont(4);
+
+        add_region(tx, ty, TILE_W, TILE_H, LIST_ACTIONS[i]);
     }
 
-    if (rows.size() == 1) {
+    if (locations.empty()) {
         _spr.setTextColor(C_SUBTEXT, C_BG);
         _spr.setTextFont(2);
         _spr.setTextDatum(MC_DATUM);
