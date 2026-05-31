@@ -155,6 +155,37 @@ bool InventoryManager::restoreByLabel(const String &labelBarcode, const Inventor
     return storage.save(inventory);
 }
 
+int InventoryManager::compact(std::vector<String> &removedLabels) {
+    InvLock lk(_mutex);
+    removedLabels.clear();
+
+    // Group by (name + barcode + expiryDate + location + unit).
+    // First occurrence of each key is kept; subsequent duplicates are merged into it.
+    std::map<String, int> seen;   // key → index in compacted
+    std::vector<InventoryItem> compacted;
+
+    for (const auto &item : inventory) {
+        String key = item.name + "|" + item.barcode + "|" +
+                     item.expiryDate + "|" + item.location + "|" + item.unit;
+        auto it = seen.find(key);
+        if (it == seen.end()) {
+            seen[key] = (int)compacted.size();
+            compacted.push_back(item);
+        } else {
+            compacted[it->second].quantity += item.quantity;
+            removedLabels.push_back(item.labelBarcode);
+        }
+    }
+
+    if (removedLabels.empty()) return 0;
+
+    Serial.printf("[Inv] compact: %u → %u entries (%d merged)\n",
+                  (unsigned)inventory.size(), (unsigned)compacted.size(), (int)removedLabels.size());
+    inventory = std::move(compacted);
+    storage.save(inventory);
+    return (int)removedLabels.size();
+}
+
 void InventoryManager::pruneOldRemoved() {
     InvLock lk(_mutex);
     time_t now = time(nullptr);

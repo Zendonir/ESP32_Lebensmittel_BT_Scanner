@@ -1153,6 +1153,25 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
+    // ---- INVENTORY COMPACT (must be registered before /api/inventory POST) ----
+    _server.on("/api/inventory/compact", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            if (!_invMgr) { sendError(req, "Inventory nicht verfügbar"); return; }
+            std::vector<String> removedLabels;
+            int removed = _invMgr->compact(removedLabels);
+            if (removed > 0 && sync_manager.hasConfig()) {
+                sync_manager.enqueueRebuild(
+                    _invMgr->items(),
+                    device_config.getHousehold(),
+                    device_config.getDeviceName()
+                );
+            }
+            JsonDocument resp;
+            resp["removed"] = removed;
+            sendJson(req, resp);
+        },
+        nullptr, nullptr);
+
     // ---- INVENTORY (POST – add or update) ----
     _server.on("/api/inventory", HTTP_POST,
         [this](AsyncWebServerRequest *req) {

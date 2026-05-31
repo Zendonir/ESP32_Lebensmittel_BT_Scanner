@@ -7,6 +7,7 @@
 #include <freertos/semphr.h>
 #include "InventoryStorage.h"
 #include "../models/InventoryItem.h"
+#include <map>
 
 static constexpr time_t REMOVED_TTL_SECS = 48 * 3600;
 
@@ -29,6 +30,10 @@ public:
     std::vector<InventoryItem> items() const;   // locked snapshot (copy)
     size_t count() const;                        // locked size (cheap, no copy)
     bool hasLabel(const String &labelBarcode) const;
+
+    // Merge duplicate entries (same name+barcode+expiryDate+location+unit) into one.
+    // Returns the number of entries removed. removedLabels receives their labelBarcodes.
+    int compact(std::vector<String> &removedLabels);
 
     // 48 h recently-removed buffer
     const InventoryItem *findRecent(const String &barcode) const;
