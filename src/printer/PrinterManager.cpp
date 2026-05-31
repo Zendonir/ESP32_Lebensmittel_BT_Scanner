@@ -117,7 +117,13 @@ void PrinterManager::printManualLabel(const String &text, bool center) {
 
 bool PrinterManager::printLabel(const InventoryItem &item) {
     renderer.setPostFeed(postFeedDots);
-    return renderer.printInventoryLabel(item);
+    bool ok = renderer.printInventoryLabel(item);
+    if (ok) { _lastItem = item; _hasLastPrint = true; }
+    return ok;
+}
+
+bool PrinterManager::printLast() {
+    return _hasLastPrint ? printLabel(_lastItem) : false;
 }
 
 size_t PrinterManager::printTestPage(bool includeQr) {

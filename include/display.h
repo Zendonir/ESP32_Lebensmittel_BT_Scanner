@@ -82,6 +82,8 @@ enum class OnscreenAction {
     PRINT_LABEL_3,
     PRINT_LABEL_5,
     PRINT_LABEL_10,
+    // Reprint last label (system tab + result screen "Ohne" area)
+    PRINT_LABEL_LAST,
     // SD backup import prompt
     SD_IMPORT_YES,
     SD_IMPORT_NO,
@@ -191,6 +193,9 @@ public:
     void kbAutoShift(char lastChar);   // call after each typed char
     void kbReset();                    // call when opening fresh keyboard
     void kbToggleCaps();               // handle KB_CAPS action
+
+    // Last-print flag — set by App whenever printer.hasLastPrint() changes
+    void setLastPrintAvailable(bool v);
 
     // Action queue
     OnscreenAction hitTest(uint16_t x, uint16_t y) const;

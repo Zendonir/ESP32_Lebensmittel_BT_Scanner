@@ -14,6 +14,8 @@ public:
     void feed(uint8_t lines);
     void setPostFeed(uint16_t lines);
     bool printLabel(const InventoryItem &item);
+    bool printLast();
+    bool hasLastPrint() const { return _hasLastPrint; }
     void printManual(const String &text, bool center = false);
     void printManualLabel(const String &text, bool center = false);
     size_t printTestPage(bool includeQr = false);
@@ -25,4 +27,6 @@ private:
     LabelRenderer renderer;
     uint32_t currentBaud  = 0;
     uint16_t postFeedDots = 86;
+    InventoryItem _lastItem;
+    bool _hasLastPrint = false;
 };
