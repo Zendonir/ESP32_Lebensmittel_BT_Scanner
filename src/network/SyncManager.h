@@ -46,6 +46,11 @@ public:
     // Pull label_barcodes that other devices removed (tombstones from removed_items table).
     std::vector<String> pullRemovals(const String &household, const String &ourDevice);
 
+    // Rebuild MySQL household inventory from scratch: DELETE all rows for household
+    // then re-INSERT all given items. Use after a compact() to keep MySQL in sync.
+    void enqueueRebuild(const std::vector<InventoryItem> &items,
+                        const String &household, const String &deviceName);
+
 private:
     String _ip, _user, _pass;
     uint32_t _syncIntervalMin = 10;           // configurable sync interval (minutes)

@@ -128,6 +128,72 @@ void SyncManager::loop() {
         tomb += " ON DUPLICATE KEY UPDATE `removed_by`=VALUES(`removed_by`),`removed_at`=NOW()";
         execDirectMySQL(tomb);   // best-effort; main result is the DELETE below
 
+    } else if (ev.type == "REBUILD_HOUSEHOLD") {
+        // Atomically replace all MySQL rows for this household with the compacted set.
+        String household  = sqlEsc(doc["household"]  | "");
+        String deviceName = sqlEsc(doc["deviceName"] | "");
+        // 1. Delete all existing inventory rows for this household
+        bool ok = execDirectMySQL(
+            String("DELETE FROM `Lebensmittel_Scanner`.`inventar` WHERE `household`='") + household + "'"
+        );
+        if (!ok) {
+            QLock lk(_queueMutex);
+            if (!_queue.empty() && _queue.front().payload == ev.payload) {
+                _queue.front().retries++;
+                Logger::warn("Sync", String("REBUILD_HOUSEHOLD delete failed, retries=") + _queue.front().retries);
+                if (_queue.front().retries >= MAX_RETRIES) {
+                    Logger::error("Sync", "REBUILD_HOUSEHOLD dropped after max retries");
+                    _queue.erase(_queue.begin());
+                    saveQueue();
+                }
+            }
+            return;
+        }
+        // 2. Clear stale tombstones so pulled items aren't wrongly removed on next pull
+        execDirectMySQL(
+            String("DELETE FROM `Lebensmittel_Scanner`.`removed_items` WHERE `household`='") + household + "'"
+        );
+        // 3. Re-insert all surviving items
+        JsonArray jItems = doc["items"].as<JsonArray>();
+        for (JsonObject jItem : jItems) {
+            String lb  = sqlEsc(jItem["labelBarcode"] | "");
+            String bc  = sqlEsc(jItem["barcode"]      | "");
+            String nm  = sqlEsc(jItem["name"]         | "");
+            String br  = sqlEsc(jItem["brand"]        | "");
+            String cat = sqlEsc(jItem["category"]     | "");
+            String exp = sqlEsc(jItem["expiryDate"]   | "");
+            String add = sqlEsc(jItem["addedDate"]    | "");
+            int    qty = jItem["quantity"]              | 1;
+            String loc = sqlEsc(jItem["location"]     | "");
+            String ins  = "INSERT INTO `Lebensmittel_Scanner`.`inventar`";
+            ins += " (`label_barcode`,`barcode`,`name`,`brand`,`category`,";
+            ins += "`expiry_date`,`added_date`,`quantity`,`household`,`device_name`,`location`)";
+            ins += " VALUES ('";
+            ins += lb;         ins += "','";
+            ins += bc;         ins += "','";
+            ins += nm;         ins += "','";
+            ins += br;         ins += "','";
+            ins += cat;        ins += "','";
+            ins += exp;        ins += "','";
+            ins += add;        ins += "',";
+            ins += qty;        ins += ",'";
+            ins += household;  ins += "','";
+            ins += deviceName; ins += "','";
+            ins += loc;        ins += "') ON DUPLICATE KEY UPDATE `quantity`=VALUES(`quantity`)";
+            execDirectMySQL(ins);  // best-effort per item
+        }
+        Logger::info("Sync", String("REBUILD_HOUSEHOLD done: ") + (int)jItems.size() + " items");
+        {
+            QLock lk(_queueMutex);
+            if (!_queue.empty() && _queue.front().payload == ev.payload) {
+                _queue.erase(_queue.begin());
+                saveQueue();
+            }
+        }
+        _lastSyncTime = time(nullptr);
+        _lastSyncOk   = true;
+        return;
+
     } else {
         Logger::warn("Sync", String("unknown event type=") + ev.type + ", dropping");
         dropFrontIfMatches(ev.payload);
@@ -174,6 +240,30 @@ void SyncManager::clearQueue() {
     QLock lk(_queueMutex);
     _queue.clear();
     saveQueue();
+}
+
+void SyncManager::enqueueRebuild(const std::vector<InventoryItem> &items,
+                                  const String &household, const String &deviceName) {
+    JsonDocument doc;
+    doc["household"]  = household;
+    doc["deviceName"] = deviceName;
+    JsonArray arr = doc["items"].to<JsonArray>();
+    for (const auto &it : items) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["labelBarcode"] = it.labelBarcode;
+        obj["barcode"]      = it.barcode;
+        obj["name"]         = it.name;
+        obj["brand"]        = it.brand;
+        obj["category"]     = it.category;
+        obj["expiryDate"]   = it.expiryDate;
+        obj["addedDate"]    = it.addedDate;
+        obj["quantity"]     = it.quantity;
+        obj["unit"]         = it.unit;
+        obj["location"]     = it.location;
+    }
+    String payload;
+    serializeJson(doc, payload);
+    enqueue("REBUILD_HOUSEHOLD", payload);
 }
 
 size_t SyncManager::pending() const {

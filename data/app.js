@@ -302,6 +302,12 @@ function formatBytes(b) {
   return `${(b/1048576).toFixed(1)} MB`;
 }
 
+function fmtQty(qty, unit) {
+  if (unit === 'g' || unit === 'kg' || unit === 'ml' || unit === 'l') return qty + ' ' + unit;
+  if (unit === 'St.') return qty + ' St.';
+  return qty + 'x';
+}
+
 function rgb16ToHex(color565) {
   const r = ((color565 >> 11) & 0x1F) << 3;
   const g = ((color565 >> 5)  & 0x3F) << 2;
@@ -570,7 +576,7 @@ Pages.inventory = {
           ${loc0 ? `<div style="font-size:.9rem;color:var(--subtext);margin-top:2px">📍 ${esc(loc0)}</div>` : ''}
         </td>
         <td><span class="badge badge-${dClass}">${dLabel}</span><div style="font-size:.75rem;color:var(--subtext)">${esc(group.earliest)}</div></td>
-        <td style="text-align:center">${group.members.length}</td>
+        <td style="text-align:center">${isSolo ? fmtQty(group.members[0].quantity||1, group.members[0].unit||'') : group.members.length + '×'}</td>
         <td>${isSolo ? (() => { const si = Pages.inventory._itemIndex(group.members[0]); return `
           <div class="btn-group">
             <button class="btn btn-sm" onclick="event.stopPropagation();Pages.inventory.edit(${si})">Bearb.</button>
@@ -608,7 +614,7 @@ Pages.inventory = {
             <td style="padding:8px 12px;font-size:.875rem">${esc(mBrnd)}</td>
             <td style="padding:8px 12px;font-size:.875rem">${esc(mHH)}</td>
             <td style="padding:8px 12px"><span class="badge badge-${mc}">${ml}</span> <span style="font-size:.8rem;color:var(--subtext)">${esc(getExpiry(m))}</span></td>
-            <td style="padding:8px 12px;text-align:center">1</td>
+            <td style="padding:8px 12px;text-align:center">${fmtQty(m.quantity||1, m.unit||'')}</td>
             <td style="padding:8px 12px">
               <div class="btn-group">
                 <button class="btn btn-sm" onclick="Pages.inventory.edit(${mIdx})">Bearb.</button>
@@ -713,6 +719,28 @@ Pages.inventory = {
         Toast.error('Fehler: ' + e.message);
       }
     });
+  },
+
+  compact() {
+    const total = State.inventory.length;
+    Modal.confirm(
+      'Inventar bereinigen',
+      `Doppelte Einträge (gleicher Name, Barcode, MHD und Lagerort) werden zusammengeführt.<br>` +
+      `Aktuell ${total} Einträge. Diese Aktion kann nicht rückgängig gemacht werden.`,
+      async () => {
+        try {
+          const r = await API.post('/api/inventory/compact', {});
+          if (r.removed === 0) {
+            Toast.success('Keine Duplikate gefunden – Inventar ist bereits bereinigt.');
+          } else {
+            Toast.success(`${r.removed} doppelte Einträge zusammengeführt.`);
+          }
+          this.load();
+        } catch(e) {
+          Toast.error('Fehler: ' + e.message);
+        }
+      }
+    );
   },
 };
 

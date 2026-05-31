@@ -101,7 +101,10 @@
   <section id="page-inventory" class="page">
     <div class="page-header">
       <h1>Inventar</h1>
-      <button class="btn btn-ok" onclick="Pages.inventory.openAdd()">+ Hinzufügen</button>
+      <div class="btn-group">
+        <button class="btn" onclick="Pages.inventory.compact()" title="Doppelte Einträge zusammenführen">Bereinigen</button>
+        <button class="btn btn-ok" onclick="Pages.inventory.openAdd()">+ Hinzufügen</button>
+      </div>
     </div>
     <div class="toolbar">
       <input type="search" id="invSearch" class="search-input" placeholder="Suchen…" oninput="Pages.inventory.filter()">
