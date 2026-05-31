@@ -579,3 +579,24 @@ std::vector<String> SyncManager::pullRemovals(const String &household, const Str
     Logger::info("Sync", String("pullRemovals: ") + out.size() + " tombstones from MySQL");
     return out;
 }
+
+std::vector<String> SyncManager::getHouseholds(const String &ownHousehold) {
+    std::vector<String> out;
+    if (_ip.isEmpty() || WiFi.status() != WL_CONNECTED) return out;
+    MySQLDirect db;
+    if (!db.connect(_ip, 3306, _user, _pass, 2000)) return out;
+    String sql = "SELECT DISTINCT `household` FROM `Lebensmittel_Scanner`.`inventar`";
+    if (!ownHousehold.isEmpty()) {
+        sql += " WHERE `household`!='" + sqlEsc(ownHousehold) + "'";
+    }
+    sql += " ORDER BY `household` LIMIT 20";
+    std::vector<std::vector<String>> rows;
+    bool ok = db.queryRows(sql, rows, 20);
+    db.close();
+    if (!ok) return out;
+    for (const auto &row : rows) {
+        if (!row.empty() && !row[0].isEmpty()) out.push_back(row[0]);
+    }
+    Logger::info("Sync", String("getHouseholds: ") + out.size() + " others found");
+    return out;
+}

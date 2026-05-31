@@ -192,6 +192,8 @@
     outline: none; -webkit-appearance: none; min-width: 0;
   }
   .add-row input:focus, .add-row select:focus { border-color: var(--accent); }
+  .hh-pill { padding: 3px 12px; border: 1px solid var(--border); border-radius: 12px; background: none; color: var(--sub); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .hh-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .btn { padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-danger  { background: none; border: 1px solid var(--border); color: var(--red); padding: 5px 11px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
@@ -240,6 +242,7 @@
   <div id="content">
     <!-- INVENTAR TAB -->
     <div id="tab-inv" class="tab-pane active">
+      <div id="inv-hh-bar" hidden style="padding:8px 12px;background:var(--surface2,#1a2130);border-bottom:1px solid var(--border,#2a3340)"></div>
       <div class="stat-row">
         <div class="stat"><div class="stat-val accent" id="s-total">-</div><div class="stat-label">Gesamt</div></div>
         <div class="stat"><div class="stat-val yellow" id="s-soon">-</div><div class="stat-label">Bald ab</div></div>
@@ -411,6 +414,9 @@ let _devCfg        = {};
 let _categories    = [];
 let _templates     = [];
 let _pendingDelete = null;  // { labelBarcode, item, timerId } – Undo-Puffer
+let _households    = [];    // available households from /api/households
+let _currentHH     = null;  // null = own (first in list)
+let _ownHH         = '';
 
 // ── Tab switching ──────────────────────────────────────────────
 function switchTab(name) {
@@ -513,13 +519,54 @@ async function apiPost(path, data) {
 // ── Inventory ─────────────────────────────────────────────────
 async function loadInventory() {
   try {
-    const data = await apiFetch('/api/inventory');
+    const [data, hhs] = await Promise.all([
+      apiFetch('/api/inventory'),
+      apiFetch('/api/households').catch(() => []),
+    ]);
     _allItems = Array.isArray(data) ? data : (data.items || []);
+    _households = Array.isArray(hhs) ? hhs : [];
+    _ownHH = _households[0] || '';
+    if (_currentHH === null) _currentHH = _ownHH;
+    renderHHSelector();
     renderInventory();
     updateStats();
     document.getElementById('wifi-dot').classList.add('ok');
   } catch (e) {
     document.getElementById('inv-list').innerHTML = '<div class="inv-empty">Verbindungsfehler</div>';
+  }
+}
+
+function renderHHSelector() {
+  const bar = document.getElementById('inv-hh-bar');
+  if (!bar) return;
+  if (_households.length <= 1) { bar.hidden = true; return; }
+  let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+  html += '<span style="font-size:.75rem;color:#8892a0">Haushalt:</span>';
+  _households.forEach(hh => {
+    const active = (_currentHH === hh) || (_currentHH === null && hh === _ownHH);
+    html += `<button class="hh-pill${active ? ' active' : ''}" onclick="switchHH('${hh.replace(/'/g,"\\'")}')">`;
+    html += hh + '</button>';
+  });
+  html += '</div>';
+  bar.innerHTML = html;
+  bar.hidden = false;
+}
+
+async function switchHH(hh) {
+  _currentHH = hh;
+  const isOwn = (hh === _ownHH);
+  try {
+    const url = isOwn ? '/api/inventory' : `/api/inventory?household=${encodeURIComponent(hh)}`;
+    const data = await apiFetch(url);
+    _allItems = Array.isArray(data) ? data : (data.items || []);
+    renderHHSelector();
+    renderInventory();
+    updateStats();
+    // Hide FAB when viewing other household
+    const fab = document.getElementById('fab');
+    if (fab) fab.hidden = !isOwn;
+  } catch(e) {
+    toast('Fehler: ' + e.message);
   }
 }
 

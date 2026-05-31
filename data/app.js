@@ -453,19 +453,69 @@ Pages.dashboard = {
 
 /* ---- INVENTORY ---- */
 Pages.inventory = {
+  _currentHH: null,   // null = own household; string = other household name
+  _ownHH: '',
+
   async load() {
     try {
-      const [inv, cats] = await Promise.all([
+      const [inv, cats, hhs] = await Promise.all([
         API.get('/api/inventory'),
         API.get('/api/categories'),
+        API.get('/api/households').catch(() => []),
       ]);
       State.inventory  = Array.isArray(inv) ? inv : [];
       State.categories = Array.isArray(cats) ? cats : [];
+      const allHHs = Array.isArray(hhs) ? hhs : [];
+      this._ownHH = allHHs[0] || '';
+      if (this._currentHH === null) this._currentHH = this._ownHH;
+      if (allHHs.length > 1) {
+        this._renderHHBanner(allHHs);
+      } else {
+        const b = document.getElementById('invHHBanner');
+        if (b) b.hidden = true;
+      }
       this.populateCatFilter();
       this.populateLocFilter();
       this.filter();
     } catch(e) {
       Toast.error('Inventar: ' + e.message);
+    }
+  },
+
+  _renderHHBanner(households) {
+    const banner = document.getElementById('invHHBanner');
+    if (!banner) return;
+    let html = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+    html += '<span style="color:var(--subtext);font-size:.8rem">Haushalt:</span>';
+    households.forEach(hh => {
+      const isActive = this._currentHH === hh;
+      html += `<button class="btn btn-sm${isActive ? ' btn-ok' : ''}"
+               onclick="Pages.inventory.switchHH('${esc(hh)}')"
+               style="padding:2px 10px">${esc(hh)}</button>`;
+    });
+    html += '</div>';
+    banner.innerHTML = html;
+    banner.hidden = false;
+  },
+
+  async switchHH(hh) {
+    const isOwn = (hh === this._ownHH);
+    this._currentHH = hh;
+    try {
+      const url = isOwn ? '/api/inventory' : `/api/inventory?household=${encodeURIComponent(hh)}`;
+      const inv = await API.get(url);
+      State.inventory = Array.isArray(inv) ? inv : [];
+      // Re-render household selector
+      const allHHs = await API.get('/api/households').catch(() => [this._ownHH]);
+      this._renderHHBanner(Array.isArray(allHHs) ? allHHs : [this._ownHH]);
+      this.populateCatFilter();
+      this.populateLocFilter();
+      this.filter();
+      // Hide add/edit/delete buttons when viewing other household
+      const addBtn = document.querySelector('#page-inventory .page-header .btn-ok');
+      if (addBtn) addBtn.hidden = !isOwn;
+    } catch(e) {
+      Toast.error('Haushalt laden: ' + e.message);
     }
   },
 

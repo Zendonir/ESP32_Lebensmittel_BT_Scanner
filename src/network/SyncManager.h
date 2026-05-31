@@ -51,6 +51,10 @@ public:
     void enqueueRebuild(const std::vector<InventoryItem> &items,
                         const String &household, const String &deviceName);
 
+    // Returns household names from MySQL that differ from ownHousehold.
+    // Returns empty vector if no MySQL or not connected.
+    std::vector<String> getHouseholds(const String &ownHousehold);
+
 private:
     String _ip, _user, _pass;
     uint32_t _syncIntervalMin = 10;           // configurable sync interval (minutes)

@@ -51,6 +51,8 @@ enum class OnscreenAction {
     INV_SEARCH,
     // Inventory column header tap → cycle sort mode (MHD / Name / Lagerort)
     INV_SORT,
+    // Inventory household button tap → switch household view
+    INV_HH,
     // Printer
     PRINTER_FEED_1,
     PRINTER_FEED_5,
@@ -145,7 +147,8 @@ public:
                            const String &hhAbbr = "",
                            const String &expandedGroup = "",
                            int scrollOffset = 0,
-                           int sortMode = 0);   // 0=MHD, 1=Name, 2=Lagerort
+                           int sortMode = 0,
+                           const String &hhBrowse = "");
 
     int16_t getLastSwipePressY()    const;  // Y coordinate of last swipe press start
     int16_t getScrollDeltaPx()      const;  // live vertical drag delta (0 if not scrolling)

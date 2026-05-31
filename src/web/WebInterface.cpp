@@ -1100,12 +1100,53 @@ void WebInterface::registerApiRoutes() {
         },
         nullptr, bodyCollect);
 
-    // ---- INVENTORY (GET) ----
-    _server.on("/api/inventory", HTTP_GET, [this](AsyncWebServerRequest *req) {
+    // ---- HOUSEHOLDS (GET) ----
+    _server.on("/api/households", HTTP_GET, [](AsyncWebServerRequest *req) {
         JsonDocument doc;
         JsonArray arr = doc.to<JsonArray>();
-        if (_invMgr) {
-            for (const auto &it : _invMgr->items()) {
+        arr.add(device_config.getHousehold());  // own household always first
+        if (sync_manager.hasConfig() && wifi_manager.isConnected()) {
+            auto others = sync_manager.getHouseholds(device_config.getHousehold());
+            for (const auto &h : others) arr.add(h);
+        }
+        sendJson(req, doc);
+    });
+
+    // ---- INVENTORY (GET) ----
+    _server.on("/api/inventory", HTTP_GET, [this](AsyncWebServerRequest *req) {
+        // Determine which household to serve
+        String hh = device_config.getHousehold();
+        if (req->hasParam("household")) {
+            String requested = req->getParam("household")->value();
+            if (!requested.isEmpty()) hh = requested;
+        }
+        bool isOwn = (hh == device_config.getHousehold());
+
+        JsonDocument doc;
+        JsonArray arr = doc.to<JsonArray>();
+
+        if (isOwn || !sync_manager.hasConfig() || !wifi_manager.isConnected()) {
+            // Serve from local inventory (own household)
+            if (_invMgr) {
+                for (const auto &it : _invMgr->items()) {
+                    JsonObject obj = arr.add<JsonObject>();
+                    obj["barcode"]      = it.barcode;
+                    obj["name"]         = it.name;
+                    obj["brand"]        = it.brand;
+                    obj["category"]     = it.category;
+                    obj["expiryDate"]   = it.expiryDate;
+                    obj["addedDate"]    = it.addedDate;
+                    obj["quantity"]     = it.quantity;
+                    obj["unit"]         = it.unit;
+                    obj["labelBarcode"] = it.labelBarcode;
+                    obj["location"]     = it.location;
+                    obj["household"]    = device_config.getHousehold();
+                }
+            }
+        } else {
+            // Fetch from MySQL for other household (blocking but acceptable)
+            auto pulled = sync_manager.pullInventory(hh, "");
+            for (const auto &it : pulled) {
                 JsonObject obj = arr.add<JsonObject>();
                 obj["barcode"]      = it.barcode;
                 obj["name"]         = it.name;
@@ -1117,7 +1158,7 @@ void WebInterface::registerApiRoutes() {
                 obj["unit"]         = it.unit;
                 obj["labelBarcode"] = it.labelBarcode;
                 obj["location"]     = it.location;
-                obj["household"]    = device_config.getHousehold();
+                obj["household"]    = hh;
             }
         }
         sendJson(req, doc);

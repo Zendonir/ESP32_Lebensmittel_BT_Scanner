@@ -419,7 +419,7 @@ void App::loop() {
             _lastUiRefreshMs = millis();   // suppress 2-s auto-refresh during drag
             int tempOff = _invScrollOffset - liveDelta / INV_ROW_H;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff, _invSortMode);
+                device_config.getHouseholdAbbr(), _invExpandedGroup, tempOff, _invSortMode, _browseHousehold);
         }
 
         int16_t committed = display_obj.drainScrollCommit();
@@ -433,7 +433,7 @@ void App::loop() {
             if (_invScrollOffset < 0)      _invScrollOffset = 0;
             if (_invScrollOffset > maxOff) _invScrollOffset = maxOff;
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
+                device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode, _browseHousehold);
         }
     }
 
@@ -653,7 +653,7 @@ void App::renderActiveTab(const String &message, bool force) {
     // INVENTORY tab always shows the live list, not the empty-placeholder panel
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
         display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
+            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode, _browseHousehold);
         _lastUiHash = buildUiHash();
         _lastUiRefreshMs = millis();
         return;
@@ -1000,7 +1000,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             else
                 _invExpandedGroup = tapped;  // expand
             display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
+                                          device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode, _browseHousehold);
         }
         return;
     }
@@ -1013,7 +1013,7 @@ void App::processOnscreenAction(OnscreenAction action) {
         _invScrollOffset  = 0;       // jump back to top after re-sorting
         _invExpandedGroup = "";      // collapse any open group
         display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
-            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode);
+            device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode, _browseHousehold);
         return;
     }
 
@@ -1093,6 +1093,17 @@ void App::processOnscreenAction(OnscreenAction action) {
                     }
                 }
             }
+        } else if (workflow == WorkflowMode::HH_LIST) {
+            if (idx >= 0 && idx < (int)_householdList.size()) {
+                audio_obj.playClickTone();
+                _browseHousehold = _householdList[idx];
+                _hhItemsFetchDone = false;
+                _browsedItems.clear();
+                workflow = WorkflowMode::HH_BROWSE;
+                display_obj.showFetchingProduct("Lade " + _browseHousehold);
+                xTaskCreatePinnedToCore(hhItemsTaskFn, "hh_items", 6144, this, 5, &_hhTaskHandle, 0);
+            }
+            return;
         } else if (workflow == WorkflowMode::LOCATION_SELECT) {
             auto locs = loadLocationNames();
             // idx 0 = "Kein Lagerort" (clear), then actual locations
@@ -1167,6 +1178,8 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invExpandedGroup = "";
             _invScrollOffset = 0;
             _invExpireDays = 0;
+            _browseHousehold = "";
+            _browsedItems.clear();
             display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), _invExpandedGroup, 0, _invSortMode);
             _lastUiRefreshMs = millis();
@@ -1179,6 +1192,8 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invExpandedGroup = "";
             _invScrollOffset = 0;
             _invExpireDays = 7;
+            _browseHousehold = "";
+            _browsedItems.clear();
             display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), "", 0, _invSortMode);
             _lastUiRefreshMs = millis();
@@ -1191,9 +1206,39 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invExpandedGroup = "";
             _invScrollOffset = 0;
             _invExpireDays = 3;
+            _browseHousehold = "";
+            _browsedItems.clear();
             display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), "", 0, _invSortMode);
             _lastUiRefreshMs = millis();
+            break;
+
+        case OnscreenAction::INV_SORT:
+            break;  // reserved for future sort cycling
+
+        case OnscreenAction::INV_HH:
+            if (_activeTab == UiTab::INVENTORY) {
+                audio_obj.playClickTone();
+                if (!_browseHousehold.isEmpty()) {
+                    // Currently browsing → return to own household
+                    _browseHousehold = "";
+                    _browsedItems.clear();
+                    _invScrollOffset = 0;
+                    _invExpandedGroup = "";
+                    workflow = WorkflowMode::HOME;
+                    renderActiveTab("", true);
+                } else if (!sync_manager.hasConfig() || !wifi_manager.isConnected()) {
+                    _statusMessage = "Kein MySQL konfiguriert";
+                    renderActiveTab(_statusMessage);
+                } else if (_hhTaskHandle == nullptr) {
+                    // Start household list fetch
+                    _hhListFetchDone = false;
+                    _householdList.clear();
+                    workflow = WorkflowMode::HH_LIST;
+                    display_obj.showFetchingProduct("Lade Haushalte...");
+                    xTaskCreatePinnedToCore(hhListTaskFn, "hh_list", 6144, this, 5, &_hhTaskHandle, 0);
+                }
+            }
             break;
 
         case OnscreenAction::INV_SEARCH:
@@ -1358,7 +1403,17 @@ void App::processOnscreenAction(OnscreenAction action) {
             }
             break;
         case OnscreenAction::CANCEL:
-            if (workflow == WorkflowMode::TMPL_PRODUCT) {
+            if (workflow == WorkflowMode::HH_LIST || workflow == WorkflowMode::HH_BROWSE) {
+                _browseHousehold = "";
+                _browsedItems.clear();
+                _householdList.clear();
+                _hhListFetchDone = false;
+                _hhItemsFetchDone = false;
+                workflow = WorkflowMode::HOME;
+                _activeTab = UiTab::INVENTORY;
+                renderActiveTab("", true);
+                return;
+            } else if (workflow == WorkflowMode::TMPL_PRODUCT) {
                 workflow = WorkflowMode::TMPL_CATEGORY;
                 showTmplCategories();
             } else if (workflow == WorkflowMode::TMPL_BRAND) {
@@ -1546,7 +1601,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                     _invExpandedGroup = "";
                     _invScrollOffset = 0;
                     display_obj.showInventoryList(filtered, _invFilter,
-                                                  device_config.getHouseholdAbbr(), _invExpandedGroup, 0, _invSortMode);
+                                                  device_config.getHouseholdAbbr(), _invExpandedGroup, 0, _invSortMode, _browseHousehold);
                 }
                 break;
             }
@@ -1707,8 +1762,54 @@ void App::fetchTaskFn(void *param) {
     vTaskDelete(nullptr);
 }
 
+/* static */ void App::hhListTaskFn(void *arg) {
+    App *self = static_cast<App *>(arg);
+    self->_householdList = sync_manager.getHouseholds(device_config.getHousehold());
+    self->_hhListFetchDone = true;
+    self->_hhTaskHandle = nullptr;
+    vTaskDelete(nullptr);
+}
+
+/* static */ void App::hhItemsTaskFn(void *arg) {
+    App *self = static_cast<App *>(arg);
+    self->_browsedItems = sync_manager.pullInventory(self->_browseHousehold, "");
+    self->_hhItemsFetchDone = true;
+    self->_hhTaskHandle = nullptr;
+    vTaskDelete(nullptr);
+}
+
 void App::processWorkflow() {
-    if (workflow != WorkflowMode::FETCHING_PRODUCT) return;
+    if (workflow != WorkflowMode::FETCHING_PRODUCT
+     && workflow != WorkflowMode::HH_LIST
+     && workflow != WorkflowMode::HH_BROWSE) return;
+
+    // ── Household list fetch complete ────────────────────────
+    if (workflow == WorkflowMode::HH_LIST) {
+        if (!_hhListFetchDone) return;  // still fetching
+        // Mark as done so we don't re-render every loop tick
+        _hhListFetchDone = false;
+        if (_householdList.empty()) {
+            _statusMessage = "Keine weiteren Haushalte";
+            workflow = WorkflowMode::HOME;
+            renderActiveTab(_statusMessage);
+            return;
+        }
+        // Show list using list-screen machinery
+        _listScrollOffset = 0;
+        _redrawListScreen(_listScrollOffset);
+        return;
+    }
+
+    // ── Household items fetch complete ───────────────────────
+    if (workflow == WorkflowMode::HH_BROWSE) {
+        if (!_hhItemsFetchDone) return;  // still fetching
+        _invScrollOffset = 0;
+        _invExpandedGroup = "";
+        _activeTab = UiTab::INVENTORY;
+        workflow = WorkflowMode::HOME;
+        renderActiveTab("", true);
+        return;
+    }
 
     if (!_fetchStarted) {
         // Launch fetch on core 0 (network core) – UI loop continues on core 1
@@ -1989,6 +2090,12 @@ void App::_redrawListScreen(int offset) {
         display_obj.showListScreen(("SORTE: " + tmpl.name).c_str(), items, offset);
     } else if (workflow == WorkflowMode::WIFI_SETUP_LIST) {
         display_obj.showListScreen("WLAN AUSWAEHLEN", _wifiNets, offset);
+    } else if (workflow == WorkflowMode::HH_LIST) {
+        // Show household list
+        std::vector<String> visible;
+        for (int i = offset; i < offset + 7 && i < (int)_householdList.size(); i++)
+            visible.push_back(_householdList[i]);
+        display_obj.showListScreen("HAUSHALT WAEHLEN", visible, offset);
     }
 }
 
@@ -2176,6 +2283,9 @@ int App::countExpiringSoon(int days) const {
 }
 
 std::vector<InventoryItem> App::inventoryDisplayItems() const {
+    // When browsing another household, always return fetched items (no expiry filter)
+    if (!_browseHousehold.isEmpty()) return _browsedItems;
+
     if (_invExpireDays <= 0) return inventory.items();
     auto isoToInt = [](const String &iso) -> long {
         if (iso.length() < 10) return 0;
