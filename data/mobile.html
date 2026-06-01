@@ -102,8 +102,10 @@
   #header-right { display: flex; align-items: center; gap: 10px; }
   #wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
   #wifi-dot.ok { background: var(--green); }
-  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
-  #tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #content { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+  /* Tab-Leiste als Flex-Kind am unteren Rand von #app – dadurch immer bündig
+     unten, ohne Lücke bei kurzer Liste und ohne Überlappung mit dem Inhalt. */
+  #tabbar { flex-shrink: 0; display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
   .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
   .tab-btn.active { color: var(--accent); }
   .tab-btn svg { width: 22px; height: 22px; }
@@ -374,6 +376,12 @@
         </div>
       </div>
 
+      <!-- Logs (SD-Karte) -->
+      <div class="card">
+        <div class="card-title">Logs (SD-Karte)</div>
+        <div id="sd-log-list"><div class="mgmt-empty"><span class="spinner"></span></div></div>
+      </div>
+
       <!-- Aktionen -->
       <div class="card">
         <div class="card-title">Aktionen</div>
@@ -474,7 +482,7 @@ function switchTab(name) {
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelector('[data-tab="' + name + '"]').classList.add('active');
   if (name === 'exp')  renderExpiring();
-  if (name === 'sys')  { loadSysInfo(); loadOtaReleases(); }
+  if (name === 'sys')  { loadSysInfo(); loadOtaReleases(); loadSdLogs(); }
   if (name === 'mgmt') loadMgmt();
 }
 
@@ -933,6 +941,38 @@ async function loadSysInfo() {
     }
     sel.value = best;
   } catch(e) {}
+}
+
+// ── SD-Karten-Logs (Download) ─────────────────────────────────
+async function loadSdLogs() {
+  const el = document.getElementById('sd-log-list');
+  if (!el) return;
+  try {
+    const data  = await apiFetch('/api/logs/sd');
+    const files = (data && data.files) || [];
+    if (data && data.error === 'no_sd') {
+      el.innerHTML = '<div class="mgmt-empty">Keine SD-Karte eingelegt</div>';
+      return;
+    }
+    if (!files.length) {
+      el.innerHTML = '<div class="mgmt-empty">Keine Logdateien vorhanden</div>';
+      return;
+    }
+    // Neueste Datei zuerst (Dateiname = YYYY-MM-DD.log)
+    files.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+    el.innerHTML = files.map(f => {
+      const kb = f.size != null ? (f.size / 1024).toFixed(1) + ' KB' : '';
+      return `<div class="mgmt-item">
+        <div class="mgmt-item-info">
+          <div class="mgmt-item-name">${esc(f.name)}</div>
+          <div class="mgmt-item-sub">${kb}</div>
+        </div>
+        <a class="btn-danger" style="color:var(--accent)" href="/api/logs/sd/${encodeURIComponent(f.name)}" download="${esc(f.name)}">Download</a>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="mgmt-empty">Fehler beim Laden</div>';
+  }
 }
 
 // ── Firmware-Update (GitHub-Releases → /api/ota-combined) ──────
