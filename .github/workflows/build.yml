@@ -112,6 +112,42 @@ jobs:
               firmware_ota.bin firmware_full_flash.bin littlefs.bin
           fi
 
+      # ── Versionierter Vorabrelease per Commit-Marker ──────────────────────
+      # Tag-Pushes aus der Cloud-Entwicklungsumgebung sind blockiert. Ein
+      # benannter Vorabrelease lässt sich daher über einen Marker in der
+      # Commit-Message von main auslösen:  [prerelease vX.Y.Z-preN]
+      - name: Versionierter Vorabrelease (Commit-Marker)
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[prerelease v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          TAG=$(printf '%s' "$MSG" | grep -oE '\[prerelease v[0-9A-Za-z.\-]+\]' | head -1 | sed -E 's/^\[prerelease (v[0-9A-Za-z.\-]+)\]$/\1/')
+          if [ -z "$TAG" ]; then echo "Kein gültiger Versions-Tag im Marker gefunden"; exit 1; fi
+          echo "Erstelle Vorabrelease $TAG aus ${{ github.sha }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG existiert bereits – überspringe"; exit 0
+          fi
+          gh release create "$TAG" \
+            --target "${{ github.sha }}" \
+            --title "Vorabversion $TAG" \
+            --prerelease \
+            --notes "## Vorabversion $TAG
+
+          > ⚠️ Dies ist eine Vorabversion zum Testen. Für den Produktiveinsatz eine stabile Version verwenden.
+
+          | Datei | Verwendung |
+          |-------|-----------|
+          | \`firmware_ota.bin\` | OTA-Update über Web-Interface |
+          | \`firmware_full_flash.bin\` | Erstmaliges Flashen per USB (\`esptool\`) |
+          | \`littlefs.bin\` | Dateisystem (Web-UI) – nur bei Erstinstallation nötig |
+
+          ### USB-Flash Befehl
+          \`\`\`
+          esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 firmware_full_flash.bin
+          \`\`\`" \
+            firmware_ota.bin firmware_full_flash.bin littlefs.bin
+
       # ── Stabiles Release bei v*-Tags (ohne -pre) ──────────────────────────
       - name: Create stable Release
         if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-pre')
