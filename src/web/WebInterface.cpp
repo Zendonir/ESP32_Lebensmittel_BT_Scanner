@@ -450,8 +450,25 @@ static void otaCombinedTask(void *param) {
 
     _ota_ssl_use_psram();  // SSL-Allokierungen auf PSRAM umleiten
 
+    size_t internalFree    = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t internalLargest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
     Logger::info("OTA", String("Kombiniert – internal nach BLE-Trennung: ")
-        + heap_caps_get_free_size(MALLOC_CAP_INTERNAL) + " bytes");
+        + internalFree + " bytes (größter Block " + internalLargest + ")");
+
+    // Heap-Wächter: lwIP/Socket-Puffer für die TLS-Verbindung liegen im
+    // internen SRAM. Ist zu wenig zusammenhängender Speicher frei, würde der
+    // Handshake mitten im Download abstürzen (Reboot → "Keine Antwort").
+    // Lieber sauber abbrechen mit klarer Meldung als das Gerät neu zu starten.
+    static constexpr size_t OTA_MIN_INTERNAL = 28 * 1024;
+    if (internalLargest < OTA_MIN_INTERNAL) {
+        Logger::error("OTA", String("Zu wenig interner Heap für TLS (")
+            + internalLargest + " < " + OTA_MIN_INTERNAL
+            + ") – Abbruch. Bitte Gerät neu starten und erneut versuchen.");
+        snprintf(_otaCombo.phase, sizeof(_otaCombo.phase),
+                 "Zu wenig Speicher – bitte Gerät neu starten");
+        _otaCombo.done = true; _otaCombo.active = false;
+        vTaskDelete(nullptr); return;
+    }
 
     // ── Schritt 2: LittleFS (Web-UI) ─────────────────────────────────
     // Kein Neustart nach FS. Scoped-Block in _otaDownloadFlash stellt sicher,
@@ -2282,7 +2299,9 @@ void WebInterface::registerApiRoutes() {
                 req->send(500, "application/json", "{\"ok\":false,\"error\":\"Heap erschoepft\"}");
                 return;
             }
-            BaseType_t rc = xTaskCreate(otaCombinedTask, "ota_comb", 8192, urls, 3, nullptr);
+            // Stack 16 KB: der mbedTLS-Handshake (ECDHE mit GitHub) ist
+            // stack-hungrig; 8 KB konnten unter Last überlaufen → Reboot.
+            BaseType_t rc = xTaskCreate(otaCombinedTask, "ota_comb", 16384, urls, 3, nullptr);
             if (rc != pdPASS) {
                 Logger::error("OTA", "xTaskCreate fehlgeschlagen! rc=" + String(rc)
                     + " freeHeap=" + String(esp_get_free_heap_size())
