@@ -305,18 +305,48 @@
 
     <!-- EINSTELLUNGEN TAB -->
     <div id="tab-sys" class="tab-pane">
+      <!-- Firmware-Update -->
       <div class="card">
-        <div class="card-title">Haushalt</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="card-title" style="margin-bottom:0">Firmware-Update</div>
+          <span class="setting-val" id="sys-fw">-</span>
+        </div>
+        <select id="ota-release" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none;margin-bottom:8px" onchange="onOtaSelect()">
+          <option value="">Auf Updates prüfen…</option>
+        </select>
+        <div id="ota-note" class="setting-sub" style="margin-bottom:10px;min-height:16px"></div>
+        <button class="btn btn-primary" id="ota-install" style="width:100%" onclick="installOta()" disabled>Installieren</button>
+        <div id="ota-progress-wrap" hidden style="margin-top:12px">
+          <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
+            <div id="ota-bar" style="height:100%;width:0;background:var(--accent);transition:width .3s"></div>
+          </div>
+          <div id="ota-phase" class="setting-sub" style="text-align:center;margin-top:8px">Starte…</div>
+        </div>
+        <div class="ptr-hint" style="text-align:left;padding-top:10px">⚠️ Während des Updates Gerät nicht ausschalten. Es startet danach automatisch neu.</div>
+      </div>
+
+      <!-- Status -->
+      <div class="card">
+        <div class="card-title">Status</div>
         <div class="setting-row">
-          <div><div class="setting-label">Standort</div><div class="setting-sub" id="sys-location">-</div></div>
+          <div><div class="setting-label">Haushalt</div><div class="setting-sub" id="sys-location">-</div></div>
           <span class="setting-val" id="sys-hh">-</span>
         </div>
         <div class="setting-row">
           <div><div class="setting-label">Produkte</div></div>
           <span class="setting-val accent" id="sys-count">-</span>
         </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Freier Speicher</div><div class="setting-sub" id="sys-psram">-</div></div>
+          <span class="setting-val" id="sys-heap">-</span>
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Uptime</div></div>
+          <span class="setting-val" id="sys-uptime">-</span>
+        </div>
       </div>
 
+      <!-- Netzwerk -->
       <div class="card">
         <div class="card-title">Netzwerk</div>
         <div class="setting-row">
@@ -329,18 +359,7 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">System</div>
-        <div class="setting-row">
-          <div><div class="setting-label">Freier Speicher</div></div>
-          <span class="setting-val" id="sys-heap">-</span>
-        </div>
-        <div class="setting-row">
-          <div><div class="setting-label">Uptime</div></div>
-          <span class="setting-val" id="sys-uptime">-</span>
-        </div>
-      </div>
-
+      <!-- Display -->
       <div class="card">
         <div class="card-title">Display</div>
         <div class="setting-row">
@@ -354,6 +373,13 @@
             <option value="1800">30 Min</option>
           </select>
         </div>
+      </div>
+
+      <!-- Aktionen -->
+      <div class="card">
+        <div class="card-title">Aktionen</div>
+        <button class="btn" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);margin-bottom:8px" onclick="compactInventory()">Inventar bereinigen (Duplikate)</button>
+        <button class="btn" style="width:100%;background:none;color:var(--red);border:1px solid var(--border)" onclick="restartDevice()">Gerät neu starten</button>
       </div>
 
       <a href="/" target="_blank" rel="noopener" class="admin-link">&#x2699;&#xFE0F; Zur vollst&auml;ndigen Verwaltung</a>
@@ -449,7 +475,7 @@ function switchTab(name) {
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelector('[data-tab="' + name + '"]').classList.add('active');
   if (name === 'exp')  renderExpiring();
-  if (name === 'sys')  loadSysInfo();
+  if (name === 'sys')  { loadSysInfo(); loadOtaReleases(); }
   if (name === 'mgmt') loadMgmt();
 }
 
@@ -886,16 +912,19 @@ async function loadSysInfo() {
       apiFetch('/api/display-config').catch(() => ({ standby_sec: 300 })),
     ]);
     _sysInfo = si; _devCfg = dc;
-    document.getElementById('sys-ssid').textContent    = si.ssid || '-';
-    document.getElementById('sys-ip').textContent      = si.ip   || '-';
-    document.getElementById('sys-heap').textContent    = si.freeHeap ? Math.round(si.freeHeap/1024) + ' KB' : '-';
-    document.getElementById('sys-uptime').textContent  = si.uptimeSec ? fmtUptime(si.uptimeSec) : '-';
-    document.getElementById('sys-hh').textContent      = dc.householdAbbr || '-';
-    document.getElementById('sys-location').textContent= dc.activeLocation || '-';
-    document.getElementById('sys-count').textContent   = _allItems.length || '-';
-    const sync = dc.apiUrl || dc.syncUrl;
-    document.getElementById('sys-sync').textContent   = sync ? 'Aktiv' : 'Aus';
-    document.getElementById('hh-abbr').textContent    = dc.householdAbbr || '';
+    const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    // Korrekte API-Feldnamen: system-info liefert heap/uptime/ssid/…, nicht freeHeap/uptimeSec
+    setTxt('sys-ssid',     si.ssid || '-');
+    setTxt('sys-ip',       si.ip   || '-');
+    setTxt('sys-heap',     si.heap != null ? Math.round(si.heap / 1024) + ' KB frei' : '-');
+    setTxt('sys-psram',    si.psram != null ? 'PSRAM: ' + Math.round(si.psram / 1048576) + ' MB frei' : '');
+    setTxt('sys-uptime',   si.uptime || '-');
+    setTxt('sys-fw',       si.firmware ? 'v' + si.firmware : '—');
+    setTxt('sys-hh',       si.householdAbbr || dc.householdAbbr || '-');
+    setTxt('sys-location', si.activeLocation || 'Kein Lagerort');
+    setTxt('sys-count',    (si.invCount != null ? si.invCount : _allItems.length) || '-');
+    setTxt('sys-sync',     si.syncEnabled ? 'Aktiv' : 'Aus');
+    setTxt('hh-abbr',      si.householdAbbr || dc.householdAbbr || '');
     // Standby select: find closest matching option
     const sel = document.getElementById('mob-standby');
     const secs = disp.standby_sec ?? 300;
@@ -905,6 +934,132 @@ async function loadSysInfo() {
     }
     sel.value = best;
   } catch(e) {}
+}
+
+// ── Firmware-Update (GitHub-Releases → /api/ota-combined) ──────
+const OTA_REPO = 'Zendonir/ESP32_Lebensmittel_BT_Scanner';
+let _otaReleases = [];
+let _otaPollTimer = null;
+
+async function loadOtaReleases() {
+  const sel = document.getElementById('ota-release');
+  if (!sel) return;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${OTA_REPO}/releases?per_page=20`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _otaReleases = await res.json();
+    sel.innerHTML = '<option value="">Version wählen…</option>';
+    for (const rel of _otaReleases) {
+      let d = '';
+      if (rel.published_at) {
+        const dt = new Date(rel.published_at);
+        d = ` · ${String(dt.getUTCDate()).padStart(2,'0')}.${String(dt.getUTCMonth()+1).padStart(2,'0')}.${dt.getUTCFullYear()}`;
+      }
+      const opt = document.createElement('option');
+      opt.value = rel.tag_name;
+      opt.textContent = `${rel.prerelease ? '[Vorab] ' : ''}${rel.tag_name}${d}`;
+      sel.appendChild(opt);
+    }
+  } catch(e) {
+    sel.innerHTML = '<option value="">GitHub nicht erreichbar</option>';
+  }
+}
+
+function onOtaSelect() {
+  const sel  = document.getElementById('ota-release');
+  const note = document.getElementById('ota-note');
+  const btn  = document.getElementById('ota-install');
+  const rel  = _otaReleases.find(r => r.tag_name === sel.value);
+  if (!rel) { note.textContent = ''; btn.disabled = true; return; }
+  const fw = rel.assets?.find(a => a.name === 'firmware_ota.bin');
+  const fs = rel.assets?.find(a => a.name === 'littlefs.bin');
+  if (fw) {
+    note.textContent = `firmware_ota.bin · ${(fw.size/1048576).toFixed(2)} MB`
+                     + (fs ? ` + littlefs.bin · ${(fs.size/1048576).toFixed(2)} MB` : '');
+    btn.disabled = false;
+  } else {
+    note.textContent = 'Kein firmware_ota.bin in diesem Release';
+    btn.disabled = true;
+  }
+}
+
+async function installOta() {
+  const sel = document.getElementById('ota-release');
+  const rel = _otaReleases.find(r => r.tag_name === sel.value);
+  if (!rel) { toast('Bitte Version wählen'); return; }
+  const fw = rel.assets?.find(a => a.name === 'firmware_ota.bin');
+  if (!fw) { toast('firmware_ota.bin fehlt'); return; }
+  const fs = rel.assets?.find(a => a.name === 'littlefs.bin');
+  document.getElementById('ota-install').disabled = true;
+  document.getElementById('ota-progress-wrap').hidden = false;
+  document.getElementById('ota-bar').style.width = '0%';
+  document.getElementById('ota-phase').textContent = 'BLE trennen & verbinden…';
+  try {
+    const r = await apiPost('/api/ota-combined', {
+      fw: fw.browser_download_url,
+      fs: fs ? fs.browser_download_url : '',
+      version: rel.tag_name,
+    });
+    if (!r.ok) throw new Error(r.error || 'Start fehlgeschlagen');
+    pollOtaProgress();
+  } catch(e) {
+    document.getElementById('ota-phase').textContent = 'Fehler: ' + e.message;
+    document.getElementById('ota-install').disabled = false;
+  }
+}
+
+function pollOtaProgress() {
+  if (_otaPollTimer) clearInterval(_otaPollTimer);
+  let idle = 0;
+  _otaPollTimer = setInterval(async () => {
+    try {
+      const p = await apiFetch('/api/ota-combined-progress');
+      const bar = document.getElementById('ota-bar');
+      const ph  = document.getElementById('ota-phase');
+      if (p.phase) { ph.textContent = p.phase; bar.style.width = (p.pct || 0) + '%'; idle = 0; }
+      else if (++idle > 6) {
+        clearInterval(_otaPollTimer); _otaPollTimer = null;
+        ph.textContent = 'Keine Antwort vom Gerät';
+        document.getElementById('ota-install').disabled = false;
+        return;
+      }
+      if (p.done) {
+        clearInterval(_otaPollTimer); _otaPollTimer = null;
+        if (p.ok) {
+          bar.style.width = '100%';
+          ph.textContent = 'Fertig – Gerät startet neu…';
+          toast('Update erfolgreich – Neustart');
+        } else {
+          ph.textContent = p.phase || 'Fehler!';
+          document.getElementById('ota-install').disabled = false;
+        }
+      }
+    } catch(e) {
+      // Verbindungsabbruch = Gerät bootet neu
+      clearInterval(_otaPollTimer); _otaPollTimer = null;
+      document.getElementById('ota-phase').textContent = 'Neustart – Seite lädt neu…';
+      setTimeout(() => location.reload(), 10000);
+    }
+  }, 1500);
+}
+
+// ── Aktionen ──────────────────────────────────────────────────
+async function restartDevice() {
+  if (!confirm('Gerät jetzt neu starten?')) return;
+  try {
+    await apiPost('/api/restart', {});
+    toast('Neustart… Seite lädt neu');
+    setTimeout(() => location.reload(), 12000);
+  } catch(e) { toast('Fehler: ' + e.message); }
+}
+
+async function compactInventory() {
+  try {
+    const r = await apiPost('/api/inventory/compact', {});
+    const n = (r && r.removed != null) ? r.removed : 0;
+    toast(n > 0 ? `${n} Duplikate zusammengeführt` : 'Keine Duplikate gefunden');
+    loadInventory();
+  } catch(e) { toast('Fehler: ' + e.message); }
 }
 
 async function saveStandby(val) {

@@ -1016,6 +1016,11 @@ void WebInterface::registerApiRoutes() {
         doc["fsUsed"]     = (uint32_t)AppFS::userDataUsedBytes();
         doc["fsTotal"]    = (uint32_t)AppFS::userDataTotalBytes();
         doc["sdMounted"]  = AppFS::usingSD();
+        // Felder für die mobile System-Ansicht (vermeidet zusätzliche Requests)
+        doc["ssid"]           = WiFi.isConnected() ? WiFi.SSID() : "";
+        doc["activeLocation"] = device_config.getActiveLocation();
+        doc["householdAbbr"]  = device_config.getHouseholdAbbr();
+        doc["syncEnabled"]    = sync_manager.hasConfig();
         unsigned long s   = millis() / 1000;
         char up[32];
         snprintf(up, sizeof(up), "%lud %02luh %02lum",
@@ -2525,12 +2530,27 @@ void WebInterface::registerApiRoutes() {
                 bool isFirmware = (len > 0 && data[0] == 0xE9);
                 Logger::info("OTA", String("Start: ") + filename
                              + (isFirmware ? " [firmware]" : " [filesystem]"));
+                // Internen SRAM defragmentieren: BLE trennen — exakt wie der
+                // GitHub-OTA-Pfad (siehe _otaDownloadFlash). Ohne das fehlt nach
+                // langer Laufzeit ein zusammenhängender Block für den OTA-Puffer
+                // und Update.begin schlägt fehl ("OTA nur nach Neustart").
+                // Das Gerät bootet direkt nach OTA neu → Scanner verbindet normal.
+                ble_scanner.disconnect();
+                delay(300);
                 Update.abort(); // clear any leftover state from a previous attempt
+                bool begun;
                 if (isFirmware) {
-                    Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+                    begun = Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
                 } else {
                     LittleFS.end();
-                    Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS);
+                    begun = Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS);
+                }
+                if (!begun) {
+                    Logger::error("OTA", String("begin failed (") + Update.getError()
+                                         + "): " + Update.errorString()
+                                         + " internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL)
+                                         + " largest=" + heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+                    return;
                 }
             }
             if (Update.isRunning()) {
@@ -2560,11 +2580,17 @@ void WebInterface::registerApiRoutes() {
            size_t index, uint8_t *data, size_t len, bool final) {
             if (!index) {
                 Logger::info("OTA", "FS start: " + filename);
+                // BLE trennen → internen SRAM defragmentieren (wie GitHub-OTA-Pfad),
+                // sonst schlägt Update.begin nach langer Laufzeit fehl.
+                ble_scanner.disconnect();
+                delay(300);
                 Update.abort();       // clear any leftover state from a previous attempt
                 LittleFS.end();       // unmount before overwriting the partition
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
                     Logger::error("OTA", String("FS begin failed (") + Update.getError()
-                                         + "): " + Update.errorString());
+                                         + "): " + Update.errorString()
+                                         + " internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL)
+                                         + " largest=" + heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
                     return;
                 }
             }

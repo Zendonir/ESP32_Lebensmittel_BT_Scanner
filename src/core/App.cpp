@@ -11,9 +11,25 @@
 #include <nvs_flash.h>
 #include <algorithm>
 #include <ArduinoJson.h>
+#include <esp_heap_caps.h>
+#include <mbedtls/platform.h>
 #include "../storage/AppFS.h"
 
 App app;
+
+// Route ALL mbedTLS allocations (every HTTPS handshake: OpenFoodFacts, ntfy, OTA)
+// to PSRAM instead of internal SRAM. The recurring TLS handshakes otherwise carve
+// up the internal heap that BLE/WiFi share, fragmenting it over hours of uptime
+// until no contiguous block is left (breaks OTA, starves allocations). Installed
+// once at boot — permanent, process-wide. Does not touch BLE scanner behavior.
+static void *_tls_psram_calloc(size_t n, size_t sz) {
+    void *p = heap_caps_calloc(n, sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p) p = heap_caps_calloc(n, sz, MALLOC_CAP_DEFAULT);  // fallback if PSRAM full
+    return p;
+}
+static inline void _tls_route_to_psram() {
+    mbedtls_platform_set_calloc_free(_tls_psram_calloc, heap_caps_free);
+}
 
 // Set by the WiFi-disconnect event handler (Core 0); cleared in App::loop() (Core 1).
 volatile bool g_wifiDropped = false;
@@ -48,6 +64,8 @@ void App::begin() {
     // messages on every failed TLS connection, drowning out our diagnostics.
     esp_log_level_set("*", ESP_LOG_NONE);
     Logger::info("App", "ESP32-S3 Lebensmittel-Scanner booting");
+    // Keep recurring TLS handshakes out of the fragmentation-prone internal SRAM.
+    _tls_route_to_psram();
     state.begin(AppState::BOOTING);
 
     initBacklight();
@@ -650,11 +668,32 @@ void App::renderActiveTab(const String &message, bool force) {
         return;
     }
 
-    // INVENTORY tab always shows the live list, not the empty-placeholder panel
+    // INVENTORY tab always shows the live list, not the empty-placeholder panel.
+    // Skip the rebuild+redraw when nothing relevant changed: rebuilding
+    // inventoryDisplayItems() (a filtered copy) and pushing the sprite every 2 s
+    // churns the heap and fragments internal SRAM for no visible benefit.
     if (_activeTab == UiTab::INVENTORY && workflow == WorkflowMode::HOME) {
+        uint32_t invHash = fnv1a(
+            // Include _activeTab: invHash shares the _lastUiHash slot with the
+            // home path's buildUiHash() (which is _activeTab-tagged). Without this
+            // tag a tab switch away from INVENTORY could hash-match the stored
+            // value and skip the required redraw, freezing the inventory list.
+            String(static_cast<int>(_activeTab)) + "|" +
+            String(static_cast<unsigned>(inventory.count())) + "|" +
+            _invFilter + "|" +
+            String(_invScrollOffset) + "|" +
+            String(_invSortMode) + "|" +
+            String(_invExpireDays) + "|" +
+            _invExpandedGroup + "|" +
+            _browseHousehold + "|" +
+            device_config.getHouseholdAbbr());
+        if (!force && invHash == _lastUiHash) {
+            _lastUiRefreshMs = millis();
+            return;
+        }
         display_obj.showInventoryList(inventoryDisplayItems(), _invFilter,
             device_config.getHouseholdAbbr(), _invExpandedGroup, _invScrollOffset, _invSortMode, _browseHousehold);
-        _lastUiHash = buildUiHash();
+        _lastUiHash = invHash;
         _lastUiRefreshMs = millis();
         return;
     }
