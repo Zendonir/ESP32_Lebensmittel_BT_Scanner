@@ -992,11 +992,14 @@ async function loadOtaReleases() {
       let d = '';
       if (rel.published_at) {
         const dt = new Date(rel.published_at);
-        d = ` · ${String(dt.getUTCDate()).padStart(2,'0')}.${String(dt.getUTCMonth()+1).padStart(2,'0')}.${dt.getUTCFullYear()}`;
+        d = ` · ${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`;
+        d += ` ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
       }
+      // rel.name enthält den Release-Titel (z.B. "v1.1.0-pre1"); rel.tag_name ist der Git-Tag (z.B. "latest")
+      const label = (rel.name && rel.name.trim()) ? rel.name.trim() : rel.tag_name;
       const opt = document.createElement('option');
       opt.value = rel.tag_name;
-      opt.textContent = `${rel.prerelease ? '[Vorab] ' : ''}${rel.tag_name}${d}`;
+      opt.textContent = `${rel.prerelease ? '[Vorab] ' : ''}${label}${d}`;
       sel.appendChild(opt);
     }
   } catch(e) {
