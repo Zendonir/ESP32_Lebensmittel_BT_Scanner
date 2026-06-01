@@ -455,21 +455,6 @@ static void otaCombinedTask(void *param) {
     Logger::info("OTA", String("Kombiniert – internal nach BLE-Trennung: ")
         + internalFree + " bytes (größter Block " + internalLargest + ")");
 
-    // Heap-Wächter: lwIP/Socket-Puffer für die TLS-Verbindung liegen im
-    // internen SRAM. Ist zu wenig zusammenhängender Speicher frei, würde der
-    // Handshake mitten im Download abstürzen (Reboot → "Keine Antwort").
-    // Lieber sauber abbrechen mit klarer Meldung als das Gerät neu zu starten.
-    static constexpr size_t OTA_MIN_INTERNAL = 28 * 1024;
-    if (internalLargest < OTA_MIN_INTERNAL) {
-        Logger::error("OTA", String("Zu wenig interner Heap für TLS (")
-            + internalLargest + " < " + OTA_MIN_INTERNAL
-            + ") – Abbruch. Bitte Gerät neu starten und erneut versuchen.");
-        snprintf(_otaCombo.phase, sizeof(_otaCombo.phase),
-                 "Zu wenig Speicher – bitte Gerät neu starten");
-        _otaCombo.done = true; _otaCombo.active = false;
-        vTaskDelete(nullptr); return;
-    }
-
     // ── Schritt 2: LittleFS (Web-UI) ─────────────────────────────────
     // Kein Neustart nach FS. Scoped-Block in _otaDownloadFlash stellt sicher,
     // dass TLS-Ressourcen VOR dem Firmware-Download freigegeben werden.
