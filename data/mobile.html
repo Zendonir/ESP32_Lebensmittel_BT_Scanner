@@ -101,9 +101,9 @@ input, select, textarea, button { font-size: 16px; }
   padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
 }
 
-/* Tab bar always anchored to the bottom of the visual viewport.
-   Total height = visible icon area + home indicator zone.
-   padding-bottom shifts the icons above the home indicator. */
+/* Tab bar: exactly 60px tall, anchored to viewport bottom.
+   body background (var(--surface)) matches the tab bar color and fills
+   the home indicator zone (~34px) below it — no visible gap. */
 #tabbar {
   position: fixed;
   bottom: 0;
@@ -113,8 +113,7 @@ input, select, textarea, button { font-size: 16px; }
   display: flex;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  height: var(--tab-h);
 }
 
 .tab-btn {
@@ -570,7 +569,7 @@ input, select, textarea, button { font-size: 16px; }
 <script>
 'use strict';
 
-const WEBUI_VERSION = 'pre13';
+const WEBUI_VERSION = 'pre14';
 
 // ── State ──
 let _allItems      = [];

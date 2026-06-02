@@ -9,6 +9,7 @@ static decltype(LittleFS) UserDataFS;
 static bool _sd = false;
 
 bool AppFS::begin() {
+    SD_MMC.end();  // sauber demounten – nach OTA-Soft-Reset kann der Treiber halb-init sein
     SD_MMC.setPins(11, 10, 9);   // CLK, CMD, D0
     if (SD_MMC.begin("/sdcard", true)) {   // 1-bit mode
         _sd = true;

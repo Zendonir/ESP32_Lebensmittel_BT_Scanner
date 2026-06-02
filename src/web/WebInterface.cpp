@@ -785,7 +785,7 @@ static void sendCachedFile(AsyncWebServerRequest *req, const char *path, const c
 void WebInterface::registerStaticRoutes() {
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/index.html")) {
-            sendCachedFile(req, "/index.html", "text/html");
+            sendNoCacheFile(req, "/index.html", "text/html");
         } else {
             req->send(200, "text/html", FPSTR(SETUP_FALLBACK));
         }
@@ -827,7 +827,7 @@ void WebInterface::registerStaticRoutes() {
 
     _server.on("/m", HTTP_GET, [](AsyncWebServerRequest *req) {
         if (LittleFS.exists("/mobile.html"))
-            sendCachedFile(req, "/mobile.html", "text/html");
+            sendNoCacheFile(req, "/mobile.html", "text/html");
         else
             req->send(404, "text/plain", "mobile.html not found – run uploadfs");
     });
@@ -842,7 +842,7 @@ void WebInterface::registerStaticRoutes() {
         }
         // SPA fallback — all non-API routes load the app
         if (LittleFS.exists("/index.html"))
-            sendCachedFile(req, "/index.html", "text/html");
+            sendNoCacheFile(req, "/index.html", "text/html");
         else
             req->send(404, "text/plain", "Not found");
     });
