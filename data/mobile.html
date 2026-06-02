@@ -9,269 +9,363 @@
 <meta name="theme-color" content="#080c10">
 <title>Lebensmittel Scanner</title>
 <script>
-// Generate app icon via canvas — no separate file needed on flash
 (function(){
   var c = document.createElement('canvas');
   c.width = c.height = 180;
   var ctx = c.getContext('2d');
-  // Background
   ctx.fillStyle = '#080c10';
-  ctx.beginPath();
-  ctx.roundRect(0, 0, 180, 180, 28);
-  ctx.fill();
-  // Box body
-  ctx.strokeStyle = '#4c9eff';
-  ctx.lineWidth = 7;
-  ctx.lineJoin = 'round';
-  ctx.strokeRect(38, 62, 104, 82);
-  // Box lid
-  ctx.beginPath();
-  ctx.moveTo(28, 62); ctx.lineTo(152, 62);
-  ctx.lineTo(138, 44); ctx.lineTo(42, 44);
-  ctx.closePath();
-  ctx.stroke();
-  // Lid flap line
-  ctx.beginPath();
-  ctx.moveTo(90, 44); ctx.lineTo(90, 62);
-  ctx.strokeStyle = '#4c9eff';
-  ctx.lineWidth = 5;
-  ctx.stroke();
-  // Barcode stripes at bottom
-  var bx = 52, by = 112, bh = 22;
+  ctx.beginPath(); ctx.roundRect(0,0,180,180,28); ctx.fill();
+  ctx.strokeStyle = '#4c9eff'; ctx.lineWidth = 7; ctx.lineJoin = 'round';
+  ctx.strokeRect(38,62,104,82);
+  ctx.beginPath(); ctx.moveTo(28,62); ctx.lineTo(152,62); ctx.lineTo(138,44); ctx.lineTo(42,44); ctx.closePath(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(90,44); ctx.lineTo(90,62); ctx.lineWidth = 5; ctx.stroke();
   ctx.fillStyle = '#4c9eff';
-  var bars = [0,6,10,16,20,24,30,36,40,46,50];
-  for (var i = 0; i < bars.length; i++) {
-    var w = (i % 3 === 1) ? 5 : 3;
-    ctx.fillRect(bx + bars[i], by, w, bh);
-  }
+  [0,6,10,16,20,24,30,36,40,46,50].forEach(function(x,i){ ctx.fillRect(52+x,112,i%3===1?5:3,22); });
   var url = c.toDataURL('image/png');
-  // Apple touch icon
-  var l = document.createElement('link');
-  l.rel = 'apple-touch-icon'; l.href = url;
-  document.head.appendChild(l);
-  // Favicon
-  var f = document.createElement('link');
-  f.rel = 'icon'; f.type = 'image/png'; f.href = url;
-  document.head.appendChild(f);
+  var l = document.createElement('link'); l.rel='apple-touch-icon'; l.href=url; document.head.appendChild(l);
+  var f = document.createElement('link'); f.rel='icon'; f.type='image/png'; f.href=url; document.head.appendChild(f);
 })();
 </script>
 <style>
-  :root {
-    --bg: #080c10;
-    --surface: #12171e;
-    --surface2: #1c222a;
-    --border: #282e38;
-    --text: #ecf0f4;
-    --sub: #7a8490;
-    --accent: #4c9eff;
-    --green: #2eb048;
-    --yellow: #cc9218;
-    --red: #f04640;
-    --radius: 12px;
-    --tab-h: 60px;
-  }
-  *, *::before, *::after {
-    box-sizing: border-box; margin: 0; padding: 0;
-    /* Doppeltipp-Zoom + 300ms-Tap-Delay killen, kein blauer Tap-Blitz */
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    /* kein iOS "Kopieren/Nachschlagen"-Popup bei Langdruck */
-    -webkit-touch-callout: none;
-  }
-  html, body {
-    height: 100%; overflow: hidden;
-    /* var(--surface) statt var(--bg): der Bereich unterhalb von #app (Home-
-       Indicator-Zone, ~34px) ist für fixed-Elemente in iOS nicht erreichbar –
-       body-Hintergrund muss die Farbe der Tab-Leiste tragen, damit keine
-       sichtbare Lücke entsteht. */
-    background: var(--surface); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    /* kein Gummiband-/Bounce-Effekt der ganzen Seite */
-    overscroll-behavior: none;
-    /* iOS soll Schrift im Querformat nicht eigenmächtig vergrößern */
-    -webkit-text-size-adjust: 100%;
-    /* UI-Text nicht markierbar (App-Gefühl); Eingabefelder unten wieder erlaubt */
-    -webkit-user-select: none; user-select: none;
-  }
-  /* Eingaben müssen markierbar bleiben, sonst nervt das Editieren */
-  input, textarea { -webkit-user-select: text; user-select: text; }
-  /* iOS zoomt automatisch hinein, wenn ein fokussiertes Feld <16px hat.
-     Daher ALLE Eingaben global auf min. 16px zwingen. */
-  input, select, textarea, button { font-size: 16px; }
+:root {
+  --bg:       #080c10;
+  --surface:  #12171e;
+  --surface2: #1c222a;
+  --border:   #282e38;
+  --text:     #ecf0f4;
+  --sub:      #7a8490;
+  --accent:   #4c9eff;
+  --green:    #2eb048;
+  --yellow:   #cc9218;
+  --red:      #f04640;
+  --radius:   12px;
+  --tab-h:    60px;
+}
 
-  /* ── Layout ── */
-  #app { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: env(safe-area-inset-top, 0px); background: var(--surface); }
-  #header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px 10px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  #header h1 { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: .5px; }
-  #header-right { display: flex; align-items: center; gap: 10px; }
-  #wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
-  #wifi-dot.ok { background: var(--green); }
-  #content { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; background: var(--bg); padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); }
-  /* Tab-Leiste: position:fixed, immer am unteren sichtbaren Rand.
-     Höhe = Inhalt (--tab-h) + Safe-Area unten (Home-Indicator).
-     padding-bottom schiebt Icons über den Home-Indicator-Bereich. */
-  #tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; display: flex; background: var(--surface); border-top: 1px solid var(--border); height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
-  .tab-btn.active { color: var(--accent); }
-  .tab-btn svg { width: 22px; height: 22px; }
-  .tab-pane { display: none; padding: 12px; }
-  .tab-pane.active { display: block; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0; padding: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
 
-  /* ── Cards ── */
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
-  .card-title { font-size: 11px; font-weight: 700; color: var(--sub); letter-spacing: .8px; text-transform: uppercase; margin-bottom: 10px; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-user-select: none;
+  user-select: none;
+}
 
-  /* ── Stat row ── */
-  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
-  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 10px; text-align: center; }
-  .stat-val { font-size: 28px; font-weight: 800; line-height: 1; }
-  .stat-label { font-size: 10px; color: var(--sub); margin-top: 4px; font-weight: 600; text-transform: uppercase; }
-  .accent { color: var(--accent); }
-  .yellow { color: var(--yellow); }
-  .red { color: var(--red); }
-  .green { color: var(--green); }
+input, textarea { -webkit-user-select: text; user-select: text; }
+input, select, textarea, button { font-size: 16px; }
 
-  /* ── Search bar ── */
-  .search-wrap { position: relative; margin-bottom: 12px; }
-  .search-wrap input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 24px; padding: 10px 16px 10px 40px; color: var(--text); font-size: 16px; outline: none; -webkit-appearance: none; }
-  .search-wrap input:focus { border-color: var(--accent); }
-  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--sub); pointer-events: none; }
+/* ── App shell ── */
+#app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  padding-top: env(safe-area-inset-top, 0px);
+}
 
-  /* ── Inventory list ── */
-  #inv-list { display: flex; flex-direction: column; gap: 6px; }
-  .inv-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; display: flex; align-items: center; gap: 10px; }
-  .inv-item.expiring { border-color: var(--yellow); }
-  .inv-item.expired { border-color: var(--red); }
-  .inv-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
-  .inv-item.expiring .inv-dot { background: var(--yellow); }
-  .inv-item.expired .inv-dot { background: var(--red); }
-  .inv-info { flex: 1; min-width: 0; }
-  .inv-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .inv-meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
-  .inv-qty { font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
-  .inv-empty { text-align: center; color: var(--sub); padding: 40px 0; font-size: 14px; }
+#header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px 10px;
+}
+#header h1 { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: .5px; }
+#header-right { display: flex; align-items: center; gap: 10px; }
+#hh-abbr { font-size: 13px; color: var(--sub); }
+#wifi-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+#wifi-dot.ok { background: var(--green); }
 
-  /* ── Expiring section ── */
-  .section-head { font-size: 11px; font-weight: 700; color: var(--sub); letter-spacing: .8px; text-transform: uppercase; padding: 6px 0 8px; }
+#content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--bg);
+  padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
+}
 
-  /* ── Settings ── */
-  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
-  .setting-row:last-child { border-bottom: none; }
-  .setting-label { font-size: 14px; }
-  .setting-sub { font-size: 12px; color: var(--sub); margin-top: 2px; }
-  .setting-val { font-size: 13px; color: var(--sub); }
-  input[type=range] { width: 120px; accent-color: var(--accent); }
+/* Tab bar always anchored to the bottom of the visual viewport.
+   Total height = visible icon area + home indicator zone.
+   padding-bottom shifts the icons above the home indicator. */
+#tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
 
-  /* ── Toggle switch ── */
-  .toggle { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
-  .toggle input { opacity: 0; width: 0; height: 0; }
-  .slider { position: absolute; inset: 0; background: var(--surface2); border-radius: 26px; border: 1px solid var(--border); transition: background .2s; cursor: pointer; }
-  .slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px; background: var(--sub); border-radius: 50%; transition: transform .2s, background .2s; }
-  .toggle input:checked + .slider { background: var(--accent); }
-  .toggle input:checked + .slider::before { transform: translateX(18px); background: #fff; }
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  background: none;
+  color: var(--sub);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  cursor: pointer;
+  transition: color .15s;
+}
+.tab-btn.active { color: var(--accent); }
+.tab-btn svg { width: 22px; height: 22px; }
 
-  /* ── Full-screen admin link ── */
-  .admin-link { display: block; text-align: center; color: var(--sub); font-size: 13px; padding: 16px; text-decoration: none; }
-  .admin-link:hover { color: var(--accent); }
+/* ── Tab panes ── */
+.tab-pane { display: none; padding: 12px; }
+.tab-pane.active { display: block; }
 
-  /* ── Loading spinner ── */
-  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ── Cards ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sub);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.card-header .card-title { margin-bottom: 0; }
 
-  /* ── Toast ── */
-  #toast { position: fixed; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 12px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; display: flex; align-items: center; gap: 12px; }
-  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  #toast.clickable { pointer-events: auto; }
-  .toast-undo-btn { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 12px; padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+/* ── Stats ── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 10px;
+  text-align: center;
+}
+.stat-val { font-size: 28px; font-weight: 800; line-height: 1; }
+.stat-label { font-size: 10px; color: var(--sub); margin-top: 4px; font-weight: 600; text-transform: uppercase; }
 
-  /* ── Pull-to-refresh hint ── */
-  .ptr-hint { text-align: center; font-size: 11px; color: var(--sub); padding: 8px 0 0; }
+/* ── Color helpers ── */
+.accent { color: var(--accent); }
+.yellow { color: var(--yellow); }
+.red    { color: var(--red); }
+.green  { color: var(--green); }
 
-  /* ── Grouped inventory ── */
-  .inv-group { border-radius: var(--radius); overflow: hidden; margin-bottom: 6px; }
-  .inv-group-head { margin-bottom: 0; border-radius: 0; cursor: pointer; user-select: none; -webkit-user-select: none; position: relative; }
-  .inv-group:first-child .inv-group-head { border-radius: var(--radius) var(--radius) 0 0; }
-  .inv-group.solo .inv-group-head { border-radius: var(--radius) !important; }
-  .inv-chevron { font-size: 18px; color: var(--sub); transition: transform .2s; flex-shrink: 0; padding-left: 4px; line-height: 1; }
-  .inv-sub-list { background: var(--surface2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); }
-  .inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 34px; border-top: 1px solid var(--border); background: var(--surface2); }
-  .inv-sub-item:first-child { border-top: none; }
-  .inv-sub-item .inv-meta { font-size: 13px; color: var(--sub); }
-  .inv-sub-item .inv-label { font-size: 11px; color: var(--sub); opacity: .7; }
-  .inv-sub-item.expiring .inv-meta { color: var(--yellow); }
-  .inv-sub-item.expired  .inv-meta { color: var(--red); }
+/* ── Search ── */
+.search-wrap { position: relative; margin-bottom: 12px; }
+.search-wrap input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 10px 16px 10px 40px;
+  color: var(--text);
+  outline: none;
+  -webkit-appearance: none;
+}
+.search-wrap input:focus { border-color: var(--accent); }
+.search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--sub); pointer-events: none; }
 
-  /* ── Swipe-to-delete ── */
-  .swipe-wrap { position: relative; overflow: hidden; border-radius: inherit; }
-  .swipe-inner { position: relative; z-index: 1; transition: transform .2s; will-change: transform; }
-  .swipe-del-btn {
-    position: absolute; right: 0; top: 0; bottom: 0; z-index: 0;
-    width: 80px; background: var(--red);
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 13px; font-weight: 600;
-    cursor: pointer; border-radius: 0 var(--radius) var(--radius) 0;
-    flex-shrink: 0;
-  }
+/* ── Pull-to-refresh hint ── */
+.ptr-hint { text-align: center; font-size: 11px; color: var(--sub); padding: 8px 0 0; }
 
-  /* ── Verwaltung tab ── */
-  .add-row { display: flex; gap: 8px; margin-top: 10px; }
-  .add-row input, .add-row select {
-    flex: 1; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 16px;
-    outline: none; -webkit-appearance: none; min-width: 0;
-  }
-  .add-row input:focus, .add-row select:focus { border-color: var(--accent); }
-  .hh-pill { padding: 3px 12px; border: 1px solid var(--border); border-radius: 12px; background: none; color: var(--sub); font-size: 12px; font-weight: 600; cursor: pointer; }
-  .hh-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn { padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-danger  { background: none; border: 1px solid var(--border); color: var(--red); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0; min-height: 40px; display: inline-flex; align-items: center; -webkit-tap-highlight-color: transparent; }
-  .mgmt-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .mgmt-item:last-child { border-bottom: none; }
-  .mgmt-item-info { flex: 1; min-width: 0; }
-  .mgmt-item-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mgmt-item-sub  { font-size: 12px; color: var(--sub); margin-top: 2px; }
-  .mgmt-empty { text-align: center; color: var(--sub); padding: 16px 0; font-size: 13px; }
-  /* ── Sorten inline ── */
-  .sorten-section { margin-top: 8px; }
-  .sorten-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
-  .sorte-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px 3px 10px; font-size: 12px; }
-  .sorte-chip button { background: none; border: none; color: var(--sub); cursor: pointer; padding: 6px; margin: -6px -4px -6px 0; font-size: 16px; line-height: 1; -webkit-tap-highlight-color: transparent; }
-  .sorte-add-row { display: flex; gap: 6px; }
-  .sorte-add-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 10px; font-size: 16px; min-width: 0; }
-  .sorte-add-row button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-  /* Vorlage-Hinzufügen-Button im Kartenkopf */
-  .tmpl-add-btn {
-    width: 36px; height: 36px; border-radius: 50%;
-    background: var(--accent); color: #fff; border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; -webkit-tap-highlight-color: transparent;
-    box-shadow: 0 2px 6px rgba(0,0,0,.25);
-    transition: filter .15s, transform .1s;
-  }
-  .tmpl-add-btn:active { transform: scale(.93); }
-  .cat-filter-wrap { margin-bottom: 10px; }
-  .cat-filter-wrap select {
-    width: 100%; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 16px;
-    outline: none; -webkit-appearance: none;
-  }
+/* ── Inventory list ── */
+#inv-list { display: flex; flex-direction: column; gap: 6px; }
+.inv-empty { text-align: center; color: var(--sub); padding: 40px 0; font-size: 14px; }
+.inv-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.inv-item.expiring { border-color: var(--yellow); }
+.inv-item.expired  { border-color: var(--red); }
+.inv-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
+.inv-item.expiring .inv-dot { background: var(--yellow); }
+.inv-item.expired  .inv-dot { background: var(--red); }
+.inv-info { flex: 1; min-width: 0; }
+.inv-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.inv-qty  { font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+
+/* ── Grouped inventory ── */
+.inv-group { border-radius: var(--radius); overflow: hidden; margin-bottom: 6px; }
+.inv-group-head { margin-bottom: 0; border-radius: 0; cursor: pointer; position: relative; }
+.inv-group:first-child .inv-group-head { border-radius: var(--radius) var(--radius) 0 0; }
+.inv-group.solo .inv-group-head { border-radius: var(--radius) !important; }
+.inv-chevron { font-size: 18px; color: var(--sub); transition: transform .2s; flex-shrink: 0; padding-left: 4px; line-height: 1; }
+.inv-sub-list { background: var(--surface2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); }
+.inv-sub-item { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 34px; border-top: 1px solid var(--border); background: var(--surface2); }
+.inv-sub-item:first-child { border-top: none; }
+.inv-sub-item .inv-meta { font-size: 13px; }
+.inv-sub-item.expiring .inv-meta { color: var(--yellow); }
+.inv-sub-item.expired  .inv-meta { color: var(--red); }
+
+/* ── Swipe-to-delete ── */
+.swipe-wrap { position: relative; overflow: hidden; border-radius: inherit; }
+.swipe-inner { position: relative; z-index: 1; transition: transform .2s; will-change: transform; }
+.swipe-del-btn {
+  position: absolute; right: 0; top: 0; bottom: 0; z-index: 0;
+  width: 80px; background: var(--red);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px; font-weight: 600;
+  cursor: pointer; border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* ── Household pills ── */
+#inv-hh-bar { padding: 8px 12px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+.hh-pill { padding: 3px 12px; border: 1px solid var(--border); border-radius: 12px; background: none; color: var(--sub); font-size: 12px; font-weight: 600; cursor: pointer; }
+.hh-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── Section head ── */
+.section-head { font-size: 11px; font-weight: 700; color: var(--sub); letter-spacing: .8px; text-transform: uppercase; padding: 6px 0 8px; }
+
+/* ── Settings rows ── */
+.setting-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 14px; }
+.setting-sub { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.setting-val { font-size: 13px; color: var(--sub); }
+
+/* ── Toggle switch ── */
+.toggle { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; inset: 0; background: var(--surface2); border-radius: 26px; border: 1px solid var(--border); transition: background .2s; cursor: pointer; }
+.slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px; background: var(--sub); border-radius: 50%; transition: transform .2s, background .2s; }
+.toggle input:checked + .slider { background: var(--accent); }
+.toggle input:checked + .slider::before { transform: translateX(18px); background: #fff; }
+
+/* ── Buttons ── */
+.btn { padding: 9px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-danger { background: none; border: 1px solid var(--border); color: var(--red); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; }
+.btn-block { width: 100%; text-align: center; }
+.btn-neutral { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+/* ── Templates (Vorlagen) ── */
+.tmpl-add-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: transform .1s;
+}
+.tmpl-add-btn:active { transform: scale(.93); }
+
+.cat-filter-wrap { margin-bottom: 10px; }
+.cat-filter-wrap select {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px; color: var(--text); outline: none; -webkit-appearance: none;
+}
+
+.mgmt-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.mgmt-item:last-child { border-bottom: none; }
+.mgmt-item-info { flex: 1; min-width: 0; }
+.mgmt-item-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mgmt-item-sub  { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.mgmt-empty { text-align: center; color: var(--sub); padding: 16px 0; font-size: 13px; }
+
+/* ── Sorten inline ── */
+.sorten-section { margin-top: 8px; }
+.sorten-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.sorte-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 12px; }
+.sorte-chip button { background: none; border: none; color: var(--sub); cursor: pointer; padding: 6px; margin: -6px -4px -6px 0; font-size: 16px; line-height: 1; }
+.sorte-add-row { display: flex; gap: 6px; }
+.sorte-add-row input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 7px 10px; min-width: 0; }
+.sorte-add-row button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+/* ── OTA progress ── */
+.progress-track { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+.progress-bar   { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+
+/* ── Spinner ── */
+.spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast ── */
+#toast {
+  position: fixed;
+  bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 500;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.clickable { pointer-events: auto; }
+.toast-undo-btn { background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 12px; padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+
+/* ── Admin link ── */
+.admin-link { display: block; text-align: center; color: var(--sub); font-size: 13px; padding: 16px; text-decoration: none; }
 </style>
 </head>
 <body>
 <div id="app">
+  <!-- Header -->
   <div id="header">
     <h1>&#x1F4E6; Scanner</h1>
     <div id="header-right">
-      <span id="hh-abbr" style="font-size:13px;color:var(--sub)"></span>
+      <span id="hh-abbr"></span>
       <span id="wifi-dot"></span>
     </div>
   </div>
 
+  <!-- Scrollable content area -->
   <div id="content">
-    <!-- INVENTAR TAB -->
+
+    <!-- INVENTAR -->
     <div id="tab-inv" class="tab-pane active">
-      <div id="inv-hh-bar" hidden style="padding:8px 12px;background:var(--surface2,#1a2130);border-bottom:1px solid var(--border,#2a3340)"></div>
+      <div id="inv-hh-bar" hidden></div>
       <div class="stat-row">
         <div class="stat"><div class="stat-val accent" id="s-total">-</div><div class="stat-label">Gesamt</div></div>
         <div class="stat"><div class="stat-val yellow" id="s-soon">-</div><div class="stat-label">Bald ab</div></div>
@@ -285,17 +379,17 @@
       <div class="ptr-hint">&#8593; Ziehen zum Aktualisieren</div>
     </div>
 
-    <!-- ABLAUFEND TAB -->
+    <!-- ABLAUFEND -->
     <div id="tab-exp" class="tab-pane">
-      <div class="section-head">Diese Woche ablaufend</div>
+      <div class="section-head">Bald ablaufend / abgelaufen</div>
       <div id="exp-list"><div class="inv-empty"><span class="spinner"></span></div></div>
     </div>
 
-    <!-- VERWALTUNG TAB -->
+    <!-- VORLAGEN -->
     <div id="tab-mgmt" class="tab-pane">
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="card-title" style="margin-bottom:0">Vorlagen</div>
+        <div class="card-header">
+          <div class="card-title">Vorlagen</div>
           <button class="tmpl-add-btn" onclick="openTmplSheet()" title="Neue Vorlage">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
@@ -309,33 +403,32 @@
       </div>
     </div>
 
-    <!-- EINSTELLUNGEN TAB -->
+    <!-- SYSTEM -->
     <div id="tab-sys" class="tab-pane">
+
       <!-- Firmware-Update -->
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="card-title" style="margin-bottom:0">Firmware-Update</div>
+        <div class="card-header">
+          <div class="card-title">Firmware-Update</div>
           <span class="setting-val" id="sys-fw">-</span>
         </div>
-        <select id="ota-release" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none;margin-bottom:8px" onchange="onOtaSelect()">
+        <select id="ota-release" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none;margin-bottom:8px" onchange="onOtaSelect()">
           <option value="">Auf Updates prüfen…</option>
         </select>
         <div id="ota-note" class="setting-sub" style="margin-bottom:10px;min-height:16px"></div>
-        <button class="btn btn-primary" id="ota-install" style="width:100%" onclick="installOta()" disabled>Installieren</button>
+        <button class="btn btn-primary btn-block" id="ota-install" onclick="installOta()" disabled>Installieren</button>
         <div id="ota-progress-wrap" hidden style="margin-top:12px">
-          <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
-            <div id="ota-bar" style="height:100%;width:0;background:var(--accent);transition:width .3s"></div>
-          </div>
+          <div class="progress-track"><div id="ota-bar" class="progress-bar"></div></div>
           <div id="ota-phase" class="setting-sub" style="text-align:center;margin-top:8px">Starte…</div>
         </div>
-        <div class="ptr-hint" style="text-align:left;padding-top:10px">⚠️ Während des Updates Gerät nicht ausschalten. Es startet danach automatisch neu.</div>
+        <div class="ptr-hint" style="text-align:left;padding-top:10px">&#9888;&#xFE0F; Während des Updates Gerät nicht ausschalten.</div>
       </div>
 
       <!-- Status -->
       <div class="card">
         <div class="card-title">Status</div>
         <div class="setting-row">
-          <div><div class="setting-label">Web-UI (Dateisystem)</div><div class="setting-sub">Version dieser Oberfläche</div></div>
+          <div><div class="setting-label">Web-UI</div><div class="setting-sub">Version dieser Oberfläche</div></div>
           <span class="setting-val accent" id="sys-webui">-</span>
         </div>
         <div class="setting-row">
@@ -378,7 +471,7 @@
         <div class="card-title">Display</div>
         <div class="setting-row">
           <div><div class="setting-label">Standby</div><div class="setting-sub">Display abschalten nach</div></div>
-          <select id="mob-standby" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none" onchange="saveStandby(this.value)">
+          <select id="mob-standby" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);outline:none;-webkit-appearance:none" onchange="saveStandby(this.value)">
             <option value="0">Nie</option>
             <option value="60">1 Min</option>
             <option value="120">2 Min</option>
@@ -389,7 +482,7 @@
         </div>
       </div>
 
-      <!-- Logs (SD-Karte) -->
+      <!-- SD-Logs -->
       <div class="card">
         <div class="card-title">Logs (SD-Karte)</div>
         <div id="sd-log-list"><div class="mgmt-empty"><span class="spinner"></span></div></div>
@@ -398,14 +491,15 @@
       <!-- Aktionen -->
       <div class="card">
         <div class="card-title">Aktionen</div>
-        <button class="btn" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);margin-bottom:8px" onclick="compactInventory()">Inventar bereinigen (Duplikate)</button>
-        <button class="btn" style="width:100%;background:none;color:var(--red);border:1px solid var(--border)" onclick="restartDevice()">Gerät neu starten</button>
+        <button class="btn btn-neutral btn-block" style="margin-bottom:8px" onclick="compactInventory()">Inventar bereinigen (Duplikate)</button>
+        <button class="btn btn-block" style="background:none;color:var(--red);border:1px solid var(--border)" onclick="restartDevice()">Gerät neu starten</button>
       </div>
 
-      <a href="/" target="_blank" rel="noopener" class="admin-link">&#x2699;&#xFE0F; Zur vollst&auml;ndigen Verwaltung</a>
+      <a href="/" target="_blank" rel="noopener" class="admin-link">&#x2699;&#xFE0F; Zur vollständigen Verwaltung</a>
     </div>
   </div>
 
+  <!-- Tab bar -->
   <nav id="tabbar">
     <button class="tab-btn active" data-tab="inv" onclick="switchTab('inv')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/></svg>
@@ -425,25 +519,24 @@
     </button>
   </nav>
 
-  <!-- Bottom-Sheet: Neue Vorlage (außerhalb #content, sonst clippt iOS Safari den
-       fixed-Sheet im overflow-scroll-Container und der Speichern-Button verschwindet) -->
+  <!-- Bottom sheet: Neue Vorlage (outside #content to avoid iOS clip bug) -->
   <div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
   <div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
       <span style="font-weight:700;font-size:16px">Neue Vorlage</span>
-      <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;padding:0;line-height:1">&times;</button>
+      <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;line-height:1">&times;</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:16px;outline:none;width:100%;box-sizing:border-box">
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);outline:none;width:100%">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none">
+        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none">
           <option value="">Kategorie…</option>
         </select>
         <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
-          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;width:100%;box-sizing:border-box">
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;width:100%">
       </div>
-      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px">
         <label class="toggle">
           <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
           <span class="slider"></span>
@@ -451,7 +544,7 @@
         <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
       </div>
       <div id="tmpl-unit-row" style="display:none">
-        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:16px;outline:none;-webkit-appearance:none">
+        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none">
           <option value="St.">Stück (St.)</option>
           <option value="Port.">Portionen (Port.)</option>
           <option value="g">Gramm (g)</option>
@@ -459,14 +552,14 @@
           <option value="kg">Kilogramm (kg)</option>
         </select>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 0">
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px">
         <label class="toggle">
           <input type="checkbox" id="tmpl-sorten">
           <span class="slider"></span>
         </label>
         <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl</span>
       </div>
-      <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
+      <button class="btn btn-primary btn-block" style="margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
     </div>
   </div>
 </div>
@@ -476,23 +569,67 @@
 <script>
 'use strict';
 
-// Version dieser Web-UI (im Dateisystem-Image). Bei jedem FS-Update erhöhen –
-// so lässt sich am Gerät prüfen, ob das littlefs.bin wirklich neu geflasht wurde.
-const WEBUI_VERSION = 'pre11 (clean)';
+const WEBUI_VERSION = 'pre12 (rebuild)';
 
-// ── State ──────────────────────────────────────────────────────
+// ── State ──
 let _allItems      = [];
 let _filter        = '';
 let _sysInfo       = {};
 let _devCfg        = {};
 let _categories    = [];
 let _templates     = [];
-let _pendingDelete = null;  // { labelBarcode, item, timerId } – Undo-Puffer
-let _households    = [];    // available households from /api/households
-let _currentHH     = null;  // null = own (first in list)
+let _pendingDelete = null;
+let _households    = [];
+let _currentHH     = null;
 let _ownHH         = '';
+let _otaReleases   = [];
+let _otaPollTimer  = null;
 
-// ── Tab switching ──────────────────────────────────────────────
+// ── HTML escape ──
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── API helpers ──
+async function apiFetch(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function apiPost(path, data) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error(r.status);
+  return r.json().catch(() => ({}));
+}
+
+// ── Toast ──
+let _toastTimer;
+function toast(msg, ms) {
+  ms = ms || 2500;
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('clickable');
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+const showToast = toast;
+
+function toastUndo(msg, ms) {
+  ms = ms || 5000;
+  const el = document.getElementById('toast');
+  el.innerHTML = '<span>' + msg + '</span><button class="toast-undo-btn" onclick="undoDelete()">Rückgängig</button>';
+  el.classList.add('show', 'clickable');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show', 'clickable'), ms);
+}
+
+// ── Tab switching ──
 function switchTab(name) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -503,40 +640,13 @@ function switchTab(name) {
   if (name === 'mgmt') loadMgmt();
 }
 
-// ── Toast ─────────────────────────────────────────────────────
-let _toastTimer;
-function toast(msg, ms = 2500) {
-  const el = document.getElementById('toast');
-  el.innerHTML = '';
-  el.textContent = msg;
-  el.classList.remove('clickable');
-  el.classList.add('show');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
-}
-// Alias used in some places
-const showToast = toast;
-
-// Toast mit „Rückgängig"-Button (Undo-Toast)
-function toastUndo(msg, ms = 5000) {
-  const el = document.getElementById('toast');
-  el.innerHTML = `<span>${msg}</span><button class="toast-undo-btn" onclick="undoDelete()">Rückgängig</button>`;
-  el.classList.add('show', 'clickable');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => {
-    el.classList.remove('show', 'clickable');
-  }, ms);
-}
-
-// ── Date helpers ──────────────────────────────────────────────
+// ── Date helpers ──
 function getExpiry(it) {
-  // API returns camelCase "expiryDate"; accept legacy snake_case / mhd too
   return it.expiryDate || it.expiry_date || it.mhd || '';
 }
 
 function parseExpiry(str) {
   if (!str) return null;
-  // Formats: DD.MM.YY, DD.MM.YYYY, YYYY-MM-DD
   let m = str.match(/^(\d{2})\.(\d{2})\.(\d{2,4})$/);
   if (m) {
     let y = parseInt(m[3]);
@@ -562,8 +672,7 @@ function fmtDate(str) {
 
 function fmtQty(qty, unit) {
   if (unit === 'g' || unit === 'kg' || unit === 'ml' || unit === 'l') return qty + ' ' + unit;
-  if (unit === 'St.') return qty + ' St.';
-  if (unit === 'Port.') return qty + ' Port.';
+  if (unit === 'St.' || unit === 'Port.') return qty + ' ' + unit;
   return qty + 'x';
 }
 
@@ -575,31 +684,14 @@ function expiryClass(str) {
   return '';
 }
 
-// ── Fetch helpers ─────────────────────────────────────────────
-async function apiFetch(path) {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(r.status);
-  return r.json();
-}
-
-async function apiPost(path, data) {
-  const r = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  if (!r.ok) throw new Error(r.status);
-  return r.json().catch(() => ({}));
-}
-
-// ── Inventory ─────────────────────────────────────────────────
+// ── Inventory ──
 async function loadInventory() {
   try {
     const [data, hhs] = await Promise.all([
       apiFetch('/api/inventory'),
       apiFetch('/api/households').catch(() => []),
     ]);
-    _allItems = Array.isArray(data) ? data : (data.items || []);
+    _allItems  = Array.isArray(data) ? data : (data.items || []);
     _households = Array.isArray(hhs) ? hhs : [];
     _ownHH = _households[0] || '';
     if (_currentHH === null) _currentHH = _ownHH;
@@ -607,7 +699,7 @@ async function loadInventory() {
     renderInventory();
     updateStats();
     document.getElementById('wifi-dot').classList.add('ok');
-  } catch (e) {
+  } catch(e) {
     document.getElementById('inv-list').innerHTML = '<div class="inv-empty">Verbindungsfehler</div>';
   }
 }
@@ -617,11 +709,10 @@ function renderHHSelector() {
   if (!bar) return;
   if (_households.length <= 1) { bar.hidden = true; return; }
   let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-  html += '<span style="font-size:.75rem;color:#8892a0">Haushalt:</span>';
+  html += '<span style="font-size:.75rem;color:var(--sub)">Haushalt:</span>';
   _households.forEach(hh => {
-    const active = (_currentHH === hh) || (_currentHH === null && hh === _ownHH);
-    html += `<button class="hh-pill${active ? ' active' : ''}" onclick="switchHH('${hh.replace(/'/g,"\\'")}')">`;
-    html += hh + '</button>';
+    const active = _currentHH === hh;
+    html += '<button class="hh-pill' + (active ? ' active' : '') + '" onclick="switchHH(\'' + hh.replace(/'/g,"\\'") + '\')">' + esc(hh) + '</button>';
   });
   html += '</div>';
   bar.innerHTML = html;
@@ -630,17 +721,14 @@ function renderHHSelector() {
 
 async function switchHH(hh) {
   _currentHH = hh;
-  const isOwn = (hh === _ownHH);
+  const isOwn = hh === _ownHH;
   try {
-    const url = isOwn ? '/api/inventory' : `/api/inventory?household=${encodeURIComponent(hh)}`;
+    const url = isOwn ? '/api/inventory' : '/api/inventory?household=' + encodeURIComponent(hh);
     const data = await apiFetch(url);
     _allItems = Array.isArray(data) ? data : (data.items || []);
     renderHHSelector();
     renderInventory();
     updateStats();
-    // Hide FAB when viewing other household
-    const fab = document.getElementById('fab');
-    if (fab) fab.hidden = !isOwn;
   } catch(e) {
     toast('Fehler: ' + e.message);
   }
@@ -655,11 +743,12 @@ function normalize(s) {
 function filterItems(q) {
   if (!q) return _allItems;
   const nq = normalize(q);
-  return _allItems.filter(it => normalize(it.name || it.product_name || '').includes(nq) ||
-                                normalize(it.location || '').includes(nq));
+  return _allItems.filter(it =>
+    normalize(it.name || it.product_name || '').includes(nq) ||
+    normalize(it.location || '').includes(nq)
+  );
 }
 
-// ── Grouping ──────────────────────────────────────────────────
 function buildGroups(items) {
   const map = new Map();
   for (const it of items) {
@@ -668,20 +757,17 @@ function buildGroups(items) {
     map.get(key).push(it);
   }
   return Array.from(map.entries()).map(([name, its]) => {
-    // Sort items within group: earliest expiry first, no-date last
     its.sort((a, b) => {
       const da = parseExpiry(getExpiry(a)), db = parseExpiry(getExpiry(b));
       if (!da && !db) return 0;
-      if (!da) return 1;
-      if (!db) return -1;
+      if (!da) return 1; if (!db) return -1;
       return da - db;
     });
     return { name, items: its, firstExpiry: getExpiry(its[0]) };
   }).sort((a, b) => {
     const da = parseExpiry(a.firstExpiry), db = parseExpiry(b.firstExpiry);
     if (!da && !db) return 0;
-    if (!da) return 1;
-    if (!db) return -1;
+    if (!da) return 1; if (!db) return -1;
     return da - db;
   });
 }
@@ -690,8 +776,6 @@ function renderInventory() {
   const filtered = filterItems(_filter);
   const el = document.getElementById('inv-list');
 
-  // Merke welche Gruppen gerade aufgeklappt sind (nach Name), damit sie nach
-  // dem Re-render wieder offen bleiben
   const wasExpanded = new Set();
   el.querySelectorAll('.inv-group:not(.solo)').forEach(g => {
     const sub = g.querySelector('.inv-sub-list');
@@ -713,158 +797,53 @@ function renderInventory() {
     const unit  = g.items[0].unit || '';
     const loc   = g.items[0].location ? ' · ' + g.items[0].location : '';
     const solo  = g.items.length === 1;
-    // Gruppe aufgeklappt lassen, wenn sie vorher offen war
     const expanded = wasExpanded.has(g.name);
 
     const subHtml = solo ? '' : g.items.map(it => {
       const exp    = getExpiry(it);
       const subCls = expiryClass(exp);
       const lb     = esc(it.labelBarcode || '');
-      const locStr = it.location ? `<span style="opacity:.7"> · ${esc(it.location)}</span>` : '';
+      const locStr = it.location ? '<span style="opacity:.7"> · ' + esc(it.location) + '</span>' : '';
       const subQty = fmtQty(it.quantity || 1, it.unit || '');
-      return `<div class="swipe-wrap">
-        <div class="swipe-inner inv-sub-item ${subCls}" data-lb="${lb}">
-          <div class="inv-dot"></div>
-          <div class="inv-info">
-            <div class="inv-meta">${exp ? fmtDate(exp) : 'Kein MHD'}${locStr}</div>
-          </div>
-          <div class="inv-qty" style="font-size:13px">${subQty}</div>
-        </div>
-        <div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>
-      </div>`;
+      return '<div class="swipe-wrap">' +
+        '<div class="swipe-inner inv-sub-item ' + subCls + '" data-lb="' + lb + '">' +
+          '<div class="inv-dot"></div>' +
+          '<div class="inv-info"><div class="inv-meta">' + (exp ? fmtDate(exp) : 'Kein MHD') + locStr + '</div></div>' +
+          '<div class="inv-qty" style="font-size:13px">' + subQty + '</div>' +
+        '</div>' +
+        '<div class="swipe-del-btn" onclick="deleteItem(\'' + lb + '\')">Löschen</div>' +
+      '</div>';
     }).join('');
 
     const soloLb = solo ? esc(g.items[0].labelBarcode || '') : '';
-    const chevronStyle = expanded ? ' style="transform:rotate(90deg)"' : '';
-    const headInner = `
-      <div class="inv-dot"></div>
-      <div class="inv-info">
-        <div class="inv-name">${esc(g.name)}</div>
-        <div class="inv-meta">${g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD'}${esc(loc)}</div>
-      </div>
-      <div class="inv-qty">${fmtQty(total, unit)}</div>
-      ${solo ? '' : `<div class="inv-chevron"${chevronStyle}>›</div>`}`;
+    const chevronRot = expanded ? ' style="transform:rotate(90deg)"' : '';
+    const headInner =
+      '<div class="inv-dot"></div>' +
+      '<div class="inv-info">' +
+        '<div class="inv-name">' + esc(g.name) + '</div>' +
+        '<div class="inv-meta">' + (g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD') + esc(loc) + '</div>' +
+      '</div>' +
+      '<div class="inv-qty">' + fmtQty(total, unit) + '</div>' +
+      (solo ? '' : '<div class="inv-chevron"' + chevronRot + '>›</div>');
 
     const groupHead = solo
-      ? `<div class="swipe-wrap">
-           <div class="swipe-inner inv-item inv-group-head ${cls}" data-lb="${soloLb}">
-             ${headInner}
-           </div>
-           <div class="swipe-del-btn" onclick="deleteItem('${soloLb}')">Löschen</div>
-         </div>`
-      : `<div class="inv-item inv-group-head ${cls}" onclick="toggleGroup(${gi})">
-           ${headInner}
-         </div>`;
+      ? '<div class="swipe-wrap">' +
+          '<div class="swipe-inner inv-item inv-group-head ' + cls + '" data-lb="' + soloLb + '">' + headInner + '</div>' +
+          '<div class="swipe-del-btn" onclick="deleteItem(\'' + soloLb + '\')">Löschen</div>' +
+        '</div>'
+      : '<div class="inv-item inv-group-head ' + cls + '" onclick="toggleGroup(' + gi + ')">' + headInner + '</div>';
 
-    return `<div class="inv-group${solo ? ' solo' : ''}" data-gi="${gi}">
-      ${groupHead}
-      ${solo ? '' : `<div class="inv-sub-list" style="display:${expanded ? 'block' : 'none'}">${subHtml}</div>`}
-    </div>`;
+    return '<div class="inv-group' + (solo ? ' solo' : '') + '" data-gi="' + gi + '">' +
+      groupHead +
+      (solo ? '' : '<div class="inv-sub-list" style="display:' + (expanded ? 'block' : 'none') + '">' + subHtml + '</div>') +
+    '</div>';
   }).join('');
+
   initSwipe(el);
 }
 
-// ── Delete item mit Undo-Puffer ───────────────────────────────
-async function _flushPendingDelete() {
-  if (!_pendingDelete) return;
-  const { labelBarcode, timerId } = _pendingDelete;
-  clearTimeout(timerId);
-  _pendingDelete = null;
-  try {
-    await apiPost('/api/inventory/delete', { labelBarcode });
-  } catch(e) {
-    console.error('Verzögertes Löschen fehlgeschlagen:', e);
-  }
-}
-
-function deleteItem(labelBarcode) {
-  if (!labelBarcode) return;
-
-  // Falls ein anderes Item noch im Undo-Puffer ist, sofort serverseitig löschen
-  _flushPendingDelete();
-
-  // Item lokal suchen
-  const item = _allItems.find(it => it.labelBarcode === labelBarcode);
-  if (!item) return;
-
-  // Sofort aus lokaler Liste entfernen + UI aktualisieren
-  _allItems = _allItems.filter(it => it.labelBarcode !== labelBarcode);
-  renderInventory();
-  updateStats();
-
-  // Nach 5 Sekunden tatsächlich auf dem Server löschen
-  const timerId = setTimeout(() => {
-    _pendingDelete = null;
-    apiPost('/api/inventory/delete', { labelBarcode }).catch(e => {
-      // Bei Fehler wiederherstellen
-      _allItems.push(item);
-      renderInventory();
-      updateStats();
-      toast('Fehler beim Löschen', 3000);
-    });
-  }, 5000);
-
-  _pendingDelete = { labelBarcode, item, timerId };
-  toastUndo('Gelöscht');
-}
-
-function undoDelete() {
-  if (!_pendingDelete) return;
-  const { item, timerId } = _pendingDelete;
-  clearTimeout(timerId);
-  _pendingDelete = null;
-  // Toast sofort schließen
-  const el = document.getElementById('toast');
-  el.classList.remove('show', 'clickable');
-  clearTimeout(_toastTimer);
-  // Item wiederherstellen
-  _allItems.push(item);
-  renderInventory();
-  updateStats();
-  toast('Wiederhergestellt ✓', 2000);
-}
-
-// ── Swipe-to-delete (touch) ───────────────────────────────────
-function initSwipe(container) {
-  container.querySelectorAll('.swipe-wrap').forEach(wrap => {
-    const inner = wrap.querySelector('.swipe-inner');
-    if (!inner) return;
-    // dir: 0 = noch unklar, 1 = horizontal (Swipe), -1 = vertikal (Scrollen)
-    let startX = 0, startY = 0, curX = 0, dir = 0;
-    inner.addEventListener('touchstart', e => {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      curX = 0; dir = 0;
-    }, { passive: true });
-    inner.addEventListener('touchmove', e => {
-      const dx = e.touches[0].clientX - startX;
-      const dy = e.touches[0].clientY - startY;
-      // Richtung erst festlegen, wenn die Geste eindeutig ist (>8px) —
-      // so wird vertikales Scrollen nicht als Swipe missinterpretiert.
-      if (dir === 0) {
-        if (Math.abs(dx) > 8 || Math.abs(dy) > 8)
-          dir = Math.abs(dx) > Math.abs(dy) ? 1 : -1;
-        else return;
-      }
-      if (dir !== 1) return;            // vertikal → Scrollen zulassen
-      curX = dx;
-      if (curX > 0) curX = 0;           // nur nach links
-      if (curX < -80) curX = -80;
-      inner.style.transition = 'none';
-      inner.style.transform = `translateX(${curX}px)`;
-    }, { passive: true });
-    inner.addEventListener('touchend', () => {
-      if (dir !== 1) { dir = 0; return; }
-      inner.style.transition = 'transform .2s';
-      // snap open at -40px threshold, close otherwise
-      inner.style.transform = curX < -40 ? 'translateX(-80px)' : 'translateX(0)';
-      dir = 0;
-    });
-  });
-}
-
 function toggleGroup(gi) {
-  const group = document.querySelector(`[data-gi="${gi}"]`);
+  const group = document.querySelector('[data-gi="' + gi + '"]');
   if (!group) return;
   const sub     = group.querySelector('.inv-sub-list');
   const chevron = group.querySelector('.inv-chevron');
@@ -875,14 +854,12 @@ function toggleGroup(gi) {
 }
 
 function updateStats() {
-  const now = new Date(); now.setHours(0,0,0,0);
   let total = 0, soon = 0, expired = 0;
   _allItems.forEach(it => {
-    total += 1;
-    const d = parseExpiry(getExpiry(it));
-    const days = daysUntil(d);
+    total++;
+    const days = daysUntil(parseExpiry(getExpiry(it)));
     if (days !== null) {
-      if (days < 0)       expired++;
+      if (days < 0) expired++;
       else if (days <= 7) soon++;
     }
   });
@@ -891,7 +868,79 @@ function updateStats() {
   document.getElementById('s-exp').textContent   = expired;
 }
 
-// ── Expiring tab ──────────────────────────────────────────────
+// ── Delete with undo ──
+async function _flushPendingDelete() {
+  if (!_pendingDelete) return;
+  const { labelBarcode, timerId } = _pendingDelete;
+  clearTimeout(timerId);
+  _pendingDelete = null;
+  try { await apiPost('/api/inventory/delete', { labelBarcode }); } catch(e) {}
+}
+
+function deleteItem(labelBarcode) {
+  if (!labelBarcode) return;
+  _flushPendingDelete();
+  const item = _allItems.find(it => it.labelBarcode === labelBarcode);
+  if (!item) return;
+  _allItems = _allItems.filter(it => it.labelBarcode !== labelBarcode);
+  renderInventory();
+  updateStats();
+  const timerId = setTimeout(() => {
+    _pendingDelete = null;
+    apiPost('/api/inventory/delete', { labelBarcode }).catch(() => {
+      _allItems.push(item);
+      renderInventory(); updateStats();
+      toast('Fehler beim Löschen', 3000);
+    });
+  }, 5000);
+  _pendingDelete = { labelBarcode, item, timerId };
+  toastUndo('Gelöscht');
+}
+
+function undoDelete() {
+  if (!_pendingDelete) return;
+  const { item, timerId } = _pendingDelete;
+  clearTimeout(timerId);
+  _pendingDelete = null;
+  const el = document.getElementById('toast');
+  el.classList.remove('show', 'clickable');
+  clearTimeout(_toastTimer);
+  _allItems.push(item);
+  renderInventory(); updateStats();
+  toast('Wiederhergestellt ✓', 2000);
+}
+
+// ── Swipe-to-delete ──
+function initSwipe(container) {
+  container.querySelectorAll('.swipe-wrap').forEach(wrap => {
+    const inner = wrap.querySelector('.swipe-inner');
+    if (!inner) return;
+    let startX = 0, startY = 0, curX = 0, dir = 0;
+    inner.addEventListener('touchstart', e => {
+      startX = e.touches[0].clientX; startY = e.touches[0].clientY; curX = 0; dir = 0;
+    }, { passive: true });
+    inner.addEventListener('touchmove', e => {
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if (dir === 0) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) dir = Math.abs(dx) > Math.abs(dy) ? 1 : -1;
+        else return;
+      }
+      if (dir !== 1) return;
+      curX = Math.min(0, Math.max(-80, dx));
+      inner.style.transition = 'none';
+      inner.style.transform = 'translateX(' + curX + 'px)';
+    }, { passive: true });
+    inner.addEventListener('touchend', () => {
+      if (dir !== 1) { dir = 0; return; }
+      inner.style.transition = 'transform .2s';
+      inner.style.transform = curX < -40 ? 'translateX(-80px)' : 'translateX(0)';
+      dir = 0;
+    });
+  });
+}
+
+// ── Expiring tab ──
 function renderExpiring() {
   const items = _allItems
     .filter(it => { const d = daysUntil(parseExpiry(getExpiry(it))); return d !== null && d <= 7; })
@@ -904,30 +953,28 @@ function renderExpiring() {
   el.innerHTML = items.map(it => {
     const name = it.name || it.product_name || 'Unbekannt';
     const exp  = getExpiry(it);
-    const qty  = it.quantity || 1;
-    const unit = it.unit || '';
     const days = daysUntil(parseExpiry(exp));
     const cls  = days !== null && days < 0 ? 'expired' : 'expiring';
     const dayStr = days === null ? '' : days < 0
-      ? `vor ${-days} Tag${-days !== 1 ? 'en' : ''}`
-      : days === 0 ? 'heute' : `in ${days} Tag${days !== 1 ? 'en' : ''}`;
+      ? 'vor ' + (-days) + ' Tag' + (-days !== 1 ? 'en' : '')
+      : days === 0 ? 'heute' : 'in ' + days + ' Tag' + (days !== 1 ? 'en' : '');
     const lb = esc(it.labelBarcode || '');
-    return `<div class="swipe-wrap">
-      <div class="swipe-inner inv-item ${cls}" data-lb="${lb}">
-        <div class="inv-dot"></div>
-        <div class="inv-info">
-          <div class="inv-name">${esc(name)}</div>
-          <div class="inv-meta">${fmtDate(exp)} &mdash; ${dayStr}</div>
-        </div>
-        <div class="inv-qty">${fmtQty(qty, unit)}</div>
-      </div>
-      ${lb ? `<div class="swipe-del-btn" onclick="deleteItem('${lb}')">Löschen</div>` : ''}
-    </div>`;
+    return '<div class="swipe-wrap">' +
+      '<div class="swipe-inner inv-item ' + cls + '" data-lb="' + lb + '">' +
+        '<div class="inv-dot"></div>' +
+        '<div class="inv-info">' +
+          '<div class="inv-name">' + esc(name) + '</div>' +
+          '<div class="inv-meta">' + fmtDate(exp) + ' &mdash; ' + dayStr + '</div>' +
+        '</div>' +
+        '<div class="inv-qty">' + fmtQty(it.quantity || 1, it.unit || '') + '</div>' +
+      '</div>' +
+      (lb ? '<div class="swipe-del-btn" onclick="deleteItem(\'' + lb + '\')">Löschen</div>' : '') +
+    '</div>';
   }).join('');
   initSwipe(el);
 }
 
-// ── System info ───────────────────────────────────────────────
+// ── System info ──
 async function loadSysInfo() {
   try {
     const [si, dc, disp] = await Promise.all([
@@ -937,11 +984,10 @@ async function loadSysInfo() {
     ]);
     _sysInfo = si; _devCfg = dc;
     const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    // Korrekte API-Feldnamen: system-info liefert heap/uptime/ssid/…, nicht freeHeap/uptimeSec
-    setTxt('sys-ssid',     si.ssid || '-');
-    setTxt('sys-ip',       si.ip   || '-');
-    setTxt('sys-heap',     si.heap != null ? Math.round(si.heap / 1024) + ' KB frei' : '-');
-    setTxt('sys-psram',    si.psram != null ? 'PSRAM: ' + Math.round(si.psram / 1048576) + ' MB frei' : '');
+    setTxt('sys-ssid',     si.ssid   || '-');
+    setTxt('sys-ip',       si.ip     || '-');
+    setTxt('sys-heap',     si.heap   != null ? Math.round(si.heap / 1024) + ' KB frei' : '-');
+    setTxt('sys-psram',    si.psram  != null ? 'PSRAM: ' + Math.round(si.psram / 1048576) + ' MB frei' : '');
     setTxt('sys-uptime',   si.uptime || '-');
     setTxt('sys-fw',       si.firmware ? 'v' + si.firmware : '—');
     setTxt('sys-hh',       si.householdAbbr || dc.householdAbbr || '-');
@@ -949,18 +995,15 @@ async function loadSysInfo() {
     setTxt('sys-count',    (si.invCount != null ? si.invCount : _allItems.length) || '-');
     setTxt('sys-sync',     si.syncEnabled ? 'Aktiv' : 'Aus');
     setTxt('hh-abbr',      si.householdAbbr || dc.householdAbbr || '');
-    // Standby select: find closest matching option
-    const sel = document.getElementById('mob-standby');
-    const secs = disp.standby_sec ?? 300;
+    const sel  = document.getElementById('mob-standby');
+    const secs = disp.standby_sec != null ? disp.standby_sec : 300;
     let best = '300';
-    for (const opt of sel.options) {
-      if (parseInt(opt.value) === secs) { best = opt.value; break; }
-    }
+    for (const opt of sel.options) { if (parseInt(opt.value) === secs) { best = opt.value; break; } }
     sel.value = best;
   } catch(e) {}
 }
 
-// ── SD-Karten-Logs (Download) ─────────────────────────────────
+// ── SD logs ──
 async function loadSdLogs() {
   const el = document.getElementById('sd-log-list');
   if (!el) return;
@@ -968,40 +1011,32 @@ async function loadSdLogs() {
     const data  = await apiFetch('/api/logs/sd');
     const files = (data && data.files) || [];
     if (data && data.error === 'no_sd') {
-      el.innerHTML = '<div class="mgmt-empty">Keine SD-Karte eingelegt</div>';
-      return;
+      el.innerHTML = '<div class="mgmt-empty">Keine SD-Karte eingelegt</div>'; return;
     }
     if (!files.length) {
-      el.innerHTML = '<div class="mgmt-empty">Keine Logdateien vorhanden</div>';
-      return;
+      el.innerHTML = '<div class="mgmt-empty">Keine Logdateien vorhanden</div>'; return;
     }
-    // Neueste Datei zuerst (Dateiname = YYYY-MM-DD.log)
     files.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
     el.innerHTML = files.map(f => {
       const kb = f.size != null ? (f.size / 1024).toFixed(1) + ' KB' : '';
-      return `<div class="mgmt-item">
-        <div class="mgmt-item-info">
-          <div class="mgmt-item-name">${esc(f.name)}</div>
-          <div class="mgmt-item-sub">${kb}</div>
-        </div>
-        <a class="btn-danger" style="color:var(--accent)" href="/api/logs/sd/${encodeURIComponent(f.name)}" download="${esc(f.name)}">Download</a>
-      </div>`;
+      return '<div class="mgmt-item">' +
+        '<div class="mgmt-item-info"><div class="mgmt-item-name">' + esc(f.name) + '</div><div class="mgmt-item-sub">' + kb + '</div></div>' +
+        '<a class="btn-danger" style="color:var(--accent)" href="/api/logs/sd/' + encodeURIComponent(f.name) + '" download="' + esc(f.name) + '">Download</a>' +
+      '</div>';
     }).join('');
   } catch(e) {
     el.innerHTML = '<div class="mgmt-empty">Fehler beim Laden</div>';
   }
 }
 
-// ── Firmware-Update (GitHub-Releases → /api/ota-combined) ──────
+// ── OTA ──
 const OTA_REPO = 'Zendonir/ESP32_Lebensmittel_BT_Scanner';
-let _otaReleases = [];
-let _otaPollTimer = null;
 
 async function loadOtaReleases() {
   const sel = document.getElementById('ota-release');
   if (!sel) return;
   try {
-    const res = await fetch(`https://api.github.com/repos/${OTA_REPO}/releases?per_page=20`);
+    const res = await fetch('https://api.github.com/repos/' + OTA_REPO + '/releases?per_page=20');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     _otaReleases = await res.json();
     sel.innerHTML = '<option value="">Version wählen…</option>';
@@ -1009,14 +1044,13 @@ async function loadOtaReleases() {
       let d = '';
       if (rel.published_at) {
         const dt = new Date(rel.published_at);
-        d = ` · ${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`;
-        d += ` ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+        d = ' · ' + String(dt.getDate()).padStart(2,'0') + '.' + String(dt.getMonth()+1).padStart(2,'0') + '.' + dt.getFullYear();
+        d += ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
       }
-      // rel.name enthält den Release-Titel (z.B. "v1.1.0-pre1"); rel.tag_name ist der Git-Tag (z.B. "latest")
       const label = (rel.name && rel.name.trim()) ? rel.name.trim() : rel.tag_name;
       const opt = document.createElement('option');
       opt.value = rel.tag_name;
-      opt.textContent = `${rel.prerelease ? '[Vorab] ' : ''}${label}${d}`;
+      opt.textContent = (rel.prerelease ? '[Vorab] ' : '') + label + d;
       sel.appendChild(opt);
     }
   } catch(e) {
@@ -1030,11 +1064,11 @@ function onOtaSelect() {
   const btn  = document.getElementById('ota-install');
   const rel  = _otaReleases.find(r => r.tag_name === sel.value);
   if (!rel) { note.textContent = ''; btn.disabled = true; return; }
-  const fw = rel.assets?.find(a => a.name === 'firmware_ota.bin');
-  const fs = rel.assets?.find(a => a.name === 'littlefs.bin');
+  const fw = rel.assets && rel.assets.find(a => a.name === 'firmware_ota.bin');
+  const fs = rel.assets && rel.assets.find(a => a.name === 'littlefs.bin');
   if (fw) {
-    note.textContent = `firmware_ota.bin · ${(fw.size/1048576).toFixed(2)} MB`
-                     + (fs ? ` + littlefs.bin · ${(fs.size/1048576).toFixed(2)} MB` : '');
+    note.textContent = 'firmware_ota.bin · ' + (fw.size/1048576).toFixed(2) + ' MB'
+      + (fs ? ' + littlefs.bin · ' + (fs.size/1048576).toFixed(2) + ' MB' : '');
     btn.disabled = false;
   } else {
     note.textContent = 'Kein firmware_ota.bin in diesem Release';
@@ -1046,13 +1080,13 @@ async function installOta() {
   const sel = document.getElementById('ota-release');
   const rel = _otaReleases.find(r => r.tag_name === sel.value);
   if (!rel) { toast('Bitte Version wählen'); return; }
-  const fw = rel.assets?.find(a => a.name === 'firmware_ota.bin');
-  if (!fw) { toast('firmware_ota.bin fehlt'); return; }
-  const fs = rel.assets?.find(a => a.name === 'littlefs.bin');
+  const fw = rel.assets && rel.assets.find(a => a.name === 'firmware_ota.bin');
+  if (!fw)  { toast('firmware_ota.bin fehlt'); return; }
+  const fs = rel.assets && rel.assets.find(a => a.name === 'littlefs.bin');
   document.getElementById('ota-install').disabled = true;
   document.getElementById('ota-progress-wrap').hidden = false;
   document.getElementById('ota-bar').style.width = '0%';
-  document.getElementById('ota-phase').textContent = 'BLE trennen & verbinden…';
+  document.getElementById('ota-phase').textContent = 'Starte…';
   try {
     const r = await apiPost('/api/ota-combined', {
       fw: fw.browser_download_url,
@@ -1072,7 +1106,7 @@ function pollOtaProgress() {
   let idle = 0;
   _otaPollTimer = setInterval(async () => {
     try {
-      const p = await apiFetch('/api/ota-combined-progress');
+      const p   = await apiFetch('/api/ota-combined-progress');
       const bar = document.getElementById('ota-bar');
       const ph  = document.getElementById('ota-phase');
       if (p.phase) { ph.textContent = p.phase; bar.style.width = (p.pct || 0) + '%'; idle = 0; }
@@ -1094,7 +1128,6 @@ function pollOtaProgress() {
         }
       }
     } catch(e) {
-      // Verbindungsabbruch = Gerät bootet neu
       clearInterval(_otaPollTimer); _otaPollTimer = null;
       document.getElementById('ota-phase').textContent = 'Neustart – Seite lädt neu…';
       setTimeout(() => location.reload(), 10000);
@@ -1102,7 +1135,7 @@ function pollOtaProgress() {
   }, 1500);
 }
 
-// ── Aktionen ──────────────────────────────────────────────────
+// ── Actions ──
 async function restartDevice() {
   if (!confirm('Gerät jetzt neu starten?')) return;
   try {
@@ -1116,7 +1149,7 @@ async function compactInventory() {
   try {
     const r = await apiPost('/api/inventory/compact', {});
     const n = (r && r.removed != null) ? r.removed : 0;
-    toast(n > 0 ? `${n} Duplikate zusammengeführt` : 'Keine Duplikate gefunden');
+    toast(n > 0 ? n + ' Duplikate zusammengeführt' : 'Keine Duplikate gefunden');
     loadInventory();
   } catch(e) { toast('Fehler: ' + e.message); }
 }
@@ -1125,25 +1158,18 @@ async function saveStandby(val) {
   try {
     await apiPost('/api/display-config', { standby_sec: parseInt(val, 10) || 0 });
     showToast(parseInt(val) === 0 ? 'Standby deaktiviert' : 'Standby gespeichert', 1500);
-  } catch(e) {
-    showToast('Fehler: ' + e.message, 3000);
-  }
+  } catch(e) { showToast('Fehler: ' + e.message, 3000); }
 }
 
-function fmtUptime(sec) {
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
-  return `${h}h ${m}m`;
-}
-
-// ── Verwaltung: Categories ────────────────────────────────────
+// ── Templates / Vorlagen ──
 async function loadMgmt() {
   try {
     const [cats, tmpls] = await Promise.all([
       apiFetch('/api/categories'),
-      apiFetch('/api/templates')
+      apiFetch('/api/templates'),
     ]);
-    _categories = Array.isArray(cats) ? cats : (cats.categories || []);
-    _templates  = Array.isArray(tmpls) ? tmpls : (tmpls.templates || []);
+    _categories = Array.isArray(cats)  ? cats  : (cats.categories   || []);
+    _templates  = Array.isArray(tmpls) ? tmpls : (tmpls.templates   || []);
     renderTemplates();
     populateCatSelects();
   } catch(e) {
@@ -1156,82 +1182,66 @@ function populateCatSelects() {
   const addSel    = document.getElementById('tmpl-cat');
   const filterVal = filterSel.value;
   const addVal    = addSel.value;
-
   const opts = _categories.map(c => {
     const name = typeof c === 'string' ? c : (c.name || '');
-    return `<option value="${esc(name)}">${esc(name)}</option>`;
+    return '<option value="' + esc(name) + '">' + esc(name) + '</option>';
   }).join('');
-
   filterSel.innerHTML = '<option value="">Alle Kategorien</option>' + opts;
   addSel.innerHTML    = '<option value="">Kategorie wählen…</option>' + opts;
-
   if (filterVal) filterSel.value = filterVal;
   if (addVal)    addSel.value    = addVal;
 }
 
-// ── Verwaltung: Templates ─────────────────────────────────────
 function renderTemplates() {
   const el        = document.getElementById('tmpl-list');
   const filterCat = document.getElementById('tmpl-filter-cat').value;
-  const list = filterCat
-    ? _templates.filter(t => (t.category || '') === filterCat)
-    : _templates;
-
+  const list = filterCat ? _templates.filter(t => (t.category || '') === filterCat) : _templates;
   if (!list.length) {
     el.innerHTML = '<div class="mgmt-empty">Keine Vorlagen' + (filterCat ? ' in dieser Kategorie' : '') + '</div>';
     return;
   }
-
   const grouped = {};
   for (const t of list) {
     const cat = t.category || '–';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(t);
   }
-
-  el.innerHTML = Object.entries(grouped).map(([cat, items]) => `
-    <div class="section-head">${esc(cat)}</div>
-    ${items.map(t => {
+  el.innerHTML = Object.entries(grouped).map(([cat, items]) =>
+    '<div class="section-head">' + esc(cat) + '</div>' +
+    items.map(t => {
       const days   = t.defaultDays || t.shelfDays || '?';
-      const unit   = t.unit ? ` · ${esc(t.unit)}` : '';
-      // JS-sicherer String für onclick innerhalb doppelt-quotierter Attribute:
-      // Wert in einfachen Anführungszeichen übergeben, interne ' escapen
+      const unit   = t.unit ? ' · ' + esc(t.unit) : '';
       const tidQ   = (t.id || t.name || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      // CSS-sicherer Bezeichner für HTML element IDs (Sonderzeichen → _)
-      const safeId = (t.id || t.name || '').replace(/[^a-zA-Z0-9]/g, '_');
+      const safeId = (t.id || t.name || '').replace(/[^a-zA-Z0-9]/g,'_');
       const sortenBadge = t.useSorten ? ' · <span style="color:var(--accent)">Sorten</span>' : '';
-      const sortenSection = t.useSorten ? `
-        <div class="sorten-section">
-          <div class="sorten-chips">
-            ${(t.sorten || []).map(s => {
+      const sortenSection = t.useSorten ? (
+        '<div class="sorten-section">' +
+          '<div class="sorten-chips">' +
+            (t.sorten || []).map(s => {
               const sQ = s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-              return `<span class="sorte-chip">
-                ${esc(s)}
-                <button title="Löschen" onclick="deleteSorte('${tidQ}','${sQ}')">×</button>
-              </span>`;
-            }).join('')}
-            ${!(t.sorten || []).length ? '<span style="font-size:12px;color:var(--sub);font-style:italic">Noch keine Sorten – am Gerät eingeben oder hier hinzufügen</span>' : ''}
-          </div>
-          <div class="sorte-add-row">
-            <input type="text" id="sorte-input-${safeId}" placeholder="Neue Sorte…" onkeydown="if(event.key==='Enter')addSorte('${tidQ}','${safeId}')">
-            <button onclick="addSorte('${tidQ}','${safeId}')">+ Hinzufügen</button>
-          </div>
-        </div>` : '';
-      return `<div class="mgmt-item">
-      <div class="mgmt-item-info">
-        <div class="mgmt-item-name">${esc(t.name || '')}</div>
-        <div class="mgmt-item-sub">MHD: ${days} Tage${unit}${sortenBadge}</div>
-        ${sortenSection}
-      </div>
-      <button class="btn-danger" onclick="deleteTemplate('${tidQ}')">Löschen</button>
-    </div>`;
-    }).join('')}
-  `).join('');
+              return '<span class="sorte-chip">' + esc(s) + '<button title="Löschen" onclick="deleteSorte(\'' + tidQ + '\',\'' + sQ + '\')">×</button></span>';
+            }).join('') +
+            (!(t.sorten || []).length ? '<span style="font-size:12px;color:var(--sub);font-style:italic">Noch keine Sorten</span>' : '') +
+          '</div>' +
+          '<div class="sorte-add-row">' +
+            '<input type="text" id="sorte-input-' + safeId + '" placeholder="Neue Sorte…" onkeydown="if(event.key===\'Enter\')addSorte(\'' + tidQ + '\',\'' + safeId + '\')">' +
+            '<button onclick="addSorte(\'' + tidQ + '\',\'' + safeId + '\')">+ Hinzufügen</button>' +
+          '</div>' +
+        '</div>'
+      ) : '';
+      return '<div class="mgmt-item">' +
+        '<div class="mgmt-item-info">' +
+          '<div class="mgmt-item-name">' + esc(t.name || '') + '</div>' +
+          '<div class="mgmt-item-sub">MHD: ' + days + ' Tage' + unit + sortenBadge + '</div>' +
+          sortenSection +
+        '</div>' +
+        '<button class="btn-danger" onclick="deleteTemplate(\'' + tidQ + '\')">Löschen</button>' +
+      '</div>';
+    }).join('')
+  ).join('');
 }
 
-// ── Bottom-Sheet für neue Vorlage ─────────────────────────────
 function openTmplSheet() {
-  // Felder zurücksetzen
   document.getElementById('tmpl-name').value = '';
   document.getElementById('tmpl-days').value = '';
   document.getElementById('tmpl-ask-qty').checked = false;
@@ -1249,22 +1259,19 @@ function closeTmplSheet() {
   const sheet   = document.getElementById('tmpl-sheet');
   const overlay = document.getElementById('tmpl-sheet-overlay');
   sheet.style.transform = 'translateY(100%)';
-  setTimeout(() => {
-    sheet.style.display   = 'none';
-    overlay.style.display = 'none';
-  }, 300);
+  setTimeout(() => { sheet.style.display = 'none'; overlay.style.display = 'none'; }, 300);
 }
 
 async function addTemplate() {
-  const name     = document.getElementById('tmpl-name').value.trim();
-  const category = document.getElementById('tmpl-cat').value;
-  const shelfDays= parseInt(document.getElementById('tmpl-days').value, 10);
-  const askQty   = document.getElementById('tmpl-ask-qty').checked;
-  const unit     = askQty ? document.getElementById('tmpl-unit').value : '';
+  const name      = document.getElementById('tmpl-name').value.trim();
+  const category  = document.getElementById('tmpl-cat').value;
+  const shelfDays = parseInt(document.getElementById('tmpl-days').value, 10);
+  const askQty    = document.getElementById('tmpl-ask-qty').checked;
+  const unit      = askQty ? document.getElementById('tmpl-unit').value : '';
+  const useSorten = document.getElementById('tmpl-sorten').checked;
   if (!name)            { toast('Name fehlt', 2000); return; }
   if (!category)        { toast('Kategorie fehlt', 2000); return; }
   if (!(shelfDays > 0)) { toast('MHD-Tage fehlt', 2000); return; }
-  const useSorten = document.getElementById('tmpl-sorten').checked;
   const payload = { name, category, shelfDays };
   if (unit)      payload.unit      = unit;
   if (useSorten) payload.useSorten = true;
@@ -1277,9 +1284,7 @@ async function addTemplate() {
     _templates.push(newTmpl);
     renderTemplates();
     toast('Vorlage gespeichert');
-  } catch(e) {
-    toast('Fehler: ' + e.message, 3000);
-  }
+  } catch(e) { toast('Fehler: ' + e.message, 3000); }
 }
 
 async function deleteTemplate(id) {
@@ -1288,12 +1293,9 @@ async function deleteTemplate(id) {
     _templates = _templates.filter(t => (t.id || t.name) !== id);
     renderTemplates();
     toast('Vorlage gelöscht');
-  } catch(e) {
-    toast('Fehler: ' + e.message, 3000);
-  }
+  } catch(e) { toast('Fehler: ' + e.message, 3000); }
 }
 
-// ── Sorten-Verwaltung ─────────────────────────────────────────
 async function addSorte(templateId, safeId) {
   const inp = document.getElementById('sorte-input-' + safeId);
   if (!inp) return;
@@ -1301,80 +1303,60 @@ async function addSorte(templateId, safeId) {
   if (!sorte) { toast('Bitte Sorte eingeben', 2000); return; }
   try {
     await apiPost('/api/templates/sorten/add', { id: templateId, sorte });
-    // Lokal aktualisieren
     const tmpl = _templates.find(t => (t.id || t.name) === templateId);
-    if (tmpl) {
-      if (!tmpl.sorten) tmpl.sorten = [];
-      if (!tmpl.sorten.includes(sorte)) tmpl.sorten.push(sorte);
-    }
+    if (tmpl) { if (!tmpl.sorten) tmpl.sorten = []; if (!tmpl.sorten.includes(sorte)) tmpl.sorten.push(sorte); }
     inp.value = '';
     renderTemplates();
     toast('Sorte hinzugefügt');
-  } catch(e) {
-    toast('Fehler: ' + e.message, 3000);
-  }
+  } catch(e) { toast('Fehler: ' + e.message, 3000); }
 }
 
 async function deleteSorte(templateId, sorte) {
   try {
     await apiPost('/api/templates/sorten/delete', { id: templateId, sorte });
-    // Lokal aktualisieren
     const tmpl = _templates.find(t => (t.id || t.name) === templateId);
     if (tmpl && tmpl.sorten) tmpl.sorten = tmpl.sorten.filter(s => s !== sorte);
     renderTemplates();
     toast('Sorte gelöscht');
-  } catch(e) {
-    toast('Fehler: ' + e.message, 3000);
-  }
+  } catch(e) { toast('Fehler: ' + e.message, 3000); }
 }
 
-// ── HTML escape ───────────────────────────────────────────────
-function esc(s) {
-  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ── Search ────────────────────────────────────────────────────
+// ── Search ──
 document.getElementById('inv-search').addEventListener('input', function() {
   _filter = this.value.trim();
   renderInventory();
 });
 
-// ── Pull to refresh ───────────────────────────────────────────
+// ── Pull-to-refresh ──
 let _ptStart = 0;
-const content = document.getElementById('content');
-content.addEventListener('touchstart', e => { if (content.scrollTop === 0) _ptStart = e.touches[0].clientY; }, {passive:true});
-content.addEventListener('touchend', e => {
-  if (_ptStart > 0 && content.scrollTop === 0) {
-    const dy = e.changedTouches[0].clientY - _ptStart;
-    if (dy > 60) { toast('Aktualisiert'); loadInventory(); }
+const _content = document.getElementById('content');
+_content.addEventListener('touchstart', e => {
+  if (_content.scrollTop === 0) _ptStart = e.touches[0].clientY;
+}, { passive: true });
+_content.addEventListener('touchend', e => {
+  if (_ptStart > 0 && _content.scrollTop === 0 && e.changedTouches[0].clientY - _ptStart > 60) {
+    toast('Aktualisiert'); loadInventory();
   }
   _ptStart = 0;
-}, {passive:true});
+}, { passive: true });
 
-// ── Auto-refresh every 60 s ───────────────────────────────────
-// Vor Auto-Refresh ausstehende Löschungen sofort serverseitig ausführen
+// ── Auto-refresh every 60s ──
 setInterval(async () => { await _flushPendingDelete(); loadInventory(); }, 60000);
-
-// Bei Seitenverlassen ausstehende Löschungen flushen (best effort)
 window.addEventListener('pagehide', () => { _flushPendingDelete(); });
 
-// ── iPhone: Pinch-Zoom hart unterbinden ───────────────────────
-// iOS Safari ignoriert user-scalable=no/maximum-scale im Viewport-Tag.
-// Doppeltipp-Zoom ist bereits über CSS touch-action:manipulation deaktiviert,
-// Pinch-Zoom muss zusätzlich über die Gesture-Events geblockt werden.
+// ── Block pinch-zoom on iOS ──
 ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
   document.addEventListener(ev, e => e.preventDefault(), { passive: false })
 );
 
-// ── Init ──────────────────────────────────────────────────────
-// Web-UI-Version sofort anzeigen (unabhängig von API-Aufrufen)
-(function () {
+// ── Init ──
+(function() {
   const e = document.getElementById('sys-webui');
   if (e) e.textContent = WEBUI_VERSION;
   const vph = document.getElementById('sys-vph');
   const tbh = document.getElementById('sys-tabbar-h');
   if (vph) vph.textContent = window.innerHeight + ' px';
-  if (tbh) tbh.textContent = 'Tab-Leiste: ' + (document.getElementById('tabbar')?.offsetHeight ?? '?') + ' px';
+  if (tbh) tbh.textContent = 'Tab-Leiste: ' + (document.getElementById('tabbar') ? document.getElementById('tabbar').offsetHeight : '?') + ' px';
 })();
 loadInventory();
 </script>
