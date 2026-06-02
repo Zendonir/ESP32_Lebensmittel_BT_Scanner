@@ -80,7 +80,11 @@
   }
   html, body {
     height: 100%; overflow: hidden;
-    background: var(--bg); color: var(--text);
+    /* var(--surface) statt var(--bg): der Bereich unterhalb von #app (Home-
+       Indicator-Zone, ~34px) ist für fixed-Elemente in iOS nicht erreichbar –
+       body-Hintergrund muss die Farbe der Tab-Leiste tragen, damit keine
+       sichtbare Lücke entsteht. */
+    background: var(--surface); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     /* kein Gummiband-/Bounce-Effekt der ganzen Seite */
     overscroll-behavior: none;
@@ -479,7 +483,7 @@
 
 // Version dieser Web-UI (im Dateisystem-Image). Bei jedem FS-Update erhöhen –
 // so lässt sich am Gerät prüfen, ob das littlefs.bin wirklich neu geflasht wurde.
-const WEBUI_VERSION = 'pre6 (safe-bg)';
+const WEBUI_VERSION = 'pre7 (body-bg)';
 
 // ── State ──────────────────────────────────────────────────────
 let _allItems      = [];
