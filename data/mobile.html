@@ -68,7 +68,7 @@
     --yellow: #cc9218;
     --red: #f04640;
     --radius: 12px;
-    --tab-h: 74px;
+    --tab-h: 60px;
   }
   *, *::before, *::after {
     box-sizing: border-box; margin: 0; padding: 0;
@@ -116,7 +116,7 @@
      padding-bottom auf #app abgedeckt, nicht hier – Tab-Leiste ist daher genau
      var(--tab-h) hoch und immer sichtbar über dem Home-Indicator-Bereich. */
   #tabbar { flex-shrink: 0; display: flex; background: var(--surface); border-top: 1px solid var(--border); height: var(--tab-h); }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 10px; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--sub); font-size: 10px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: color .15s; -webkit-tap-highlight-color: transparent; }
   .tab-btn.active { color: var(--accent); }
   .tab-btn svg { width: 22px; height: 22px; }
   .tab-pane { display: none; padding: 12px; }
@@ -483,7 +483,7 @@
 
 // Version dieser Web-UI (im Dateisystem-Image). Bei jedem FS-Update erhöhen –
 // so lässt sich am Gerät prüfen, ob das littlefs.bin wirklich neu geflasht wurde.
-const WEBUI_VERSION = 'pre8 (tab-deep)';
+const WEBUI_VERSION = 'pre9 (tab-60)';
 
 // ── State ──────────────────────────────────────────────────────
 let _allItems      = [];
