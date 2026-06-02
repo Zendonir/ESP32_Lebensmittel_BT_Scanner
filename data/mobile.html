@@ -499,68 +499,69 @@ input, select, textarea, button { font-size: 16px; }
     </div>
   </div>
 
-  <!-- Tab bar -->
-  <nav id="tabbar">
-    <button class="tab-btn active" data-tab="inv" onclick="switchTab('inv')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/></svg>
-      INVENTAR
-    </button>
-    <button class="tab-btn" data-tab="exp" onclick="switchTab('exp')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      ABLAUFEND
-    </button>
-    <button class="tab-btn" data-tab="mgmt" onclick="switchTab('mgmt')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2z"/><path d="M7 7h.01"/></svg>
-      VORLAGEN
-    </button>
-    <button class="tab-btn" data-tab="sys" onclick="switchTab('sys')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
-      SYSTEM
-    </button>
-  </nav>
 
-  <!-- Bottom sheet: Neue Vorlage (outside #content to avoid iOS clip bug) -->
-  <div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
-  <div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-      <span style="font-weight:700;font-size:16px">Neue Vorlage</span>
-      <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+</div>
+
+<!-- Tab bar, sheets and toast are OUTSIDE #app to avoid iOS overflow:hidden clipping -->
+<nav id="tabbar">
+  <button class="tab-btn active" data-tab="inv" onclick="switchTab('inv')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/></svg>
+    INVENTAR
+  </button>
+  <button class="tab-btn" data-tab="exp" onclick="switchTab('exp')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    ABLAUFEND
+  </button>
+  <button class="tab-btn" data-tab="mgmt" onclick="switchTab('mgmt')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2z"/><path d="M7 7h.01"/></svg>
+    VORLAGEN
+  </button>
+  <button class="tab-btn" data-tab="sys" onclick="switchTab('sys')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+    SYSTEM
+  </button>
+</nav>
+
+<div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
+<div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+    <span style="font-weight:700;font-size:16px">Neue Vorlage</span>
+    <button onclick="closeTmplSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
+      style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);outline:none;width:100%">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none">
+        <option value="">Kategorie…</option>
+      </select>
+      <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;width:100%">
     </div>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <input type="text" id="tmpl-name" placeholder="Name *" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false"
-        style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);outline:none;width:100%">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <select id="tmpl-cat" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none">
-          <option value="">Kategorie…</option>
-        </select>
-        <input type="number" id="tmpl-days" placeholder="MHD-Tage" min="1" max="3650"
-          style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;width:100%">
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;font-size:14px">
-        <label class="toggle">
-          <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
-          <span class="slider"></span>
-        </label>
-        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
-      </div>
-      <div id="tmpl-unit-row" style="display:none">
-        <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none">
-          <option value="St.">Stück (St.)</option>
-          <option value="Port.">Portionen (Port.)</option>
-          <option value="g">Gramm (g)</option>
-          <option value="ml">Milliliter (ml)</option>
-          <option value="kg">Kilogramm (kg)</option>
-        </select>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;font-size:14px">
-        <label class="toggle">
-          <input type="checkbox" id="tmpl-sorten">
-          <span class="slider"></span>
-        </label>
-        <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl</span>
-      </div>
-      <button class="btn btn-primary btn-block" style="margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
+    <div style="display:flex;align-items:center;gap:10px;font-size:14px">
+      <label class="toggle">
+        <input type="checkbox" id="tmpl-ask-qty" onchange="document.getElementById('tmpl-unit-row').style.display=this.checked?'block':'none'">
+        <span class="slider"></span>
+      </label>
+      <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-ask-qty');c.checked=!c.checked;c.dispatchEvent(new Event('change'))">Menge abfragen</span>
     </div>
+    <div id="tmpl-unit-row" style="display:none">
+      <select id="tmpl-unit" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);outline:none;-webkit-appearance:none">
+        <option value="St.">Stück (St.)</option>
+        <option value="Port.">Portionen (Port.)</option>
+        <option value="g">Gramm (g)</option>
+        <option value="ml">Milliliter (ml)</option>
+        <option value="kg">Kilogramm (kg)</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;font-size:14px">
+      <label class="toggle">
+        <input type="checkbox" id="tmpl-sorten">
+        <span class="slider"></span>
+      </label>
+      <span style="cursor:pointer" onclick="var c=document.getElementById('tmpl-sorten');c.checked=!c.checked">Sorten-Auswahl</span>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:6px" onclick="addTemplate()">Vorlage speichern</button>
   </div>
 </div>
 
@@ -569,7 +570,7 @@ input, select, textarea, button { font-size: 16px; }
 <script>
 'use strict';
 
-const WEBUI_VERSION = 'pre12 (rebuild)';
+const WEBUI_VERSION = 'pre13';
 
 // ── State ──
 let _allItems      = [];
