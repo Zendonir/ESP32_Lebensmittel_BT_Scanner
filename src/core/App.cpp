@@ -1951,6 +1951,11 @@ bool App::formatDateDraft(String &formatted) const {
 bool App::finishStorageWorkflow() {
     state.setState(AppState::PRINTING);
 
+    // Sofortiges Feedback: der Drucker braucht einige Sekunden bis er anläuft,
+    // dieser Ton bestätigt direkt, dass die Eingabe angenommen wurde und der
+    // Druck startet (Erfolgs-/Fehlerton folgt am Ende des Vorgangs).
+    audio_obj.playTone(784, 70);
+
     const int qty  = (_pendingQuantity > 0) ? _pendingQuantity : 1;
     const String name = _pendingProduct.name.isEmpty() ? "Lebensmittel" : _pendingProduct.name;
     int storedCount = 0;
@@ -1968,6 +1973,7 @@ bool App::finishStorageWorkflow() {
         item.category     = isTemplate
                                 ? (_selectedCategory.isEmpty() ? "Vorlage" : _selectedCategory)
                                 : "Barcode";
+        item.subcategory  = isTemplate ? _selectedSorte : "";
         item.expiryDate   = _pendingExpiryDate;
         item.addedDate    = isoToDMY(time_manager.today());
         item.quantity     = isTemplate ? _pendingAmount : 1;
@@ -1982,6 +1988,7 @@ bool App::finishStorageWorkflow() {
             sdoc["name"]         = item.name;
             sdoc["brand"]        = item.brand;
             sdoc["category"]     = item.category;
+            sdoc["subcategory"]  = item.subcategory;
             sdoc["expiryDate"]   = item.expiryDate;
             sdoc["addedDate"]    = item.addedDate;
             sdoc["quantity"]     = item.quantity;

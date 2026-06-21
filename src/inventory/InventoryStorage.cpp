@@ -20,6 +20,7 @@ bool InventoryStorage::load(std::vector<InventoryItem> &items) {
         item.name = obj["name"] | "";
         item.brand = obj["brand"] | "";
         item.category = obj["category"] | "";
+        item.subcategory = obj["subcategory"] | "";
         item.expiryDate = normDate(obj["expiryDate"] | "");
         item.addedDate  = normDate(obj["addedDate"]  | "");
         item.quantity     = obj["quantity"]     | 0;
@@ -40,6 +41,7 @@ bool InventoryStorage::save(const std::vector<InventoryItem> &items) {
         obj["name"] = item.name;
         obj["brand"] = item.brand;
         obj["category"] = item.category;
+        obj["subcategory"] = item.subcategory;
         obj["expiryDate"] = item.expiryDate;
         obj["addedDate"] = item.addedDate;
         obj["quantity"]     = item.quantity;
@@ -62,6 +64,7 @@ bool InventoryStorage::loadRemoved(std::vector<RemovedItem> &items) {
         ri.item.name           = obj["name"]       | "";
         ri.item.brand          = obj["brand"]      | "";
         ri.item.category       = obj["category"]   | "";
+        ri.item.subcategory    = obj["subcategory"] | "";
         ri.item.expiryDate     = normDate(obj["expiryDate"] | "");
         ri.item.addedDate      = normDate(obj["addedDate"]  | "");
         ri.item.quantity       = obj["quantity"]     | 0;
@@ -83,6 +86,7 @@ bool InventoryStorage::saveRemoved(const std::vector<RemovedItem> &items) {
         obj["name"]         = ri.item.name;
         obj["brand"]        = ri.item.brand;
         obj["category"]     = ri.item.category;
+        obj["subcategory"]  = ri.item.subcategory;
         obj["expiryDate"]   = ri.item.expiryDate;
         obj["addedDate"]    = ri.item.addedDate;
         obj["quantity"]     = ri.item.quantity;

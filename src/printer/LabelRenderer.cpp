@@ -28,6 +28,11 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
         delay((uint32_t)preFeedLines * 60);
     }
 
+    // Throttle: nach jeder Zeile den UART leeren und dem Drucker kurz Zeit zum
+    // mechanischen Verarbeiten geben. Ohne diese Pause läuft bei diesem Drucker
+    // der kleine Empfangspuffer über und es erscheinen komische Zeichen.
+    auto settle = [&]() { printer.flush(); delay(15); };
+
     // ── Product name: bold, double-height (~5 mm), 2-space indent ───────────────
     String name = item.name.isEmpty() ? "Unbekanntes Produkt" : item.name;
     if (name.length() > (size_t)(W - 2)) name = name.substring(0, W - 2);
@@ -36,6 +41,7 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     printer.println("  " + name);
     printer.setBold(false);
     printer.setDoubleHeight(false);
+    settle();
 
     // ── Field rows: 2-space indent, bold key, plain value ────────────────────────
     auto row = [&](const char *label, const String &value) {
@@ -46,7 +52,20 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
         printer.writeText(label);
         printer.setBold(false);
         printer.println(val);
+        settle();
     };
+
+    // ── Haupt-/Unterkategorie kombiniert ("Getränke / Apfel") ───────────────────
+    // Platzhalter "Barcode" (Scan-Workflow ohne Vorlage) nicht als Kategorie drucken.
+    String catLine;
+    if (!item.category.isEmpty() && item.category != "Barcode")
+        catLine = item.category;
+    if (!item.subcategory.isEmpty()) {
+        if (!catLine.isEmpty()) catLine += " / ";
+        catLine += item.subcategory;
+    }
+    if (!catLine.isEmpty())
+        row("  Kategorie:   ", catLine);
 
     row("  Einlagerung: ", item.addedDate);
     row("  MHD:         ", item.expiryDate);
@@ -55,6 +74,7 @@ bool LabelRenderer::printInventoryLabel(const InventoryItem &item) {
     row("  Haushalt:    ", device_config.getHousehold());
 
     // ── Code 128 barcode, no HRI text ────────────────────────────────────────
+    settle();   // Textstrom vollständig leeren, bevor der Barcode-Befehl folgt
     printer.barcodeHeight(60);
     printer.barcodeWidth(2);
     printer.barcodeHRI(0);
