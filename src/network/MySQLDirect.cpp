@@ -1,6 +1,7 @@
 #include "MySQLDirect.h"
 #include <mbedtls/sha1.h>
 #include <string.h>
+#include <new>
 
 // ---------- SHA1 + native-password -----------------------------------------
 
@@ -216,7 +217,9 @@ uint64_t MySQLDirect::lenencInt(const uint8_t *buf, size_t bufLen, size_t &pos) 
 bool MySQLDirect::execute(const String &sql) {
     _lastError = ""; _seq = 0;
     size_t sLen = sql.length();
-    uint8_t *pkt = new uint8_t[1 + sLen];
+    // nothrow: bei fragmentiertem Heap Fehler melden statt abort() im new-Handler
+    uint8_t *pkt = new (std::nothrow) uint8_t[1 + sLen];
+    if (!pkt) { _lastError = "out of memory"; return false; }
     pkt[0] = 0x03;   // COM_QUERY
     memcpy(pkt + 1, sql.c_str(), sLen);
     sendPacket(pkt, 1 + sLen);
@@ -234,7 +237,8 @@ bool MySQLDirect::queryRows(const String &sql,
 
     // Send COM_QUERY
     size_t sLen = sql.length();
-    uint8_t *pkt = new uint8_t[1 + sLen];
+    uint8_t *pkt = new (std::nothrow) uint8_t[1 + sLen];
+    if (!pkt) { _lastError = "out of memory"; return false; }
     pkt[0] = 0x03;
     memcpy(pkt + 1, sql.c_str(), sLen);
     sendPacket(pkt, 1 + sLen);
@@ -275,7 +279,8 @@ bool MySQLDirect::queryRows(const String &sql,
 
     // Read row packets until EOF (first byte 0xFE, length < 9)
     constexpr size_t ROW_BUF_SIZE = 2048;
-    uint8_t *rowBuf = new uint8_t[ROW_BUF_SIZE];
+    uint8_t *rowBuf = new (std::nothrow) uint8_t[ROW_BUF_SIZE];
+    if (!rowBuf) { _lastError = "out of memory"; return false; }
 
     while (out.size() < maxRows) {
         size_t rowLen = 0;

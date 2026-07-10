@@ -70,9 +70,11 @@ public:
     }
     // ---------------------------------------------------------------------------
 
-    // 48 h recently-removed buffer
-    const InventoryItem *findRecent(const String &barcode) const;
-    const InventoryItem *findRecentByLabel(const String &labelBarcode) const;
+    // 48 h recently-removed buffer.
+    // Copy-out semantics: a returned pointer into _recentlyRemoved would dangle
+    // as soon as the lock is released and another task (web) mutates the buffer.
+    bool findRecent(const String &barcode, InventoryItem &out) const;
+    bool findRecentByLabel(const String &labelBarcode, InventoryItem &out) const;
     bool                 restoreByLabel(const String &labelBarcode, const InventoryItem &restored);
     void pruneOldRemoved();
 

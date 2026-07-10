@@ -54,6 +54,10 @@ void App::begin() {
         }
     }
 
+    // Publikations-Mutex für asynchrone Fetch-/Haushalts-Tasks — muss vor dem
+    // ersten xTaskCreate existieren.
+    if (!_taskMutex) _taskMutex = xSemaphoreCreateMutex();
+
     Logger::begin(115200);
     // Suppress ESP-IDF internal log output on UART0 (GPIO43 = printer TX).
     // esp_log uses UART0 by default; only errors are critical enough to keep.
@@ -247,10 +251,18 @@ void App::loop() {
         }
     }
 
-    if (Serial.available()) {
-        String command = Serial.readStringUntil('\n');
-        command.trim();
-        handleSerialCommand(command);
+    // Serielle Kommandos nicht-blockierend einsammeln. readStringUntil('\n')
+    // würde bei Bytes ohne Zeilenende (z.B. Leitungsrauschen auf UART0) bis zu
+    // 1 s im Timeout hängen und die UI-Schleife einfrieren.
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == '\n' || c == '\r') {
+            _serialLine.trim();
+            if (!_serialLine.isEmpty()) handleSerialCommand(_serialLine);
+            _serialLine = "";
+        } else if (_serialLine.length() < 128) {
+            _serialLine += c;
+        }
     }
 
     time_manager.loop();
@@ -1142,14 +1154,21 @@ void App::processOnscreenAction(OnscreenAction action) {
                 }
             }
         } else if (workflow == WorkflowMode::HH_LIST) {
-            if (idx >= 0 && idx < (int)_householdList.size()) {
+            if (idx >= 0 && idx < (int)_householdList.size() && !_hhTaskRunning) {
                 audio_obj.playClickTone();
+                xSemaphoreTake(_taskMutex, portMAX_DELAY);
                 _browseHousehold = _householdList[idx];
                 _hhItemsFetchDone = false;
                 _browsedItems.clear();
+                xSemaphoreGive(_taskMutex);
                 workflow = WorkflowMode::HH_BROWSE;
                 display_obj.showFetchingProduct("Lade " + _browseHousehold);
-                xTaskCreatePinnedToCore(hhItemsTaskFn, "hh_items", 6144, this, 5, &_hhTaskHandle, 0);
+                _hhTaskRunning = true;
+                if (xTaskCreatePinnedToCore(hhItemsTaskFn, "hh_items", 6144, this, 5, nullptr, 0) != pdPASS) {
+                    _hhTaskRunning = false;
+                    workflow = WorkflowMode::HOME;
+                    renderActiveTab("Fehler: Task-Start", true);
+                }
             }
             return;
         } else if (workflow == WorkflowMode::LOCATION_SELECT) {
@@ -1217,8 +1236,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invExpandedGroup = "";
             _invScrollOffset = 0;
             _invExpireDays = 0;
-            _browseHousehold = "";
-            _browsedItems.clear();
+            resetHouseholdBrowse();
             display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), _invExpandedGroup, 0, _invSortMode);
             _lastUiRefreshMs = millis();
@@ -1231,8 +1249,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invExpandedGroup = "";
             _invScrollOffset = 0;
             _invExpireDays = 7;
-            _browseHousehold = "";
-            _browsedItems.clear();
+            resetHouseholdBrowse();
             display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), "", 0, _invSortMode);
             _lastUiRefreshMs = millis();
@@ -1245,8 +1262,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             _invExpandedGroup = "";
             _invScrollOffset = 0;
             _invExpireDays = 3;
-            _browseHousehold = "";
-            _browsedItems.clear();
+            resetHouseholdBrowse();
             display_obj.showInventoryList(inventoryDisplayItems(), "",
                                           device_config.getHouseholdAbbr(), "", 0, _invSortMode);
             _lastUiRefreshMs = millis();
@@ -1260,8 +1276,7 @@ void App::processOnscreenAction(OnscreenAction action) {
                 audio_obj.playClickTone();
                 if (!_browseHousehold.isEmpty()) {
                     // Currently browsing → return to own household
-                    _browseHousehold = "";
-                    _browsedItems.clear();
+                    resetHouseholdBrowse();
                     _invScrollOffset = 0;
                     _invExpandedGroup = "";
                     workflow = WorkflowMode::HOME;
@@ -1269,13 +1284,17 @@ void App::processOnscreenAction(OnscreenAction action) {
                 } else if (!sync_manager.hasConfig() || !wifi_manager.isConnected()) {
                     _statusMessage = "Kein MySQL konfiguriert";
                     renderActiveTab(_statusMessage);
-                } else if (_hhTaskHandle == nullptr) {
+                } else if (!_hhTaskRunning) {
                     // Start household list fetch
-                    _hhListFetchDone = false;
-                    _householdList.clear();
+                    resetHouseholdBrowse();
                     workflow = WorkflowMode::HH_LIST;
                     display_obj.showFetchingProduct("Lade Haushalte...");
-                    xTaskCreatePinnedToCore(hhListTaskFn, "hh_list", 6144, this, 5, &_hhTaskHandle, 0);
+                    _hhTaskRunning = true;
+                    if (xTaskCreatePinnedToCore(hhListTaskFn, "hh_list", 6144, this, 5, nullptr, 0) != pdPASS) {
+                        _hhTaskRunning = false;
+                        workflow = WorkflowMode::HOME;
+                        renderActiveTab("Fehler: Task-Start", true);
+                    }
                 }
             }
             break;
@@ -1443,11 +1462,7 @@ void App::processOnscreenAction(OnscreenAction action) {
             break;
         case OnscreenAction::CANCEL:
             if (workflow == WorkflowMode::HH_LIST || workflow == WorkflowMode::HH_BROWSE) {
-                _browseHousehold = "";
-                _browsedItems.clear();
-                _householdList.clear();
-                _hhListFetchDone = false;
-                _hhItemsFetchDone = false;
+                resetHouseholdBrowse();
                 workflow = WorkflowMode::HOME;
                 _activeTab = UiTab::INVENTORY;
                 renderActiveTab("", true);
@@ -1711,9 +1726,8 @@ void App::handleScan(const ScanResult &scan) {
 
         // Re-scan of a recently removed label → restore to inventory at current location
         if (!inventory.hasLabel(scan.code)) {
-            const InventoryItem *recent = inventory.findRecentByLabel(scan.code);
-            if (recent) {
-                InventoryItem restored  = *recent;
+            InventoryItem restored;
+            if (inventory.findRecentByLabel(scan.code, restored)) {
                 restored.location       = device_config.getActiveLocation();
                 bool ok = inventory.restoreByLabel(scan.code, restored);
                 audio_obj.playSuccessTone();
@@ -1819,29 +1833,67 @@ void App::fetchTaskFn(void *param) {
     // Only publish results if we are still the current fetch. If the main loop
     // gave up on us (timeout → epoch bumped) and possibly started a new fetch,
     // writing _fetchedProduct/_fetchDone/_fetchTaskHandle here would clobber it.
+    // Epoch check + publish under _taskMutex: the timeout path bumps the epoch
+    // and reads _fetchedProduct under the same mutex, so a task that passed the
+    // check can never write Strings the main loop is concurrently copying.
+    xSemaphoreTake(self->_taskMutex, portMAX_DELAY);
     if (self->_fetchEpoch == myEpoch) {
         self->_fetchedProduct  = product;
         self->_fetchOk         = ok;
         self->_fetchTaskHandle = nullptr;   // clear before signalling done
         self->_fetchDone       = true;
     }
+    xSemaphoreGive(self->_taskMutex);
     vTaskDelete(nullptr);
 }
 
 /* static */ void App::hhListTaskFn(void *arg) {
     App *self = static_cast<App *>(arg);
-    self->_householdList = sync_manager.getHouseholds(device_config.getHousehold());
-    self->_hhListFetchDone = true;
-    self->_hhTaskHandle = nullptr;
+    uint32_t myEpoch = self->_hhEpoch;
+    auto list = sync_manager.getHouseholds(device_config.getHousehold());
+    xSemaphoreTake(self->_taskMutex, portMAX_DELAY);
+    if (self->_hhEpoch == myEpoch) {   // stale after cancel → discard silently
+        self->_householdList   = std::move(list);
+        self->_hhListFetchDone = true;
+    }
+    xSemaphoreGive(self->_taskMutex);
+    self->_hhTaskRunning = false;   // last action — gates the next task start
     vTaskDelete(nullptr);
 }
 
 /* static */ void App::hhItemsTaskFn(void *arg) {
     App *self = static_cast<App *>(arg);
-    self->_browsedItems = sync_manager.pullInventory(self->_browseHousehold, "");
-    self->_hhItemsFetchDone = true;
-    self->_hhTaskHandle = nullptr;
+    // Snapshot inputs under the mutex — resetHouseholdBrowse() may clear
+    // _browseHousehold (a String) from Core 1 while we run on Core 0.
+    xSemaphoreTake(self->_taskMutex, portMAX_DELAY);
+    uint32_t myEpoch = self->_hhEpoch;
+    String hh = self->_browseHousehold;
+    xSemaphoreGive(self->_taskMutex);
+
+    auto items = sync_manager.pullInventory(hh, "");
+
+    xSemaphoreTake(self->_taskMutex, portMAX_DELAY);
+    if (self->_hhEpoch == myEpoch) {
+        self->_browsedItems     = std::move(items);
+        self->_hhItemsFetchDone = true;
+    }
+    xSemaphoreGive(self->_taskMutex);
+    self->_hhTaskRunning = false;
     vTaskDelete(nullptr);
+}
+
+// Bricht laufende Haushalts-Fetches ab (Epoch-Bump → Task verwirft Ergebnis)
+// und setzt den Browse-Zustand zurück. Alle Zugriffe unter _taskMutex, damit
+// clear() nie parallel zum publish des Tasks auf Core 0 läuft.
+void App::resetHouseholdBrowse() {
+    xSemaphoreTake(_taskMutex, portMAX_DELAY);
+    _hhEpoch++;
+    _browseHousehold = "";
+    _browsedItems.clear();
+    _householdList.clear();
+    _hhListFetchDone  = false;
+    _hhItemsFetchDone = false;
+    xSemaphoreGive(_taskMutex);
 }
 
 void App::processWorkflow() {
@@ -1898,10 +1950,14 @@ void App::processWorkflow() {
             // the TLS context and can corrupt mbedTLS state. Instead bump the epoch
             // so the task discards its result and self-deletes when it returns
             // (bounded by ApiClient's connect/read timeouts).
+            // Under _taskMutex: a task that already passed its epoch check
+            // finishes publishing before we bump — never mid-write.
+            xSemaphoreTake(_taskMutex, portMAX_DELAY);
             _fetchEpoch++;
             _fetchTaskHandle = nullptr;
             _fetchDone = true;
             _fetchOk   = false;
+            xSemaphoreGive(_taskMutex);
         } else {
             return; // Still fetching – keep rendering
         }

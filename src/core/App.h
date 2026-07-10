@@ -6,6 +6,7 @@
 #include <vector>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include "display.h"
 #include "AppStateManager.h"
 #include "../models/ProductTemplate.h"
@@ -170,6 +171,12 @@ private:
     volatile uint32_t _fetchEpoch    = 0;   // bumped on each start/abort; stale tasks self-discard
     static constexpr uint32_t FETCH_TIMEOUT_MS = 30000;
 
+    // Guards result publication of fetch/household tasks (Core 0) against the
+    // UI loop (Core 1): epoch bump + read/clear of the shared result members
+    // happen under this mutex so an abandoned task can never write into a
+    // String/vector the main loop is concurrently reading or clearing.
+    SemaphoreHandle_t _taskMutex = nullptr;
+
     // Template workflow state
     std::vector<ProductTemplate> _templates;
     String   _selectedCategory;
@@ -266,10 +273,18 @@ private:
     std::vector<String> _householdList;           // available other households from MySQL
     volatile bool _hhListFetchDone  = false;
     volatile bool _hhItemsFetchDone = false;
-    TaskHandle_t  _hhTaskHandle     = nullptr;
+    // Set by the main loop BEFORE task creation, cleared by the task as its last
+    // action. A task handle written by xTaskCreate would race with a fast task
+    // clearing it (handle stuck non-null → feature dead until reboot).
+    volatile bool _hhTaskRunning    = false;
+    volatile uint32_t _hhEpoch      = 0;   // bumped on cancel/reset; stale tasks self-discard
 
     static void hhListTaskFn(void *param);
     static void hhItemsTaskFn(void *param);
+    void resetHouseholdBrowse();   // epoch bump + clear browse state (under _taskMutex)
+
+    // Serial command line assembly (non-blocking, replaces readStringUntil)
+    String _serialLine;
 };
 
 extern App app;

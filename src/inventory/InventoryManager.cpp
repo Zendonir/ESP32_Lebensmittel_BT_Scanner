@@ -99,28 +99,28 @@ bool InventoryManager::hasLabel(const String &labelBarcode) const {
     return false;
 }
 
-const InventoryItem *InventoryManager::findRecent(const String &barcode) const {
+bool InventoryManager::findRecent(const String &barcode, InventoryItem &out) const {
     InvLock lk(_mutex);
     time_t now = time(nullptr);
     for (const RemovedItem &ri : _recentlyRemoved) {
         if (ri.item.barcode == barcode) {
             time_t age = now - ri.removedAt;
-            if (age >= 0 && age < REMOVED_TTL_SECS) return &ri.item;
+            if (age >= 0 && age < REMOVED_TTL_SECS) { out = ri.item; return true; }
         }
     }
-    return nullptr;
+    return false;
 }
 
-const InventoryItem *InventoryManager::findRecentByLabel(const String &labelBarcode) const {
+bool InventoryManager::findRecentByLabel(const String &labelBarcode, InventoryItem &out) const {
     InvLock lk(_mutex);
     time_t now = time(nullptr);
     for (const RemovedItem &ri : _recentlyRemoved) {
         if (ri.item.labelBarcode == labelBarcode) {
             time_t age = now - ri.removedAt;          // honour the 48h-Vertrag
-            if (age >= 0 && age < REMOVED_TTL_SECS) return &ri.item;
+            if (age >= 0 && age < REMOVED_TTL_SECS) { out = ri.item; return true; }
         }
     }
-    return nullptr;
+    return false;
 }
 
 bool InventoryManager::restoreByLabel(const String &labelBarcode, const InventoryItem &restored) {
