@@ -320,6 +320,33 @@ struct OtaComboState {
 };
 static OtaComboState _otaCombo;
 
+// True solange irgendein OTA-Download läuft (kombiniert, Firmware- oder FS-URL).
+static bool _otaBusy() {
+    return (_otaCombo.active && !_otaCombo.done) || !_otaUrlDone || !_otaFsDone;
+}
+
+// RAM-hungrige API-Endpunkte (MySQL, BLE-Scan, Log-Dumps) während OTA ablehnen:
+// jede MySQL-Verbindung / jeder große String-Aufbau nimmt genau den internen
+// SRAM weg, den der TLS-Handshake des Firmware-Downloads braucht (beobachtet:
+// getHouseholds parallel zum Firmware-GET → TLS Fehler -5 bei ~6 KB internal).
+// Gibt true zurück, wenn die Anfrage abgewiesen wurde.
+static bool _otaGuard(AsyncWebServerRequest *req) {
+    if (!_otaBusy()) return false;
+    req->send(503, "application/json", "{\"ok\":false,\"error\":\"OTA laeuft\"}");
+    return true;
+}
+
+// Wartet bis der interne Heap nach einer TLS-/Download-Phase wieder einen
+// ausreichend großen zusammenhängenden Block hat (TCP-Puffer geben nur
+// verzögert frei). Bricht spätestens nach maxWaitMs ab.
+static void _otaWaitInternalHeap(size_t minLargest, uint32_t maxWaitMs) {
+    uint32_t start = millis();
+    while (millis() - start < maxWaitMs
+           && heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) < minLargest) {
+        delay(250);
+    }
+}
+
 // Lädt eine URL via HTTPS (folgt bis zu 3 Redirects) und flasht das
 // Ergebnis in den angegebenen OTA-Slot. Nutzt scoped WiFiClientSecure-
 // Objekte damit die TLS-Resourcen nach jedem Hop/Phase freigegeben werden.
@@ -465,14 +492,30 @@ static void otaCombinedTask(void *param) {
             _otaCombo.done = true; _otaCombo.active = false;
             vTaskDelete(nullptr); return;
         }
-        // Kurz warten damit der TCP-Stack alle Puffer freigibt
-        delay(500);
+        // Warten bis TCP-Stack/lwIP die Puffer der ersten TLS-Verbindung
+        // freigegeben haben — ein fixes delay(500) reichte nicht (beobachtet:
+        // nur ~15 KB internal nach Web-UI-Phase → Firmware-TLS scheiterte).
+        _otaWaitInternalHeap(24 * 1024, 10000);
         Logger::info("OTA", String("Internal nach Web-UI: ")
-            + heap_caps_get_free_size(MALLOC_CAP_INTERNAL) + " bytes");
+            + heap_caps_get_free_size(MALLOC_CAP_INTERNAL) + " bytes (größter Block "
+            + heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) + ")");
     }
 
-    // ── Schritt 3: Firmware ───────────────────────────────────────────
-    bool fwOk = _otaDownloadFlash(fwUrl, U_FLASH, "Firmware", 50, 50);
+    // ── Schritt 3: Firmware (mit bis zu 3 Versuchen) ──────────────────
+    // Ein TLS-Verbindungsfehler ist meist transient (Heap noch nicht erholt,
+    // GitHub-CDN). Zwischen den Versuchen Update-Reste verwerfen und auf
+    // Heap-Erholung warten statt sofort aufzugeben.
+    bool fwOk = false;
+    for (int attempt = 1; attempt <= 3 && !fwOk; attempt++) {
+        if (attempt > 1) {
+            Logger::warn("OTA", String("Firmware-Versuch ") + attempt + "/3");
+            snprintf(_otaCombo.phase, sizeof(_otaCombo.phase),
+                     "Firmware: Versuch %d/3", attempt);
+            Update.abort();   // Reste eines abgebrochenen Versuchs verwerfen
+            _otaWaitInternalHeap(24 * 1024, 8000);
+        }
+        fwOk = _otaDownloadFlash(fwUrl, U_FLASH, "Firmware", 50, 50);
+    }
     if (fwOk) {
         strncpy(_otaCombo.phase, "Neustart...", sizeof(_otaCombo.phase) - 1);
         _otaCombo.pct = 100;
@@ -1109,6 +1152,7 @@ void WebInterface::registerApiRoutes() {
 
     // ---- HOUSEHOLDS (GET) ----
     _server.on("/api/households", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;   // MySQL-Verbindung würde OTA-TLS das RAM stehlen
         JsonDocument doc;
         JsonArray arr = doc.to<JsonArray>();
         arr.add(device_config.getHousehold());  // own household always first
@@ -1121,6 +1165,7 @@ void WebInterface::registerApiRoutes() {
 
     // ---- INVENTORY (GET) ----
     _server.on("/api/inventory", HTTP_GET, [this](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;   // Fremd-Haushalt zieht via MySQL → RAM schonen
         // Determine which household to serve
         String hh = device_config.getHousehold();
         if (req->hasParam("household")) {
@@ -1653,6 +1698,7 @@ void WebInterface::registerApiRoutes() {
     // ESPAsyncWebServer uses prefix matching — POST /api/server-sync would otherwise
     // intercept /api/server-sync/setup, /api/server-sync/test etc.
     _server.on("/api/server-sync/test", HTTP_POST, [](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;
         String msg;
         bool ok = sync_manager.testConnection(msg);
         JsonDocument doc;
@@ -2057,6 +2103,7 @@ void WebInterface::registerApiRoutes() {
 
     _server.on("/api/buzzer-test",          HTTP_POST, stub("{\"ok\":true}"));
     _server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;   // großer JSON-String frisst internen Heap
         String json;
         Logger::getLogJson(json);
         req->send(200, "application/json", json);
@@ -2068,6 +2115,7 @@ void WebInterface::registerApiRoutes() {
 
     // List SD log files
     _server.on("/api/logs/sd", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;
         if (!AppFS::sdAvailable()) {
             req->send(200, "application/json", "{\"error\":\"no_sd\",\"files\":[]}");
             return;
@@ -2099,6 +2147,7 @@ void WebInterface::registerApiRoutes() {
 
     // Download a specific SD log file: GET /api/logs/sd/2026-05-22.log
     _server.on("/api/logs/sd/*", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;
         if (!AppFS::sdAvailable()) {
             req->send(503, "text/plain", "No SD card");
             return;
@@ -2124,6 +2173,7 @@ void WebInterface::registerApiRoutes() {
     });
 
     _server.on("/api/scanner/ble-scan", HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (_otaGuard(req)) return;   // BLE-Discovery würde OTA RAM + Funkzeit stehlen
         portENTER_CRITICAL(&_bleScanMux);
         int state = _bleScanState;
         portEXIT_CRITICAL(&_bleScanMux);
