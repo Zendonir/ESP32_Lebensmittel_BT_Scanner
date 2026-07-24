@@ -309,6 +309,22 @@ function fmtQty(qty, unit) {
   return qty + 'x';
 }
 
+// Gruppenschlüssel fürs Inventar: gleicher Name unter verschiedenen Kategorien
+// (z.B. "Filet" unter Geflügel UND Schwein) darf nicht zusammengeworfen werden.
+// U+001F (Unit Separator) kommt in normalem Text nicht vor.
+function invGroupKey(it) {
+  return (it.name || it.barcode || '?') + '\u001F' + (it.category || '') + '\u001F' + (it.subcategory || '');
+}
+
+// Anzeige-Label "Kategorie / Sorte"; interne Platzhalter ("Barcode", "Vorlage") ausblenden
+function invCatLabel(it) {
+  let c = it.category || '';
+  if (c === 'Barcode' || c === 'Vorlage') c = '';
+  const s = it.subcategory || '';
+  if (!c) return s;
+  return s ? c + ' / ' + s : c;
+}
+
 function rgb16ToHex(color565) {
   const r = ((color565 >> 11) & 0x1F) << 3;
   const g = ((color565 >> 5)  & 0x3F) << 2;
@@ -414,7 +430,7 @@ Pages.dashboard = {
           <div class="item-row">
             <div>
               <div class="item-row-name">${esc(i.name)}</div>
-              <div class="item-row-sub">${esc(i.category || '—')}</div>
+              <div class="item-row-sub">${esc(invCatLabel(i) || '—')}</div>
             </div>
             <div>${expiryBadge(daysUntil(i.expiryDate))}</div>
           </div>`).join('')
@@ -554,7 +570,9 @@ Pages.inventory = {
         i.brand?.toLowerCase().includes(q) ||
         i.barcode?.includes(q) ||
         i.location?.toLowerCase().includes(q) ||
-        i.household?.toLowerCase().includes(q);
+        i.household?.toLowerCase().includes(q) ||
+        i.category?.toLowerCase().includes(q) ||
+        i.subcategory?.toLowerCase().includes(q);
       const matchC = !cat || i.category === cat;
       const matchL = !loc || i.location === loc;
       const d = daysUntil(i.expiryDate);
@@ -588,10 +606,11 @@ Pages.inventory = {
     }
     empty.hidden = true;
 
-    // Build groups by name
+    // Build groups by name + Kategorie + Sorte (invGroupKey) — "Filet" unter
+    // Geflügel und "Filet" unter Schwein bleiben getrennte Gruppen.
     const groupMap = new Map();
     for (const i of items) {
-      const key = i.name || i.barcode || '?';
+      const key = invGroupKey(i);
       if (!groupMap.has(key)) groupMap.set(key, []);
       groupMap.get(key).push(i);
     }
@@ -602,9 +621,14 @@ Pages.inventory = {
       const iso = toIsoDate(s);
       return iso ? parseInt(iso.replace(/-/g, '')) : 99999999;
     };
-    const sortedGroups = [...groupMap.entries()].map(([name, members]) => {
+    const sortedGroups = [...groupMap.values()].map(members => {
       members.sort((a, b) => dmyToInt(getExpiry(a)) - dmyToInt(getExpiry(b)));
-      return { name, members, earliest: getExpiry(members[0]) };
+      return {
+        name: members[0].name || members[0].barcode || '?',
+        cat: invCatLabel(members[0]),
+        members,
+        earliest: getExpiry(members[0]),
+      };
     }).sort((a, b) => dmyToInt(a.earliest) - dmyToInt(b.earliest));
 
     const hhAbbr = State.householdAbbr || '';
@@ -622,6 +646,7 @@ Pages.inventory = {
       html += `<tr class="inv-group-head" onclick="Pages.inventory.toggleGroup(${gi})" style="cursor:pointer">
         <td style="width:50%">
           <div style="font-weight:600;font-size:1rem">${esc(group.name)}
+            ${group.cat ? `<span style="font-weight:400;font-size:.8rem;color:var(--accent);margin-left:6px">${esc(group.cat)}</span>` : ''}
             ${!isSolo ? `<span class="badge" style="background:var(--accent);color:#000;margin-left:6px">${group.members.length}×</span>` : ''}
           </div>
           ${loc0 ? `<div style="font-size:.9rem;color:var(--subtext);margin-top:2px">📍 ${esc(loc0)}</div>` : ''}
@@ -724,6 +749,7 @@ Pages.inventory = {
           <div class="form-field"><label>Marke</label><input class="input" id="ifBrand" value="${esc(item?.brand||'')}"></div>
           <div class="form-field"><label>Barcode</label><input class="input" id="ifBarcode" value="${esc(item?.barcode||'')}"></div>
           <div class="form-field"><label>Kategorie</label><select class="select" id="ifCat"><option value="">—</option>${catOpts}</select></div>
+          <div class="form-field"><label>Sorte / Unterkategorie</label><input class="input" id="ifSub" value="${esc(item?.subcategory||'')}"></div>
           <div class="form-field"><label>Menge</label><input class="input" type="number" id="ifQty" value="${item?.quantity||1}" min="1"></div>
           <div class="form-field"><label>Ablaufdatum</label><input class="input" type="date" id="ifExpiry" value="${toIsoDate(item?.expiryDate||'')}"></div>
         </form>`,
@@ -744,9 +770,17 @@ Pages.inventory = {
       brand:      document.getElementById('ifBrand').value.trim(),
       barcode:    document.getElementById('ifBarcode').value.trim(),
       category:   document.getElementById('ifCat').value,
+      subcategory: document.getElementById('ifSub').value.trim(),
       quantity:   parseInt(document.getElementById('ifQty').value) || 1,
       expiryDate: document.getElementById('ifExpiry').value,
-      ...(original ? { labelBarcode: original.labelBarcode } : {}),
+      // Beim Bearbeiten Felder mitschicken, die das Formular nicht anzeigt —
+      // updateByLabel ersetzt den Artikel komplett, sonst gingen sie verloren.
+      ...(original ? {
+        labelBarcode: original.labelBarcode,
+        location:     original.location || '',
+        unit:         original.unit || '',
+        addedDate:    original.addedDate || '',
+      } : {}),
     };
     try {
       await API.post('/api/inventory', data);

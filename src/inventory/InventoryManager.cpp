@@ -150,13 +150,16 @@ int InventoryManager::compact(std::vector<String> &removedLabels) {
     InvLock lk(_mutex);
     removedLabels.clear();
 
-    // Group by (name + barcode + expiryDate + location + unit).
+    // Group by (name + barcode + category + subcategory + expiryDate + location + unit).
     // First occurrence of each key is kept; subsequent duplicates are merged into it.
+    // Kategorie/Sorte gehören zum Schlüssel: "Filet" (Geflügel) und "Filet" (Schwein)
+    // sind verschiedene Produkte und dürfen nie zusammengeführt werden.
     std::map<String, int> seen;   // key → index in compacted
     std::vector<InventoryItem> compacted;
 
     for (const auto &item : inventory) {
         String key = item.name + "|" + item.barcode + "|" +
+                     item.category + "|" + item.subcategory + "|" +
                      item.expiryDate + "|" + item.location + "|" + item.unit;
         auto it = seen.find(key);
         if (it == seen.end()) {

@@ -239,6 +239,9 @@ input, select, textarea, button { font-size: 16px; }
 .inv-sub-item.expiring .inv-meta { color: var(--yellow); }
 .inv-sub-item.expired  .inv-meta { color: var(--red); }
 
+/* Kategorie/Sorte-Label hinter dem Produktnamen (z.B. "Filet  Geflügel") */
+.inv-cat { font-size: 12px; font-weight: 400; color: var(--accent); white-space: nowrap; }
+
 /* ── Swipe-to-delete ── */
 .swipe-wrap { position: relative; overflow: hidden; border-radius: inherit; }
 .swipe-inner { position: relative; z-index: 1; transition: transform .2s; will-change: transform; }
@@ -745,25 +748,40 @@ function filterItems(q) {
   const nq = normalize(q);
   return _allItems.filter(it =>
     normalize(it.name || it.product_name || '').includes(nq) ||
-    normalize(it.location || '').includes(nq)
+    normalize(it.location || '').includes(nq) ||
+    normalize(it.category || '').includes(nq) ||
+    normalize(it.subcategory || '').includes(nq)
   );
 }
 
+// Anzeige-Label "Kategorie / Sorte"; interne Platzhalter ("Barcode", "Vorlage") ausblenden
+function catLabel(it) {
+  let c = it.category || '';
+  if (c === 'Barcode' || c === 'Vorlage') c = '';
+  const s = it.subcategory || '';
+  if (!c) return s;
+  return s ? c + ' / ' + s : c;
+}
+
 function buildGroups(items) {
+  // Schlüssel = Name + Kategorie + Sorte: "Filet" unter Geflügel und "Filet"
+  // unter Schwein sind verschiedene Produkte und bleiben getrennte Gruppen.
   const map = new Map();
   for (const it of items) {
-    const key = (it.name || it.product_name || 'Unbekannt').trim();
+    const key = (it.name || it.product_name || 'Unbekannt').trim() +
+      '\u001F' + (it.category || '') + '\u001F' + (it.subcategory || '');
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(it);
   }
-  return Array.from(map.entries()).map(([name, its]) => {
+  return Array.from(map.entries()).map(([key, its]) => {
     its.sort((a, b) => {
       const da = parseExpiry(getExpiry(a)), db = parseExpiry(getExpiry(b));
       if (!da && !db) return 0;
       if (!da) return 1; if (!db) return -1;
       return da - db;
     });
-    return { name, items: its, firstExpiry: getExpiry(its[0]) };
+    const name = (its[0].name || its[0].product_name || 'Unbekannt').trim();
+    return { key, name, cat: catLabel(its[0]), items: its, firstExpiry: getExpiry(its[0]) };
   }).sort((a, b) => {
     const da = parseExpiry(a.firstExpiry), db = parseExpiry(b.firstExpiry);
     if (!da && !db) return 0;
@@ -780,8 +798,10 @@ function renderInventory() {
   el.querySelectorAll('.inv-group:not(.solo)').forEach(g => {
     const sub = g.querySelector('.inv-sub-list');
     if (sub && sub.style.display !== 'none') {
-      const nameEl = g.querySelector('.inv-name');
-      if (nameEl) wasExpanded.add(nameEl.textContent);
+      // data-key statt Name: zwei Gruppen können denselben Produktnamen haben
+      // (gleicher Name, verschiedene Kategorie)
+      const k = g.getAttribute('data-key');
+      if (k) wasExpanded.add(k);
     }
   });
 
@@ -797,7 +817,8 @@ function renderInventory() {
     const unit  = g.items[0].unit || '';
     const loc   = g.items[0].location ? ' · ' + g.items[0].location : '';
     const solo  = g.items.length === 1;
-    const expanded = wasExpanded.has(g.name);
+    const keyAttr  = encodeURIComponent(g.key);
+    const expanded = wasExpanded.has(keyAttr);
 
     const subHtml = solo ? '' : g.items.map(it => {
       const exp    = getExpiry(it);
@@ -820,7 +841,8 @@ function renderInventory() {
     const headInner =
       '<div class="inv-dot"></div>' +
       '<div class="inv-info">' +
-        '<div class="inv-name">' + esc(g.name) + '</div>' +
+        '<div class="inv-name">' + esc(g.name) +
+          (g.cat ? ' <span class="inv-cat">' + esc(g.cat) + '</span>' : '') + '</div>' +
         '<div class="inv-meta">' + (g.firstExpiry ? fmtDate(g.firstExpiry) : 'Kein MHD') + esc(loc) + '</div>' +
       '</div>' +
       '<div class="inv-qty">' + fmtQty(total, unit) + '</div>' +
@@ -833,7 +855,7 @@ function renderInventory() {
         '</div>'
       : '<div class="inv-item inv-group-head ' + cls + '" onclick="toggleGroup(' + gi + ')">' + headInner + '</div>';
 
-    return '<div class="inv-group' + (solo ? ' solo' : '') + '" data-gi="' + gi + '">' +
+    return '<div class="inv-group' + (solo ? ' solo' : '') + '" data-gi="' + gi + '" data-key="' + keyAttr + '">' +
       groupHead +
       (solo ? '' : '<div class="inv-sub-list" style="display:' + (expanded ? 'block' : 'none') + '">' + subHtml + '</div>') +
     '</div>';
@@ -959,11 +981,13 @@ function renderExpiring() {
       ? 'vor ' + (-days) + ' Tag' + (-days !== 1 ? 'en' : '')
       : days === 0 ? 'heute' : 'in ' + days + ' Tag' + (days !== 1 ? 'en' : '');
     const lb = esc(it.labelBarcode || '');
+    const cat = catLabel(it);
     return '<div class="swipe-wrap">' +
       '<div class="swipe-inner inv-item ' + cls + '" data-lb="' + lb + '">' +
         '<div class="inv-dot"></div>' +
         '<div class="inv-info">' +
-          '<div class="inv-name">' + esc(name) + '</div>' +
+          '<div class="inv-name">' + esc(name) +
+            (cat ? ' <span class="inv-cat">' + esc(cat) + '</span>' : '') + '</div>' +
           '<div class="inv-meta">' + fmtDate(exp) + ' &mdash; ' + dayStr + '</div>' +
         '</div>' +
         '<div class="inv-qty">' + fmtQty(it.quantity || 1, it.unit || '') + '</div>' +

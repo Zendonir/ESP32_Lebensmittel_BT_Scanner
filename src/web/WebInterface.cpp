@@ -1189,6 +1189,7 @@ void WebInterface::registerApiRoutes() {
                     item["name"]         = it.name;
                     item["brand"]        = it.brand;
                     item["category"]     = it.category;
+                    item["subcategory"]  = it.subcategory;
                     item["expiryDate"]   = it.expiryDate;
                     item["addedDate"]    = it.addedDate;
                     item["quantity"]     = it.quantity;
@@ -1214,6 +1215,7 @@ void WebInterface::registerApiRoutes() {
                 obj["name"]         = it.name;
                 obj["brand"]        = it.brand;
                 obj["category"]     = it.category;
+                obj["subcategory"]  = it.subcategory;   // leer bei MySQL-Pull (Spalte existiert dort nicht)
                 obj["expiryDate"]   = it.expiryDate;
                 obj["addedDate"]    = it.addedDate;
                 obj["quantity"]     = it.quantity;
@@ -1288,16 +1290,20 @@ void WebInterface::registerApiRoutes() {
             item.name         = body["name"]         | "";
             item.brand        = body["brand"]        | "";
             item.category     = body["category"]     | "";
+            item.subcategory  = body["subcategory"]  | "";
             item.expiryDate   = normDateDMY(body["expiryDate"]   | "");
             item.addedDate    = normDateDMY(body["addedDate"]    | "");
             item.quantity     = body["quantity"]     | 1;
             item.unit         = body["unit"]         | "";
             item.labelBarcode = body["labelBarcode"] | "";
+            item.location     = body["location"]     | "";
 
             // Validate fields
             if (!validOptStr(item.name, 128))       { sendError(req, "name zu lang", 400); return; }
             if (!validOptStr(item.brand, 64))        { sendError(req, "brand zu lang", 400); return; }
             if (!validOptStr(item.category, 64))     { sendError(req, "category zu lang", 400); return; }
+            if (!validOptStr(item.subcategory, 64))  { sendError(req, "subcategory zu lang", 400); return; }
+            if (!validOptStr(item.location, 64))     { sendError(req, "location zu lang", 400); return; }
             if (!validOptStr(item.barcode, 64))      { sendError(req, "barcode zu lang", 400); return; }
             if (!validOptStr(item.expiryDate, 16))   { sendError(req, "expiryDate ungültig", 400); return; }
             if (item.quantity < 1 || item.quantity > 999) { sendError(req, "quantity ungültig", 400); return; }

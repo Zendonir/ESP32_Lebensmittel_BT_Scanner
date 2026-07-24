@@ -160,7 +160,7 @@ static void draw_location_badge(int x_right = SCR_W - 8) {
 // WiFi status shared across all screens (set once by showHome, read by draw_wifi_dot)
 static bool _s_wifi_connected = false;
 
-static String _s_inv_group_names[5];  // group name at each rendered row (for tap lookup)
+static String _s_inv_group_names[5];  // group key (name+cat+sorte) per rendered row (tap lookup)
 
 // Draw WiFi dot top-right on any screen (center SCR_W-12, r=7)
 static void draw_wifi_dot() {
@@ -1376,9 +1376,15 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     _spr.fillSprite(C_BG);
     clear_regions();
 
-    // ── Build display groups (aggregate by name) ─────────────────────────────
+    // ── Build display groups (aggregate by name + Kategorie + Sorte) ─────────
+    // Gleicher Produktname unter verschiedenen Kategorien (z.B. "Filet" unter
+    // Geflügel UND Schwein) darf NICHT zusammengeworfen werden. Der Gruppen-
+    // schlüssel ist deshalb name+category+subcategory; \x1F (Unit Separator)
+    // kommt in normalem Text nicht vor und verhindert Schlüssel-Kollisionen.
     struct DispGroup {
         String name;
+        String key;       // composite group key (name \x1F category \x1F subcategory)
+        String catLbl;    // display label "Kategorie / Sorte" ("" for placeholders)
         String brand;
         String location;  // location of first item (shown in collapsed row)
         String unit;      // amount unit of first item ("g", "kg", "" = pieces)
@@ -1386,6 +1392,18 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         int    count  = 0;  // summed quantity (pieces or grams)
         int    status = 0;  // 0=ok, 1=warn (<7d), 2=expired
         std::vector<int> indices; // indices into items[] for expansion
+    };
+
+    auto groupKeyOf = [](const InventoryItem &it) -> String {
+        return it.name + "\x1F" + it.category + "\x1F" + it.subcategory;
+    };
+    // "Barcode"/"Vorlage" sind interne Platzhalter-Kategorien → nicht anzeigen
+    auto catLabelOf = [](const InventoryItem &it) -> String {
+        String c = it.category;
+        if (c == "Barcode" || c == "Vorlage") c = "";
+        if (c.isEmpty()) return it.subcategory;
+        if (it.subcategory.isEmpty()) return c;
+        return c + " / " + it.subcategory;
     };
 
     // Convert date string → comparable long YYYYMMDD (0 if empty/invalid).
@@ -1430,8 +1448,9 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         int  qty = item.quantity > 0 ? item.quantity : 1;  // sum quantity (g/kg/pieces)
 
         bool found = false;
+        const String gk = groupKeyOf(item);
         for (auto &g : groups) {
-            if (g.name == item.name) {
+            if (g.key == gk) {
                 g.count += qty;
                 if (g.mhd.isEmpty() || key < mhdKey(g.mhd)) g.mhd = item.expiryDate;
                 if (st > g.status) g.status = st;
@@ -1443,6 +1462,8 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         if (!found) {
             DispGroup ng;
             ng.name     = item.name;
+            ng.key      = gk;
+            ng.catLbl   = catLabelOf(item);
             ng.brand    = item.brand;
             ng.location = item.location;
             ng.unit     = item.unit;
@@ -1538,9 +1559,11 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
     add_region(SCR_W - HH_BTN_W, sb_y, HH_BTN_W, SEARCH_H, OnscreenAction::INV_HH);
 
     // ── Determine if any group is expanded (needed for column header) ──
+    // expandedGroup carries the composite key (returned by getInvGroupName),
+    // so two groups with identical product names can't both expand.
     int expandedIdx = -1;
     for (int gi = 0; gi < (int)groups.size(); gi++) {
-        if (groups[gi].name == expandedGroup) { expandedIdx = gi; break; }
+        if (groups[gi].key == expandedGroup) { expandedIdx = gi; break; }
     }
 
     // ── Column headers ──────────────────────────────────────
@@ -1616,14 +1639,23 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
         // Full row width available in expanded view (no MHD/Menge columns)
         _spr.drawString(truncPx(_spr, eg.name, SCR_W - 30).c_str(), 20, list_y + 11);
         _spr.setTextFont(4);
-        if (eg.count > 1) {
-            _spr.setTextColor(C_SUBTEXT, C_SURFACE);
-            _spr.setTextFont(1);
-            _spr.drawString(fmtInvQty(eg.count, eg.unit).c_str(), 20, list_y + 27);
+        {
+            // Meta line: Menge (bei >1) und Kategorie/Sorte, z.B. "3 St. · Geflügel"
+            String hdrMeta;
+            if (eg.count > 1) hdrMeta = fmtInvQty(eg.count, eg.unit);
+            if (!eg.catLbl.isEmpty()) {
+                if (!hdrMeta.isEmpty()) hdrMeta += " \xB7 ";
+                hdrMeta += eg.catLbl;
+            }
+            if (!hdrMeta.isEmpty()) {
+                _spr.setTextColor(C_SUBTEXT, C_SURFACE);
+                _spr.setTextFont(1);
+                _spr.drawString(hdrMeta.c_str(), 20, list_y + 27);
+            }
         }
         _spr.drawFastHLine(0, list_y + ROW_H - 1, SCR_W, C_BORDER);
         add_region(0, list_y, SCR_W, ROW_H, OnscreenAction::LIST_ITEM_0);
-        _s_inv_group_names[0] = eg.name;  // row 0 = header (used to detect collapse)
+        _s_inv_group_names[0] = eg.key;  // row 0 = header (used to detect collapse)
 
         // Individual item sub-rows
         static constexpr int SUB_H = 42;
@@ -1698,9 +1730,15 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
             _spr.drawString(truncPx(_spr, g.name, NAME_MAX_PX).c_str(), NAME_X, ry + 11);
             _spr.setTextFont(4);
 
-            // Location + (optional) brand sub-line — Font 2, pixel-capped to same column
+            // Kategorie/Sorte + Location + (optional) brand sub-line — Font 2,
+            // pixel-capped to same column. Kategorie zuerst, damit gleichnamige
+            // Produkte (z.B. "Filet" Geflügel vs. Schwein) unterscheidbar sind.
             {
-                String sub = g.location;
+                String sub = g.catLbl;
+                if (!g.location.isEmpty()) {
+                    if (!sub.isEmpty()) sub += "  \xB7  ";
+                    sub += g.location;
+                }
                 if (!g.brand.isEmpty()) {
                     if (!sub.isEmpty()) sub += "  \xB7  ";
                     sub += g.brand;
@@ -1736,7 +1774,7 @@ void Display::showInventoryList(const std::vector<InventoryItem> &items,
 
             _spr.drawFastHLine(0, ry + ROW_H - 1, SCR_W, C_BORDER);
             add_region(0, ry, SCR_W, ROW_H, LIST_ACTIONS[shown]);
-            _s_inv_group_names[shown] = g.name;
+            _s_inv_group_names[shown] = g.key;   // composite key (not just name)
         }
 
         // Scroll arrows (right edge, 20×18 px strip below the rows)
