@@ -191,6 +191,8 @@ const Router = (() => {
     system:     'System',
     network:    'Netzwerk',
     printer:    'Drucker',
+    labels:     'Etiketten',
+    manuallabel:'Freitext-Etikett',
     scanner:    'Scanner',
     mqtt:       'MQTT',
     telegram:   'Telegram',
@@ -1957,6 +1959,196 @@ Pages.printer = {
 };
 
 /* ---- MANUELLES ETIKETT ---- */
+/* ---- ETIKETTEN ERSTELLEN ---- */
+Pages.labels = {
+  _templates: [],
+  _allCats: [],
+  _locations: [],
+  _activeLoc: '',
+
+  async load() {
+    try {
+      const [tpls, locs, act, cats] = await Promise.all([
+        API.get('/api/templates'),
+        API.get('/api/locations'),
+        API.get('/api/active-location').catch(() => ({})),
+        API.get('/api/categories').catch(() => []),
+      ]);
+      this._templates  = Array.isArray(tpls) ? tpls : [];
+      this._locations  = Array.isArray(locs) ? locs : [];
+      this._activeLoc  = act.location || '';
+      this._allCats    = (Array.isArray(cats) ? cats : [])
+        .map(c => (typeof c === 'string' ? c : (c.name || ''))).filter(Boolean);
+    } catch(e) {
+      Toast.error('Vorlagen/Lagerorte: ' + e.message);
+      return;
+    }
+
+    // Kategorien aus den Vorlagen ableiten – so stehen nur Kategorien zur
+    // Auswahl, für die es auch wirklich Produkte gibt.
+    const cats = [...new Set(this._templates.map(t => t.category || 'Allgemein'))].sort();
+    const catSel = document.getElementById('lblTplCat');
+    catSel.innerHTML = '<option value="">Kategorie wählen…</option>' +
+      cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+
+    // Freitext-Kategorie im manuellen Formular: alle gepflegten Kategorien anbieten,
+    // nicht nur die, zu denen es bereits eine Vorlage gibt.
+    const allCats = [...new Set([...(this._allCats || []), ...cats])].sort();
+    document.getElementById('lblCatList').innerHTML =
+      allCats.map(c => `<option value="${esc(c)}">`).join('');
+
+    const locOpts = this._locations.map(l => {
+      const n = typeof l === 'string' ? l : (l.name || '');
+      return `<option value="${esc(n)}"${n === this._activeLoc ? ' selected' : ''}>${esc(n)}</option>`;
+    }).join('');
+    const empty = '<option value="">– kein Lagerort –</option>';
+    document.getElementById('lblTplLoc').innerHTML = empty + locOpts;
+    document.getElementById('lblManLoc').innerHTML = empty + locOpts;
+    if (this._activeLoc) {
+      document.getElementById('lblTplLoc').value = this._activeLoc;
+      document.getElementById('lblManLoc').value = this._activeLoc;
+    }
+
+    this.onCategory();
+  },
+
+  _tplFor(id) {
+    return this._templates.find(t => String(t.id ?? t.name) === String(id));
+  },
+
+  onCategory() {
+    const cat  = document.getElementById('lblTplCat').value;
+    const sel  = document.getElementById('lblTplProd');
+    const list = this._templates.filter(t => (t.category || 'Allgemein') === cat);
+    sel.innerHTML = cat
+      ? '<option value="">Produkt wählen…</option>' +
+        list.map(t => `<option value="${esc(String(t.id ?? t.name))}">${esc(t.name || '')}</option>`).join('')
+      : '<option value="">Zuerst Kategorie wählen</option>';
+    this.onTemplate();
+  },
+
+  onTemplate() {
+    const t = this._tplFor(document.getElementById('lblTplProd').value);
+    const brandRow = document.getElementById('lblTplBrandRow');
+    const sorteRow = document.getElementById('lblTplSorteRow');
+    const amtRow   = document.getElementById('lblTplAmountRow');
+    const hint     = document.getElementById('lblTplMhdHint');
+
+    if (!t) {
+      brandRow.hidden = sorteRow.hidden = amtRow.hidden = true;
+      hint.textContent = '';
+      return;
+    }
+
+    const brands = Array.isArray(t.brands) ? t.brands : (t.brand ? [t.brand] : []);
+    brandRow.hidden = brands.length === 0;
+    document.getElementById('lblTplBrand').innerHTML =
+      '<option value="">– keine –</option>' +
+      brands.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+
+    sorteRow.hidden = !t.useSorten;
+    document.getElementById('lblSorteList').innerHTML =
+      (t.sorten || []).map(x => `<option value="${esc(x)}">`).join('');
+    if (!t.useSorten) document.getElementById('lblTplSorte').value = '';
+
+    const unit = t.unit || '';
+    amtRow.hidden = !unit;
+    document.getElementById('lblTplUnit').textContent = unit;
+
+    // MHD wie am Gerät vorbelegen: heute + Haltbarkeitstage der Vorlage.
+    const days = parseInt(t.defaultDays ?? t.shelfDays, 10);
+    if (days > 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      document.getElementById('lblTplMhd').value = d.toISOString().slice(0, 10);
+      hint.textContent = `Vorlage: heute + ${days} Tage (änderbar)`;
+    } else {
+      hint.textContent = '';
+    }
+  },
+
+  async createFromTemplate() {
+    const t = this._tplFor(document.getElementById('lblTplProd').value);
+    if (!t) { Toast.error('Kein Produkt gewählt'); return; }
+    const unit = t.unit || '';
+    const payload = {
+      name:        t.name || '',
+      brand:       document.getElementById('lblTplBrand').value,
+      category:    t.category || 'Allgemein',
+      subcategory: t.useSorten ? document.getElementById('lblTplSorte').value.trim() : '',
+      expiryDate:  document.getElementById('lblTplMhd').value,
+      unit,
+      quantity:    unit ? (parseInt(document.getElementById('lblTplAmount').value, 10) || 1) : 1,
+      location:    document.getElementById('lblTplLoc').value,
+      count:       parseInt(document.getElementById('lblTplCount').value, 10) || 1,
+      print:       document.getElementById('lblTplPrint').checked,
+    };
+    const newSorte = payload.subcategory;
+    const ok = await this._send(payload, 'lblTplResult');
+    // Neu eingegebene Sorte in der Vorlage merken – dasselbe Verhalten wie am Gerät.
+    if (ok && newSorte && t.useSorten && !(t.sorten || []).includes(newSorte)) {
+      try {
+        await API.post('/api/templates/sorten/add', { id: String(t.id ?? t.name), sorte: newSorte });
+        t.sorten = [...(t.sorten || []), newSorte];
+        this.onTemplate();
+      } catch(e) { /* Etikett ist trotzdem angelegt – nur die Sorte fehlt */ }
+    }
+  },
+
+  async createManual() {
+    const name = document.getElementById('lblManName').value.trim();
+    if (!name) { Toast.error('Produktname fehlt'); return; }
+    const unit = document.getElementById('lblManUnit').value;
+    const payload = {
+      name,
+      brand:      document.getElementById('lblManBrand').value.trim(),
+      category:   document.getElementById('lblManCat').value.trim(),
+      expiryDate: document.getElementById('lblManMhd').value,
+      unit,
+      quantity:   unit ? (parseInt(document.getElementById('lblManAmount').value, 10) || 1) : 1,
+      location:   document.getElementById('lblManLoc').value,
+      count:      parseInt(document.getElementById('lblManCount').value, 10) || 1,
+      print:      document.getElementById('lblManPrint').checked,
+    };
+    await this._send(payload, 'lblManResult');
+  },
+
+  async _send(payload, resultId) {
+    const el = document.getElementById(resultId);
+    if (el) el.textContent = '⏳ Etikett wird erstellt …';
+    try {
+      const res = await API.post('/api/labels/create', payload);
+      const nums = (res.labels || []).join(', ');
+      if (el) el.textContent = `✓ ${res.message || 'Angelegt'}${nums ? ' – ' + nums : ''}`;
+      Toast.success(res.message || 'Etikett angelegt');
+      return true;
+    } catch(e) {
+      if (el) el.textContent = '✗ ' + e.message;
+      Toast.error('Fehler: ' + e.message);
+      return false;
+    }
+  },
+
+  resetTemplate() {
+    document.getElementById('lblTplCat').value    = '';
+    document.getElementById('lblTplSorte').value  = '';
+    document.getElementById('lblTplAmount').value = 1;
+    document.getElementById('lblTplCount').value  = 1;
+    document.getElementById('lblTplResult').textContent = '';
+    this.onCategory();
+  },
+
+  resetManual() {
+    ['lblManName','lblManBrand','lblManCat','lblManMhd'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('lblManUnit').value   = '';
+    document.getElementById('lblManAmount').value = 1;
+    document.getElementById('lblManCount').value  = 1;
+    document.getElementById('lblManResult').textContent = '';
+  },
+};
+
 Pages.manuallabel = {
   async load() {},
 

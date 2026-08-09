@@ -189,6 +189,25 @@ iOS/Android-optimierte Ansicht:
 - **iOS Safe Area**: `viewport-fit=cover` + `env(safe-area-inset-bottom)` auf Tab-Bar
 - 4 Tabs: Inventar, Ablaufend, Vorlagen, System
 
+### Etiketten aus dem Web-Interface
+`POST /api/labels/create` bildet denselben Ablauf ab wie `App::finishStorageWorkflow()`
+am Gerät: LebNummer vergeben → Inventar-Eintrag → Sync-Event `ADD` → Etikett drucken.
+Body: `name`(Pflicht), `brand`, `category`, `subcategory`, `barcode`, `expiryDate`,
+`unit`, `quantity`, `location`, `count` (1–20), `print`.
+Antwort enthält die vergebenen LebNummern (`labels`).
+
+- Ohne `unit` ist jedes Etikett genau ein Artikel (`quantity=1`); mit `unit` gilt
+  `quantity` als Füllmenge – exakt die Unterscheidung Scan- vs. Vorlagen-Workflow.
+- **Der Druck läuft NICHT im Web-Task.** `PrinterManager::queueLabel()` reiht nur ein,
+  `App::loop()` ruft `processQueue()` auf und druckt dort (Core 1). Ein Etikett belegt
+  die UART mehrere hundert Millisekunden – im AsyncTCP-Task stünde solange der ganze
+  HTTP-Server. Queue-Länge ist auf 20 begrenzt, daher auch `count` ≤ 20.
+
+UI: Desktop-Seite `#labels` ("Etiketten") mit Vorlagen- und Manuell-Formular,
+mobil ein Bottom-Sheet (`openLabelSheet(id)`) – aus der Vorlagen-Liste heraus je
+Vorlage oder über "+ Etikett" manuell. Beide setzen MHD aus `defaultDays` vor und
+tragen eine neu eingegebene Sorte über `/api/templates/sorten/add` nach.
+
 ### Datumsformat-Konvention
 - Firmware speichert MHD als `YYYY-MM-DD` (ISO, template workflow) oder `DD.MM.YYYY` (manuell)
 - Web-UI normalisiert mit `toIsoDate(str)` in `app.js` vor Anzeige und Speicherung
@@ -209,6 +228,7 @@ iOS/Android-optimierte Ansicht:
 | UI friert sekundenweise ein | Blockierende MySQL-/HTTPS-Aufrufe gehören in einen Task, nie in `App::loop()` |
 | Gerät hängt dauerhaft | Task-Watchdog (`Health`) erzwingt Neustart mit Backtrace; Reset-Ursache steht im SD-Log |
 | Scanner koppelt nicht mehr | `connecting`-Flag hing – 30-s-Timeout in `BLEScanner::loop()` |
+| Web-UI hängt beim Etikettendruck | Nie direkt aus dem Handler drucken – `queueLabel()` nutzen |
 
 ---
 

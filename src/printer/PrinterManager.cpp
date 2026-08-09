@@ -9,7 +9,45 @@ const uint32_t BAUD_PROBE_RATES[] = { 9600, 19200, 38400, 57600, 115200 };
 PrinterManager::PrinterManager() : renderer(printer) {}
 
 void PrinterManager::begin() {
+    if (!_queueMutex) _queueMutex = xSemaphoreCreateMutex();
     configure(UART_BAUD);
+}
+
+bool PrinterManager::queueLabel(const InventoryItem &item) {
+    if (!_queueMutex) _queueMutex = xSemaphoreCreateMutex();
+    if (!_queueMutex) return false;
+    xSemaphoreTake(_queueMutex, portMAX_DELAY);
+    bool ok = _queue.size() < MAX_QUEUE;
+    if (ok) _queue.push_back(item);
+    xSemaphoreGive(_queueMutex);
+    if (!ok) Logger::warn("Printer", "Druckwarteschlange voll – Etikett verworfen");
+    return ok;
+}
+
+size_t PrinterManager::queuedLabels() const {
+    if (!_queueMutex) return 0;
+    xSemaphoreTake(_queueMutex, portMAX_DELAY);
+    size_t n = _queue.size();
+    xSemaphoreGive(_queueMutex);
+    return n;
+}
+
+void PrinterManager::processQueue() {
+    if (!_queueMutex) return;
+    InventoryItem item;
+    {
+        xSemaphoreTake(_queueMutex, portMAX_DELAY);
+        bool empty = _queue.empty();
+        if (!empty) {
+            item = _queue.front();
+            _queue.erase(_queue.begin());
+        }
+        xSemaphoreGive(_queueMutex);
+        if (empty) return;
+    }
+    // Außerhalb des Locks drucken – der Web-Task darf währenddessen weiter
+    // einreihen, ohne auf den Drucker zu warten.
+    printLabel(item);
 }
 
 void PrinterManager::configure(uint32_t baud) {

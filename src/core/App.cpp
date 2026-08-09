@@ -287,6 +287,9 @@ void App::loop() {
     }
 
     time_manager.loop();
+    // Etiketten, die über die Web-Oberfläche angelegt wurden, hier drucken:
+    // im Web-Task würde der Druck den HTTP-Server sekundenlang blockieren.
+    printer.processQueue();
     // sync_manager läuft in einem eigenen Worker-Task (siehe SyncManager::begin) –
     // hier bewusst kein blockierender MySQL-Zugriff mehr.
     barcode_manager.loop();
@@ -2543,6 +2546,7 @@ void App::initWebServer() {
     web.setInventoryManager(&inventory);
     web.setJsonStorage(&json);
     web.setPrinterManager(&printer);
+    web.setLabelCounter(&labelCounter);
     web.begin();
 
     if (wifi_manager.isConnected())

@@ -9,6 +9,7 @@
 class InventoryManager;
 class JsonStorage;
 class PrinterManager;
+class LabelCounter;
 
 class WebInterface {
 public:
@@ -18,6 +19,7 @@ public:
     void setInventoryManager(InventoryManager *mgr) { _invMgr = mgr; }
     void setJsonStorage(JsonStorage *storage)        { _storage = storage; }
     void setPrinterManager(PrinterManager *printer)  { _printer = printer; }
+    void setLabelCounter(LabelCounter *counter)      { _labels  = counter; }
 
     void begin();
     void primeWiFiScanCache(int scanResult);
@@ -41,6 +43,7 @@ private:
     InventoryManager *_invMgr  = nullptr;
     JsonStorage      *_storage = nullptr;
     PrinterManager   *_printer = nullptr;
+    LabelCounter     *_labels  = nullptr;
 
     void registerStaticRoutes();
     void registerApiRoutes();
