@@ -135,6 +135,37 @@ BLE Battery Service (UUID 0x180F / Char 0x2A19) wird nach HID-Verbindung abonnie
 Polling alle 5 Minuten via `ble_scanner.readBatteryNow()`.
 Bei < 10%: Warnton + Statusmeldung auf Display + farbige Anzeige im Web-UI.
 
+### Stabilität: Watchdog, Diagnose und blockierende Arbeit
+
+`src/core/Health.*` bündelt die Systemüberwachung:
+- `Health::logBootInfo()` protokolliert beim Start die Reset-Ursache des vorherigen
+  Laufs (Panic / Task-WDT / Brownout / …) sowie die Heap-Startwerte als WARN/ERROR –
+  landet damit auch auf der SD-Karte und macht unbeobachtete Neustarts nachvollziehbar.
+- `Health::beginWatchdog()` aktiviert den Task-Watchdog (60 s, `trigger_panic`) und
+  meldet die Arduino-Loop an; der Touch-Task meldet sich selbst an, sobald der
+  Watchdog bereit ist. Ein Hänger endet damit in einem Neustart **mit Backtrace**
+  statt in einem dauerhaft eingefrorenen Gerät.
+- `Health::loop()` füttert den Watchdog und protokolliert minütlich Heap, größten
+  freien Block, PSRAM und Stack-Reserve. Muss **vor jedem early-return** in
+  `App::loop()` stehen (sonst schlägt der Watchdog während OTA zu).
+- `Health::lowMemory()` als Vorprüfung, bevor neue Tasks/TLS-Verbindungen starten.
+
+**Regel: keine blockierende Netzwerkarbeit in `App::loop()`.**
+Ein MySQL-Connect-Timeout blockiert die UI mehrere Sekunden – von außen ein
+"Einfrieren". Deshalb:
+- Die Sync-Queue wird vom eigenen Worker-Task `sync_wk` (Core 0) abgearbeitet
+  (`SyncManager::processQueueOnce()`), nicht mehr aus `App::loop()`.
+- ntfy-Benachrichtigungen laufen in einem kurzlebigen Task.
+- Jeder `xTaskCreate*`-Aufruf wird ausgewertet: schlägt der Start fehl, müssen
+  Guard-Flags (`_pullTaskRunning`, `connecting`, …) zurückgesetzt werden – sonst ist
+  die Funktion bis zum Neustart tot.
+
+### BLE: Hänger beim Verbindungsaufbau
+`BLEScanner` setzt `connecting` auf **jedem** Ausstiegspfad von `connectTask`
+zurück (sich auf `onDisconnect` zu verlassen reicht nicht) und bricht in `loop()`
+einen Verbindungsversuch nach 30 s ab. Andernfalls bleibt der Scanner dauerhaft im
+Zustand "verbinde…": kein Scan, kein Reconnect, keine Barcodes.
+
 ### Zirkuläre Abhängigkeit Logger ↔ AppFS
 `Logger.cpp` darf `AppFS.h` nicht inkludieren (AppFS.cpp inkludiert Logger.h).
 Lösung: `Logger::enableSdLog(fs::FS *sdFs)` erhält einen rohen `fs::FS*`-Zeiger
@@ -175,6 +206,9 @@ iOS/Android-optimierte Ansicht:
 | OTA Filesystem schlägt fehl | `/api/update` erkennt Typ automatisch; LittleFS wird vor dem Schreiben gemountet |
 | `saveJson` not declared | `static bool saveJson(...)` Forward-Declaration vor `WebInterface::begin()` |
 | Inventar-Löschen/-Bearbeiten defekt | `data-lb`-Attribut und Solo-Artikel-Pfad korrigiert |
+| UI friert sekundenweise ein | Blockierende MySQL-/HTTPS-Aufrufe gehören in einen Task, nie in `App::loop()` |
+| Gerät hängt dauerhaft | Task-Watchdog (`Health`) erzwingt Neustart mit Backtrace; Reset-Ursache steht im SD-Log |
+| Scanner koppelt nicht mehr | `connecting`-Flag hing – 30-s-Timeout in `BLEScanner::loop()` |
 
 ---
 

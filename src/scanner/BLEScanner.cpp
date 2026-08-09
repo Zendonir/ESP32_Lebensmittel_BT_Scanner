@@ -89,6 +89,7 @@ static void connectTask(void *arg) {
         Logger::warn("BLE", String("Verbindung fehlgeschlagen | Heap: ") + ESP.getFreeHeap());
         if (s_scanner) {
             s_scanner->handleClientDisconnect();
+            s_scanner->_setConnecting(false);
             s_scanner->_startScan();
         }
         vTaskDelete(nullptr);
@@ -101,7 +102,10 @@ static void connectTask(void *arg) {
     if (!svc) {
         Serial.println("[BLE] HID-Service nicht gefunden");
         s_client->disconnect();
-        if (s_scanner) s_scanner->_startScan();
+        // connecting explizit zurücksetzen: sich auf den onDisconnect-Callback zu
+        // verlassen reicht nicht – bleibt er aus, hängt der Scanner für immer im
+        // Zustand "verbinde…" und koppelt sich nie wieder.
+        if (s_scanner) { s_scanner->_setConnecting(false); s_scanner->_startScan(); }
         vTaskDelete(nullptr);
         return;
     }
@@ -141,7 +145,7 @@ static void connectTask(void *arg) {
     } else {
         Logger::warn("BLE", "Keine notifizierbare HID-Charakteristik");
         s_client->disconnect();
-        if (s_scanner) s_scanner->_startScan();
+        if (s_scanner) { s_scanner->_setConnecting(false); s_scanner->_startScan(); }
     }
     vTaskDelete(nullptr);
 }
@@ -180,7 +184,14 @@ class BLEScanCB : public NimBLEScanCallbacks {
         if (s_scanner) s_scanner->_addrType = dev->getAddress().getType();
         NimBLEAddress *a = new NimBLEAddress(dev->getAddress()); // copy with type
         s_scanner->_setConnecting(true);
-        xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+        if (xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr) != pdPASS) {
+            // Ohne diese Auswertung bliebe "connecting" gesetzt und die Adresse
+            // im Heap liegen – der Scanner wäre bis zum Neustart tot.
+            Logger::error("BLE", "connectTask-Start fehlgeschlagen");
+            delete a;
+            s_scanner->_setConnecting(false);
+            s_scanner->_startScan();
+        }
     }
 };
 static BLEScanCB s_scanCB;
@@ -250,6 +261,17 @@ void BLEScanner::begin() {
 }
 
 void BLEScanner::loop() {
+    // ── Hänger beim Verbindungsaufbau auflösen ────────────────────────────────
+    // Bleibt connectTask in NimBLE stecken (Gerät verschwindet mitten im
+    // Handshake), blieb der Scanner bisher dauerhaft im Zustand "verbinde…":
+    // kein Scan, kein Reconnect, keine Barcodes mehr.
+    if (connecting && _connectingSinceMs != 0
+            && millis() - _connectingSinceMs >= CONNECT_TIMEOUT_MS) {
+        Logger::warn("BLE", "Verbindungsaufbau überschritt 30 s – Zustand zurückgesetzt");
+        _setConnecting(false);
+        _startScan();
+    }
+
     // ── Idle timeout ──────────────────────────────────────────────────────────
     if (connected && _idleTimeoutMs > 0
             && (millis() - _lastActivityMs) >= _idleTimeoutMs) {
@@ -309,7 +331,12 @@ void BLEScanner::loop() {
 
     NimBLEAddress *a = new NimBLEAddress(std::string(requestedAddress.c_str()), _addrType);
     _setConnecting(true);
-    xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr);
+    if (xTaskCreate(connectTask, "bleConn", 8192, a, 2, nullptr) != pdPASS) {
+        Logger::error("BLE", "connectTask-Start fehlgeschlagen");
+        delete a;
+        _setConnecting(false);
+        _startScan();
+    }
 }
 
 void BLEScanner::_startScan() {
@@ -325,6 +352,7 @@ void BLEScanner::_startScan() {
 void BLEScanner::_setConnected(bool c) {
     connected  = c;
     connecting = false;
+    _connectingSinceMs = 0;
     if (c) {
         reconnectFailures  = 0;
         reconnectPaused    = false;
@@ -338,6 +366,7 @@ void BLEScanner::_setConnected(bool c) {
 
 void BLEScanner::_setConnecting(bool c) {
     connecting = c;
+    _connectingSinceMs = c ? millis() : 0;
     if (c) connected = false;
 }
 
