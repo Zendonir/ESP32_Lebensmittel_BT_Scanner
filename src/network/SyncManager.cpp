@@ -36,6 +36,25 @@ void SyncManager::begin() {
     loadConfig();
     loadQueue();   // runs before other tasks start; no lock needed
     Logger::info("Sync", String("begin ip=") + _ip + " queued=" + _queue.size());
+
+    // Eigener Worker-Task auf Core 0. Der MySQL-Zugriff blockiert bis zu mehrere
+    // Sekunden (TCP-Connect-Timeout, Read-Timeout). Lief er wie bisher direkt in
+    // App::loop(), stand die komplette UI währenddessen still – das erklärt das
+    // periodische "Einfrieren", sobald der Datenbankserver nicht erreichbar ist.
+    if (!_workerStarted) {
+        if (xTaskCreatePinnedToCore(workerTaskFn, "sync_wk", 8192, this, 1, nullptr, 0) == pdPASS)
+            _workerStarted = true;
+        else
+            Logger::error("Sync", "Worker-Task konnte nicht gestartet werden");
+    }
+}
+
+/* static */ void SyncManager::workerTaskFn(void *arg) {
+    SyncManager *self = static_cast<SyncManager *>(arg);
+    for (;;) {
+        self->processQueueOnce();
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
 }
 
 // Drop the current front event iff it is still the one we just processed.
@@ -49,7 +68,7 @@ void SyncManager::dropFrontIfMatches(const String &payload) {
     }
 }
 
-void SyncManager::loop() {
+void SyncManager::processQueueOnce() {
     if (WiFi.status() != WL_CONNECTED) return;
     if (_ip.isEmpty()) return;
 
@@ -361,7 +380,9 @@ void SyncManager::loadQueue() {
 bool SyncManager::execDirectMySQL(const String &sql) {
     if (_ip.isEmpty()) return false;
     MySQLDirect db;
-    if (!db.connect(_ip, 3306, _user, _pass)) {
+    // Explizites Timeout: der Standardwert war deutlich länger und hielt den
+    // Worker unnötig lange fest, wenn der Server nicht antwortet.
+    if (!db.connect(_ip, 3306, _user, _pass, 3000)) {
         Logger::warn("Sync", String("MySQL connect failed: ") + db.lastError());
         return false;
     }

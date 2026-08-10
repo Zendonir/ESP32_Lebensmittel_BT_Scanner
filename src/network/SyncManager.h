@@ -5,6 +5,7 @@
 #include <time.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <freertos/task.h>
 #include "../models/ProductInfo.h"
 #include "../models/InventoryItem.h"
 #include "../storage/LittleFSManager.h"
@@ -20,7 +21,11 @@ class SyncManager {
 public:
     void   begin();
     void   loadConfig();   // public so WebInterface can reload after a settings save
-    void   loop();
+
+    // Verarbeitet höchstens ein Queue-Event (blockierender MySQL-Zugriff!).
+    // Wird ausschließlich vom eigenen Worker-Task aufgerufen – NICHT aus App::loop(),
+    // sonst friert die Bedienoberfläche bei jedem Server-Timeout sekundenlang ein.
+    void   processQueueOnce();
     void   enqueue(const String &type, const String &jsonPayload);
     size_t pending() const;             // locked
     void   clearQueue();
@@ -63,6 +68,9 @@ private:
     volatile time_t   _lastSyncTime  = 0;
     volatile bool     _lastSyncOk    = false;
     uint32_t _lastAttemptMs = 0;
+
+    volatile bool _workerStarted = false;
+    static void workerTaskFn(void *arg);
 
     static constexpr uint32_t RETRY_INTERVAL_MS = 30000;
     static constexpr uint8_t  MAX_RETRIES        = 5;

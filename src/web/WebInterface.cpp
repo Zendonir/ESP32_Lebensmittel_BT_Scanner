@@ -9,6 +9,8 @@
 #include "wifi_manager.h"
 #include "../scanner/BarcodeManager.h"
 #include "../printer/PrinterManager.h"
+#include "../inventory/LabelCounter.h"
+#include "../core/TimeManager.h"
 #include "../network/SyncManager.h"
 #include "audio.h"
 #include "config.h"
@@ -2429,6 +2431,104 @@ void WebInterface::registerApiRoutes() {
             AppFS::fs().remove("/off_cache.json");
             req->send(200, "application/json", "{\"ok\":true}");
         });
+
+    // ---- ETIKETTEN ERSTELLEN ----
+    // POST /api/labels/create – legt Inventar-Einträge an, vergibt LebNummern und
+    // reiht die Etiketten zum Druck ein. Das ist derselbe Ablauf wie am Gerät
+    // (App::finishStorageWorkflow), nur aus der Web-Oberfläche angestoßen:
+    // sowohl manuell eingegebene als auch über Kategorie/Vorlage gewählte Produkte.
+    _server.on("/api/labels/create", HTTP_POST,
+        [this](AsyncWebServerRequest *req) {
+            if (!_invMgr) { sendError(req, "Inventar nicht verfügbar", 503); return; }
+            if (!_labels) { sendError(req, "Etikettenzähler nicht verfügbar", 503); return; }
+
+            JsonDocument body;
+            if (deserializeJson(body, _body) != DeserializationError::Ok) {
+                sendError(req, "Ungültiges JSON", 400); return;
+            }
+
+            InventoryItem base;
+            base.name        = body["name"]        | "";
+            base.brand       = body["brand"]       | "";
+            base.category    = body["category"]    | "";
+            base.subcategory = body["subcategory"] | "";
+            base.barcode     = body["barcode"]     | "";
+            base.unit        = body["unit"]        | "";
+            base.expiryDate  = normDateDMY(body["expiryDate"] | "");
+            base.location    = body["location"]    | "";
+            int  amount      = body["quantity"]    | 1;
+            int  count       = body["count"]       | 1;
+            bool doPrint     = body["print"].is<bool>() ? body["print"].as<bool>() : true;
+
+            if (base.location.isEmpty()) base.location = device_config.getActiveLocation();
+            base.addedDate = normDateDMY(time_manager.today());
+
+            if (!validName(base.name))                { sendError(req, "name fehlt oder zu lang", 400); return; }
+            if (!validOptStr(base.brand, 64))         { sendError(req, "brand zu lang", 400); return; }
+            if (!validOptStr(base.category, 64))      { sendError(req, "category zu lang", 400); return; }
+            if (!validOptStr(base.subcategory, 64))   { sendError(req, "subcategory zu lang", 400); return; }
+            if (!validOptStr(base.location, 64))      { sendError(req, "location zu lang", 400); return; }
+            if (!validOptStr(base.barcode, 64))       { sendError(req, "barcode zu lang", 400); return; }
+            if (!validOptStr(base.unit, 16))          { sendError(req, "unit zu lang", 400); return; }
+            if (!validOptStr(base.expiryDate, 16))    { sendError(req, "expiryDate ungültig", 400); return; }
+            if (amount < 1 || amount > 99999)         { sendError(req, "quantity ungültig", 400); return; }
+            // Obergrenze wie die Druckwarteschlange: mehr Etiketten am Stück
+            // würden ohnehin verworfen.
+            if (count < 1 || count > 20)              { sendError(req, "count muss 1–20 sein", 400); return; }
+
+            // Menge zählt nur zusammen mit einer Einheit (Vorlagen-Workflow);
+            // ohne Einheit ist jedes Etikett genau ein Artikel – exakt wie am Gerät.
+            const int perItemQty = base.unit.isEmpty() ? 1 : amount;
+
+            JsonDocument resp;
+            JsonArray created = resp["labels"].to<JsonArray>();
+            int stored = 0, queued = 0;
+            for (int i = 0; i < count; i++) {
+                InventoryItem item = base;
+                item.quantity     = perItemQty;
+                item.labelBarcode = _labels->nextLabel();
+                if (!_invMgr->addItem(item)) continue;
+                stored++;
+                created.add(item.labelBarcode);
+
+                JsonDocument sdoc;
+                sdoc["type"]         = "ADD";
+                sdoc["barcode"]      = item.barcode;
+                sdoc["name"]         = item.name;
+                sdoc["brand"]        = item.brand;
+                sdoc["category"]     = item.category;
+                sdoc["subcategory"]  = item.subcategory;
+                sdoc["expiryDate"]   = item.expiryDate;
+                sdoc["addedDate"]    = item.addedDate;
+                sdoc["quantity"]     = item.quantity;
+                sdoc["unit"]         = item.unit;
+                sdoc["labelBarcode"] = item.labelBarcode;
+                sdoc["household"]    = device_config.getHousehold();
+                sdoc["deviceName"]   = device_config.getDeviceName();
+                sdoc["location"]     = item.location;
+                sdoc["timestamp"]    = (long)time(nullptr);
+                String sp; serializeJson(sdoc, sp);
+                sync_manager.enqueue("ADD", sp);
+
+                if (doPrint && _printer && _printer->queueLabel(item)) queued++;
+            }
+
+            if (stored == 0) { sendError(req, "Inventar konnte nicht gespeichert werden"); return; }
+
+            Logger::info("Labels", String("Web: ") + stored + "x '" + base.name
+                         + "' angelegt, " + queued + " zum Druck eingereiht");
+
+            resp["ok"]      = true;
+            resp["created"] = stored;
+            resp["queued"]  = queued;
+            String msg = String(stored) + (stored == 1 ? " Etikett" : " Etiketten") + " angelegt";
+            if (doPrint && !_printer) msg += " (kein Drucker konfiguriert)";
+            else if (doPrint && queued < stored) msg += ", Druckwarteschlange voll";
+            else if (doPrint) msg += " und im Druck";
+            resp["message"] = msg;
+            sendJson(req, resp);
+        },
+        nullptr, bodyCollect);
 
     // ---- PRODUCT TEMPLATES ----
     // GET /api/templates  → return all templates (reads custom_products.json so device sees them)

@@ -75,6 +75,8 @@ private:
     uint32_t _reconnectAfterMs = 0;  // millis() target for post-idle reconnect; 0 = not pending
     uint32_t _watchNoAddrMs    = 0;  // watchdog: last fire when address unknown
     uint32_t _watchAddrMs      = 0;  // watchdog: last fire when address known
+    volatile uint32_t _connectingSinceMs = 0;  // millis() when the connect attempt started
+    static constexpr uint32_t CONNECT_TIMEOUT_MS = 30000;
 
     SemaphoreHandle_t _mutex = nullptr;
 };

@@ -349,6 +349,17 @@ input, select, textarea, button { font-size: 16px; }
 
 /* ── Admin link ── */
 .admin-link { display: block; text-align: center; color: var(--sub); font-size: 13px; padding: 16px; text-decoration: none; }
+
+/* Etikett-Erstellen-Sheet */
+.lbl-inp {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 11px 14px; color: var(--text); outline: none; width: 100%;
+  font-size: 15px; -webkit-appearance: none;
+}
+.lbl-lab { font-size: 12px; color: var(--sub); margin-bottom: 4px; display: block; }
+.btn-label { background: none; border: 1px solid var(--border); color: var(--accent);
+  padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; }
 </style>
 </head>
 <body>
@@ -392,6 +403,7 @@ input, select, textarea, button { font-size: 16px; }
       <div class="card">
         <div class="card-header">
           <div class="card-title">Vorlagen</div>
+          <button class="btn-label" style="margin-left:auto;margin-right:8px" onclick="openLabelSheet(null)">+ Etikett</button>
           <button class="tmpl-add-btn" onclick="openTmplSheet()" title="Neue Vorlage">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
@@ -524,6 +536,73 @@ input, select, textarea, button { font-size: 16px; }
   </button>
 </nav>
 
+<!-- ETIKETT ERSTELLEN -->
+<div id="lbl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeLabelSheet()"></div>
+<div id="lbl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <span id="lbl-sheet-title" style="font-weight:700;font-size:16px">Etikett erstellen</span>
+    <button onclick="closeLabelSheet()" style="background:none;border:none;color:var(--sub);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div id="lbl-name-row">
+      <label class="lbl-lab">Produktname *</label>
+      <input type="text" id="lbl-name" class="lbl-inp" maxlength="128" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div id="lbl-cat-row">
+      <label class="lbl-lab">Kategorie</label>
+      <input type="text" id="lbl-cat" class="lbl-inp" maxlength="64" list="lbl-cat-list" autocomplete="off" placeholder="optional">
+      <datalist id="lbl-cat-list"></datalist>
+    </div>
+    <div id="lbl-brand-row">
+      <label class="lbl-lab">Marke</label>
+      <input type="text" id="lbl-brand" class="lbl-inp" maxlength="64" list="lbl-brand-list" autocomplete="off">
+      <datalist id="lbl-brand-list"></datalist>
+    </div>
+    <div id="lbl-sorte-row" style="display:none">
+      <label class="lbl-lab">Sorte</label>
+      <input type="text" id="lbl-sorte" class="lbl-inp" maxlength="64" list="lbl-sorte-list" autocomplete="off">
+      <datalist id="lbl-sorte-list"></datalist>
+    </div>
+    <div>
+      <label class="lbl-lab">Mindesthaltbarkeitsdatum</label>
+      <input type="date" id="lbl-mhd" class="lbl-inp">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div id="lbl-amount-row">
+        <label class="lbl-lab">Menge</label>
+        <input type="number" id="lbl-amount" class="lbl-inp" min="1" max="99999" value="1">
+      </div>
+      <div id="lbl-unit-row">
+        <label class="lbl-lab">Einheit</label>
+        <select id="lbl-unit" class="lbl-inp">
+          <option value="">– keine –</option>
+          <option value="St.">St.</option>
+          <option value="Port.">Port.</option>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">ml</option>
+          <option value="l">l</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div>
+        <label class="lbl-lab">Lagerort</label>
+        <select id="lbl-loc" class="lbl-inp"></select>
+      </div>
+      <div>
+        <label class="lbl-lab">Anzahl Etiketten</label>
+        <input type="number" id="lbl-count" class="lbl-inp" min="1" max="20" value="1">
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;font-size:14px">
+      <label class="toggle"><input type="checkbox" id="lbl-print" checked><span class="slider"></span></label>
+      <span style="cursor:pointer" onclick="var c=document.getElementById('lbl-print');c.checked=!c.checked">Etikett drucken</span>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:6px" onclick="submitLabel()">Etikett erstellen</button>
+  </div>
+</div>
+
 <div id="tmpl-sheet-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200" onclick="closeTmplSheet()"></div>
 <div id="tmpl-sheet" style="display:none;position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));z-index:201;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
@@ -581,6 +660,9 @@ let _sysInfo       = {};
 let _devCfg        = {};
 let _categories    = [];
 let _templates     = [];
+let _locations     = [];
+let _activeLoc     = '';
+let _labelTpl      = null;   // aktuell im Etikett-Sheet gewählte Vorlage (null = manuell)
 let _pendingDelete = null;
 let _households    = [];
 let _currentHH     = null;
@@ -1188,12 +1270,16 @@ async function saveStandby(val) {
 // ── Templates / Vorlagen ──
 async function loadMgmt() {
   try {
-    const [cats, tmpls] = await Promise.all([
+    const [cats, tmpls, locs, act] = await Promise.all([
       apiFetch('/api/categories'),
       apiFetch('/api/templates'),
+      apiFetch('/api/locations').catch(() => []),
+      apiFetch('/api/active-location').catch(() => ({})),
     ]);
     _categories = Array.isArray(cats)  ? cats  : (cats.categories   || []);
     _templates  = Array.isArray(tmpls) ? tmpls : (tmpls.templates   || []);
+    _locations  = Array.isArray(locs)  ? locs  : [];
+    _activeLoc  = act.location || '';
     renderTemplates();
     populateCatSelects();
   } catch(e) {
@@ -1259,10 +1345,122 @@ function renderTemplates() {
           '<div class="mgmt-item-sub">MHD: ' + days + ' Tage' + unit + sortenBadge + '</div>' +
           sortenSection +
         '</div>' +
-        '<button class="btn-danger" onclick="deleteTemplate(\'' + tidQ + '\')">Löschen</button>' +
+        '<div style="display:flex;flex-direction:column;gap:6px">' +
+          '<button class="btn-label" onclick="openLabelSheet(\'' + tidQ + '\')">Etikett</button>' +
+          '<button class="btn-danger" onclick="deleteTemplate(\'' + tidQ + '\')">Löschen</button>' +
+        '</div>' +
       '</div>';
     }).join('')
   ).join('');
+}
+
+// ── Etikett erstellen (manuell oder aus Vorlage) ──
+function openLabelSheet(tplId) {
+  _labelTpl = tplId
+    ? _templates.find(t => String(t.id ?? t.name) === String(tplId)) || null
+    : null;
+  const t = _labelTpl;
+
+  document.getElementById('lbl-sheet-title').textContent =
+    t ? ('Etikett: ' + (t.name || '')) : 'Etikett erstellen';
+
+  // Bei einer Vorlage stehen Name und Kategorie fest – nur die Marke bleibt wählbar.
+  document.getElementById('lbl-name-row').style.display = t ? 'none' : 'block';
+  document.getElementById('lbl-name').value = t ? (t.name || '') : '';
+
+  document.getElementById('lbl-cat-row').style.display = t ? 'none' : 'block';
+  document.getElementById('lbl-cat').value = '';
+  document.getElementById('lbl-cat-list').innerHTML = _categories.map(c => {
+    const n = typeof c === 'string' ? c : (c.name || '');
+    return '<option value="' + esc(n) + '">';
+  }).join('');
+
+  const brands = t ? (Array.isArray(t.brands) ? t.brands : (t.brand ? [t.brand] : [])) : [];
+  document.getElementById('lbl-brand').value = brands.length === 1 ? brands[0] : '';
+  document.getElementById('lbl-brand-list').innerHTML =
+    brands.map(b => '<option value="' + esc(b) + '">').join('');
+
+  const useSorten = !!(t && t.useSorten);
+  document.getElementById('lbl-sorte-row').style.display = useSorten ? 'block' : 'none';
+  document.getElementById('lbl-sorte').value = '';
+  document.getElementById('lbl-sorte-list').innerHTML =
+    ((t && t.sorten) || []).map(x => '<option value="' + esc(x) + '">').join('');
+
+  // MHD wie am Gerät vorbelegen: heute + Haltbarkeitstage der Vorlage.
+  const days = t ? parseInt(t.defaultDays ?? t.shelfDays, 10) : NaN;
+  const d = new Date();
+  if (days > 0) d.setDate(d.getDate() + days);
+  document.getElementById('lbl-mhd').value = days > 0 ? d.toISOString().slice(0, 10) : '';
+
+  // Einheit aus der Vorlage ist fix; manuell frei wählbar.
+  const unitSel = document.getElementById('lbl-unit');
+  const unit    = t ? (t.unit || '') : '';
+  // Vorlage ohne Einheit fragt keine Menge ab – genau wie der Geräte-Workflow.
+  document.getElementById('lbl-unit-row').style.display   = t ? 'none' : 'block';
+  document.getElementById('lbl-amount-row').style.display = (!t || unit) ? 'block' : 'none';
+  unitSel.value = unit;
+  document.getElementById('lbl-amount').value = 1;
+  document.getElementById('lbl-count').value  = 1;
+  document.getElementById('lbl-print').checked = true;
+
+  const loc = document.getElementById('lbl-loc');
+  loc.innerHTML = '<option value="">– kein Lagerort –</option>' +
+    _locations.map(l => {
+      const n = typeof l === 'string' ? l : (l.name || '');
+      return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+    }).join('');
+  if (_activeLoc) loc.value = _activeLoc;
+
+  const overlay = document.getElementById('lbl-sheet-overlay');
+  const sheet   = document.getElementById('lbl-sheet');
+  overlay.style.display = 'block';
+  sheet.style.display   = 'block';
+  requestAnimationFrame(() => { sheet.style.transform = 'translateY(0)'; });
+}
+
+function closeLabelSheet() {
+  const sheet   = document.getElementById('lbl-sheet');
+  const overlay = document.getElementById('lbl-sheet-overlay');
+  sheet.style.transform = 'translateY(100%)';
+  setTimeout(() => { sheet.style.display = 'none'; overlay.style.display = 'none'; }, 300);
+}
+
+async function submitLabel() {
+  const t     = _labelTpl;
+  const name  = t ? (t.name || '') : document.getElementById('lbl-name').value.trim();
+  if (!name) { toast('Produktname fehlt', 2000); return; }
+  const unit  = t ? (t.unit || '') : document.getElementById('lbl-unit').value;
+  const sorte = (t && t.useSorten) ? document.getElementById('lbl-sorte').value.trim() : '';
+
+  const payload = {
+    name,
+    brand:       document.getElementById('lbl-brand').value.trim(),
+    category:    t ? (t.category || 'Allgemein') : document.getElementById('lbl-cat').value.trim(),
+    subcategory: sorte,
+    expiryDate:  document.getElementById('lbl-mhd').value,
+    unit,
+    quantity:    unit ? (parseInt(document.getElementById('lbl-amount').value, 10) || 1) : 1,
+    location:    document.getElementById('lbl-loc').value,
+    count:       parseInt(document.getElementById('lbl-count').value, 10) || 1,
+    print:       document.getElementById('lbl-print').checked,
+  };
+
+  try {
+    const res = await apiPost('/api/labels/create', payload);
+    toast(res.message || 'Etikett angelegt', 2500);
+    closeLabelSheet();
+    // Neue Sorte in der Vorlage merken – dasselbe Verhalten wie am Gerät.
+    if (sorte && t && !(t.sorten || []).includes(sorte)) {
+      try {
+        await apiPost('/api/templates/sorten/add', { id: String(t.id ?? t.name), sorte });
+        t.sorten = [...(t.sorten || []), sorte];
+        renderTemplates();
+      } catch(e) { /* Etikett ist angelegt – nur die Sorte fehlt */ }
+    }
+    loadInventory();
+  } catch(e) {
+    toast('Fehler: ' + e.message, 3000);
+  }
 }
 
 function openTmplSheet() {

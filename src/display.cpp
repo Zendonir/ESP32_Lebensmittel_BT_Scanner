@@ -11,6 +11,7 @@
  */
 
 #include "display.h"
+#include "core/Health.h"
 #include "touch.h"
 #include "models/InventoryItem.h"
 #include "models/ProductInfo.h"
@@ -727,7 +728,17 @@ int16_t Display::drainScrollCommit() const {
 }
 
 static void touch_task_fn(void * /*param*/) {
+    // Der Touch-Task wird ebenfalls vom Watchdog überwacht: ein verklemmter
+    // I2C-Bus (FT6336 antwortet nicht mehr) lässt sonst nur die Bedienung
+    // einfrieren, während die Hauptschleife munter weiterläuft – von außen
+    // sieht das exakt wie ein "eingefrorenes" Gerät aus.
+    bool watched = false;
     for (;;) {
+        if (!watched && Health::watchdogActive()) {
+            Health::watchCurrentTask();
+            watched = true;
+        }
+        if (watched) Health::feed();
         display_obj.tick();
         vTaskDelay(pdMS_TO_TICKS(10));
     }

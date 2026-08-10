@@ -135,6 +135,37 @@ BLE Battery Service (UUID 0x180F / Char 0x2A19) wird nach HID-Verbindung abonnie
 Polling alle 5 Minuten via `ble_scanner.readBatteryNow()`.
 Bei < 10%: Warnton + Statusmeldung auf Display + farbige Anzeige im Web-UI.
 
+### Stabilität: Watchdog, Diagnose und blockierende Arbeit
+
+`src/core/Health.*` bündelt die Systemüberwachung:
+- `Health::logBootInfo()` protokolliert beim Start die Reset-Ursache des vorherigen
+  Laufs (Panic / Task-WDT / Brownout / …) sowie die Heap-Startwerte als WARN/ERROR –
+  landet damit auch auf der SD-Karte und macht unbeobachtete Neustarts nachvollziehbar.
+- `Health::beginWatchdog()` aktiviert den Task-Watchdog (60 s, `trigger_panic`) und
+  meldet die Arduino-Loop an; der Touch-Task meldet sich selbst an, sobald der
+  Watchdog bereit ist. Ein Hänger endet damit in einem Neustart **mit Backtrace**
+  statt in einem dauerhaft eingefrorenen Gerät.
+- `Health::loop()` füttert den Watchdog und protokolliert minütlich Heap, größten
+  freien Block, PSRAM und Stack-Reserve. Muss **vor jedem early-return** in
+  `App::loop()` stehen (sonst schlägt der Watchdog während OTA zu).
+- `Health::lowMemory()` als Vorprüfung, bevor neue Tasks/TLS-Verbindungen starten.
+
+**Regel: keine blockierende Netzwerkarbeit in `App::loop()`.**
+Ein MySQL-Connect-Timeout blockiert die UI mehrere Sekunden – von außen ein
+"Einfrieren". Deshalb:
+- Die Sync-Queue wird vom eigenen Worker-Task `sync_wk` (Core 0) abgearbeitet
+  (`SyncManager::processQueueOnce()`), nicht mehr aus `App::loop()`.
+- ntfy-Benachrichtigungen laufen in einem kurzlebigen Task.
+- Jeder `xTaskCreate*`-Aufruf wird ausgewertet: schlägt der Start fehl, müssen
+  Guard-Flags (`_pullTaskRunning`, `connecting`, …) zurückgesetzt werden – sonst ist
+  die Funktion bis zum Neustart tot.
+
+### BLE: Hänger beim Verbindungsaufbau
+`BLEScanner` setzt `connecting` auf **jedem** Ausstiegspfad von `connectTask`
+zurück (sich auf `onDisconnect` zu verlassen reicht nicht) und bricht in `loop()`
+einen Verbindungsversuch nach 30 s ab. Andernfalls bleibt der Scanner dauerhaft im
+Zustand "verbinde…": kein Scan, kein Reconnect, keine Barcodes.
+
 ### Zirkuläre Abhängigkeit Logger ↔ AppFS
 `Logger.cpp` darf `AppFS.h` nicht inkludieren (AppFS.cpp inkludiert Logger.h).
 Lösung: `Logger::enableSdLog(fs::FS *sdFs)` erhält einen rohen `fs::FS*`-Zeiger
@@ -158,6 +189,25 @@ iOS/Android-optimierte Ansicht:
 - **iOS Safe Area**: `viewport-fit=cover` + `env(safe-area-inset-bottom)` auf Tab-Bar
 - 4 Tabs: Inventar, Ablaufend, Vorlagen, System
 
+### Etiketten aus dem Web-Interface
+`POST /api/labels/create` bildet denselben Ablauf ab wie `App::finishStorageWorkflow()`
+am Gerät: LebNummer vergeben → Inventar-Eintrag → Sync-Event `ADD` → Etikett drucken.
+Body: `name`(Pflicht), `brand`, `category`, `subcategory`, `barcode`, `expiryDate`,
+`unit`, `quantity`, `location`, `count` (1–20), `print`.
+Antwort enthält die vergebenen LebNummern (`labels`).
+
+- Ohne `unit` ist jedes Etikett genau ein Artikel (`quantity=1`); mit `unit` gilt
+  `quantity` als Füllmenge – exakt die Unterscheidung Scan- vs. Vorlagen-Workflow.
+- **Der Druck läuft NICHT im Web-Task.** `PrinterManager::queueLabel()` reiht nur ein,
+  `App::loop()` ruft `processQueue()` auf und druckt dort (Core 1). Ein Etikett belegt
+  die UART mehrere hundert Millisekunden – im AsyncTCP-Task stünde solange der ganze
+  HTTP-Server. Queue-Länge ist auf 20 begrenzt, daher auch `count` ≤ 20.
+
+UI: Desktop-Seite `#labels` ("Etiketten") mit Vorlagen- und Manuell-Formular,
+mobil ein Bottom-Sheet (`openLabelSheet(id)`) – aus der Vorlagen-Liste heraus je
+Vorlage oder über "+ Etikett" manuell. Beide setzen MHD aus `defaultDays` vor und
+tragen eine neu eingegebene Sorte über `/api/templates/sorten/add` nach.
+
 ### Datumsformat-Konvention
 - Firmware speichert MHD als `YYYY-MM-DD` (ISO, template workflow) oder `DD.MM.YYYY` (manuell)
 - Web-UI normalisiert mit `toIsoDate(str)` in `app.js` vor Anzeige und Speicherung
@@ -175,6 +225,10 @@ iOS/Android-optimierte Ansicht:
 | OTA Filesystem schlägt fehl | `/api/update` erkennt Typ automatisch; LittleFS wird vor dem Schreiben gemountet |
 | `saveJson` not declared | `static bool saveJson(...)` Forward-Declaration vor `WebInterface::begin()` |
 | Inventar-Löschen/-Bearbeiten defekt | `data-lb`-Attribut und Solo-Artikel-Pfad korrigiert |
+| UI friert sekundenweise ein | Blockierende MySQL-/HTTPS-Aufrufe gehören in einen Task, nie in `App::loop()` |
+| Gerät hängt dauerhaft | Task-Watchdog (`Health`) erzwingt Neustart mit Backtrace; Reset-Ursache steht im SD-Log |
+| Scanner koppelt nicht mehr | `connecting`-Flag hing – 30-s-Timeout in `BLEScanner::loop()` |
+| Web-UI hängt beim Etikettendruck | Nie direkt aus dem Handler drucken – `queueLabel()` nutzen |
 
 ---
 

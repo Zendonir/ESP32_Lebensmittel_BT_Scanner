@@ -1,5 +1,6 @@
 #include "App.h"
 #include "Logger.h"
+#include "Health.h"
 #include "config.h"
 #include "audio.h"
 #include "wifi_manager.h"
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <ArduinoJson.h>
 #include <esp_heap_caps.h>
+#include <new>
 #include <mbedtls/platform.h>
 #include "../storage/AppFS.h"
 
@@ -33,6 +35,15 @@ static inline void _tls_route_to_psram() {
 
 // Set by the WiFi-disconnect event handler (Core 0); cleared in App::loop() (Core 1).
 volatile bool g_wifiDropped = false;
+
+// Auftrag für den kurzlebigen ntfy-Versand-Task (siehe App::loop).
+struct NtfyJob { String url, topic, title, msg; };
+static void ntfyTaskFn(void *arg) {
+    NtfyJob *job = static_cast<NtfyJob *>(arg);
+    NtfyNotifier::send(job->url, job->topic, job->title, job->msg, "high");
+    delete job;
+    vTaskDelete(nullptr);
+}
 
 App::App()
     : i2c_bus(0),
@@ -68,6 +79,9 @@ void App::begin() {
     // messages on every failed TLS connection, drowning out our diagnostics.
     esp_log_level_set("*", ESP_LOG_NONE);
     Logger::info("App", "ESP32-S3 Lebensmittel-Scanner booting");
+    // Reset-Ursache des vorherigen Laufs protokollieren (landet auf SD, sobald
+    // die Karte gemountet ist – der Ring-Puffer wird nachträglich mitgeschrieben).
+    Health::logBootInfo();
     // Keep recurring TLS handshakes out of the fragmentation-prone internal SRAM.
     _tls_route_to_psram();
     state.begin(AppState::BOOTING);
@@ -169,11 +183,18 @@ void App::begin() {
         workflow = WorkflowMode::WIFI_SETUP_SCAN;
         display_obj.showWifiScan();
     }
+
+    // Watchdog erst nach dem (absichtlich langsamen) Boot scharfschalten.
+    Health::beginWatchdog();
 }
 
 void App::loop() {
     // Touch polling runs in its own FreeRTOS task (startTouchTask in begin()).
     // No tick() call needed here.
+
+    // Watchdog füttern + Speicherstatistik. Muss VOR jedem early-return stehen,
+    // sonst schlägt der Watchdog während eines OTA-Updates zu.
+    Health::loop();
 
     // ── OTA läuft: Display-Status anzeigen, alles andere sperren ─────
     if (web.isOtaActive()) {
@@ -266,7 +287,11 @@ void App::loop() {
     }
 
     time_manager.loop();
-    sync_manager.loop();
+    // Etiketten, die über die Web-Oberfläche angelegt wurden, hier drucken:
+    // im Web-Task würde der Druck den HTTP-Server sekundenlang blockieren.
+    printer.processQueue();
+    // sync_manager läuft in einem eigenen Worker-Task (siehe SyncManager::begin) –
+    // hier bewusst kein blockierender MySQL-Zugriff mehr.
     barcode_manager.loop();
 
     // Periodic inventory pull from MySQL (interval configurable, default 10 min)
@@ -390,19 +415,29 @@ void App::loop() {
         }
     }
 
-    // Ntfy push check every 6 hours
+    // Ntfy push check every 6 hours.
+    // Der eigentliche Versand (HTTPS-Handshake, bis zu ~10 s) läuft in einem
+    // kurzlebigen Task auf Core 0 – in der UI-Schleife würde er das Display
+    // sichtbar blockieren.
     if (device_config.getNtfyTopic().length() > 0 &&
         millis() - _lastNtfyCheckMs >= NTFY_CHECK_INTERVAL_MS) {
         _lastNtfyCheckMs = millis();
         int days = device_config.getNtfyDays();
         int expCount = countExpiringSoon(days);
-        if (expCount > 0) {
-            String title = "Lebensmittel laufen ab!";
-            String msg = String(expCount) + " Produkt" + (expCount != 1 ? "e laufen" : " laeuft") +
-                         " in den naechsten " + String(days) + " Tagen ab.";
-            NtfyNotifier::send(device_config.getNtfyUrl(),
-                               device_config.getNtfyTopic(),
-                               title, msg, "high");
+        if (expCount > 0 && !Health::lowMemory()) {
+            auto *n = new (std::nothrow) NtfyJob{
+                device_config.getNtfyUrl(),
+                device_config.getNtfyTopic(),
+                "Lebensmittel laufen ab!",
+                String(expCount) + " Produkt" + (expCount != 1 ? "e laufen" : " laeuft") +
+                    " in den naechsten " + String(days) + " Tagen ab."
+            };
+            if (n && xTaskCreatePinnedToCore(ntfyTaskFn, "ntfy", 8192, n, 1, nullptr, 0) != pdPASS) {
+                Logger::warn("Ntfy", "Task-Start fehlgeschlagen");
+                delete n;
+            }
+        } else if (expCount > 0) {
+            Logger::warn("Ntfy", "Benachrichtigung übersprungen – Speicher knapp");
         }
     }
 
@@ -590,6 +625,10 @@ void App::loadDisplayConfig() {
 
 void App::initI2C() {
     i2c_bus.begin(TOUCH_SDA, TOUCH_SCL, I2C_FREQ);
+    // Harte Obergrenze pro Transfer. Ohne Timeout kann ein gestörter Bus
+    // (Touch-Controller zieht SDA dauerhaft low) den Touch-Task blockieren –
+    // die Bedienung wirkt dann eingefroren, obwohl die Firmware läuft.
+    i2c_bus.setTimeOut(50);   // ms
 }
 
 void App::resetLCDViaTCA9554() {
@@ -1938,7 +1977,16 @@ void App::processWorkflow() {
         _fetchedProduct  = ProductInfo();
         _fetchStartedMs  = millis();
         _fetchEpoch++;   // new generation – any abandoned prior task will self-discard
-        xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this, 2, &_fetchTaskHandle, 0);
+        // Task-Start kann bei knappem Heap fehlschlagen. Ohne Auswertung bliebe
+        // _fetchStarted gesetzt und der Workflow hinge bis zum 30-s-Timeout.
+        if (xTaskCreatePinnedToCore(fetchTaskFn, "api_fetch", 12288, this,
+                                    2, &_fetchTaskHandle, 0) != pdPASS) {
+            Logger::error("Fetch", String("Task-Start fehlgeschlagen (Heap ")
+                          + Health::freeInternalHeap() / 1024 + " KB)");
+            _fetchTaskHandle = nullptr;
+            _fetchDone = true;
+            _fetchOk   = false;
+        }
         return;
     }
 
@@ -2471,10 +2519,19 @@ void App::doInventoryPull() {
 
 void App::triggerInventoryPull() {
     if (_pullTaskRunning) return;
+    if (Health::lowMemory()) {
+        Logger::warn("Sync", "Inventar-Pull übersprungen – Speicher knapp");
+        return;
+    }
     _pullTaskRunning = true;
     // Stack allocated in DRAM (not PSRAM) — 6 KB is sufficient for MySQL + LittleFS calls.
     // Pinned to Core 1 so LittleFS writes stay on the same core as App::loop().
-    xTaskCreatePinnedToCore(pullTaskFn, "inv_pull", 6144, this, 1, nullptr, 1);
+    // Schlägt der Start fehl, muss das Guard-Flag zurück – sonst wäre die
+    // Synchronisierung bis zum nächsten Neustart tot.
+    if (xTaskCreatePinnedToCore(pullTaskFn, "inv_pull", 6144, this, 1, nullptr, 1) != pdPASS) {
+        _pullTaskRunning = false;
+        Logger::error("Sync", "Inventar-Pull-Task konnte nicht gestartet werden");
+    }
 }
 
 void App::triggerSyncPullNow() {
@@ -2489,6 +2546,7 @@ void App::initWebServer() {
     web.setInventoryManager(&inventory);
     web.setJsonStorage(&json);
     web.setPrinterManager(&printer);
+    web.setLabelCounter(&labelCounter);
     web.begin();
 
     if (wifi_manager.isConnected())
