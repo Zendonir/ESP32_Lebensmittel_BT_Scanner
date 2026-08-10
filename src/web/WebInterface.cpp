@@ -799,7 +799,28 @@ align-items:center;justify-content:center;font-weight:700;flex-shrink:0}a{color:
 <div class="step"><div class="num">2</div>
 <div>oder Terminal:<code>pio run -e esp32-s3-devkitc1-n16r8 --target uploadfs</code></div></div>
 <div class="step"><div class="num">3</div><div>Danach Seite neu laden.</div></div>
-<p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a></p>
+<hr style="border:none;border-top:1px solid #2a2d3e;margin:24px 0">
+<p><strong>Ohne USB &ndash; littlefs.bin direkt hochladen:</strong><br>
+<span style="font-size:.9rem">Datei aus dem GitHub-Release waehlen. Das Geraet startet danach neu.</span></p>
+<form id="f"><input type="file" id="fi" accept=".bin" style="color:#8892b0;margin:10px 0;max-width:100%">
+<button style="background:#5c7cfa;color:#fff;border:0;border-radius:8px;padding:11px 18px;
+font-size:1rem;cursor:pointer;width:100%">Hochladen &amp; flashen</button></form>
+<p id="st" style="min-height:1.4em"></p>
+<script>
+document.getElementById('f').onsubmit=function(e){e.preventDefault();
+var f=document.getElementById('fi').files[0],s=document.getElementById('st');
+if(!f){s.textContent='Keine Datei gewaehlt';return;}
+var d=new FormData();d.append('file',f);var x=new XMLHttpRequest();
+x.upload.onprogress=function(ev){if(ev.lengthComputable)
+s.textContent='Uebertrage '+Math.round(ev.loaded/ev.total*100)+' %';};
+x.onload=function(){s.textContent=x.status==200?'Fertig \u2013 Geraet startet neu. In ca. 20 s neu laden.'
+:('Fehler: HTTP '+x.status);};
+x.onerror=function(){s.textContent='Verbindung abgebrochen';};
+x.open('POST','/api/update');x.send(d);s.textContent='Starte Upload...';};
+</script>
+<p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a> &middot;
+<a href="/api/logs">Logs (JSON)</a> &middot;
+<a href="/api/system-info">System-Info (JSON)</a></p>
 </div></body></html>)HTML";
 
 static void sendNoCacheFile(AsyncWebServerRequest *req, const char *path, const char *contentType) {
