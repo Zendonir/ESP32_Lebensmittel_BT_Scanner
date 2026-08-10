@@ -1288,15 +1288,19 @@ void Display::showOtaStatus(const String &phase, int pct, const String &targetVe
     int bar_x = dx + 20, bar_y = dy + 110;
     int bar_w = dw - 40, bar_h = 22;
     _spr.drawRoundRect(bar_x, bar_y, bar_w, bar_h, bar_h / 2, C_BORDER);
-    int fill_w = (int)((long)bar_w * pct / 100);
-    if (fill_w > 2) {
-        _spr.fillRoundRect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2, bar_h / 2 - 1, C_ACCENT);
+    // pct < 0 = Fortschritt unbekannt (manueller Upload: Gesamtgröße steht nicht fest)
+    if (pct >= 0) {
+        int fill_w = (int)((long)bar_w * pct / 100);
+        if (fill_w > 2) {
+            _spr.fillRoundRect(bar_x + 1, bar_y + 1, fill_w - 2, bar_h - 2, bar_h / 2 - 1, C_ACCENT);
+        }
     }
     // Percentage text centred on bar
     _spr.setTextColor(C_TEXT, C_SURFACE);
     _spr.setTextFont(2);
     _spr.setTextDatum(MC_DATUM);
-    _spr.drawString((String(pct) + "%").c_str(), bar_x + bar_w / 2, bar_y + bar_h / 2);
+    _spr.drawString(pct >= 0 ? (String(pct) + "%").c_str() : "laeuft...",
+                    bar_x + bar_w / 2, bar_y + bar_h / 2);
 
     // Note at bottom
     _spr.setTextColor(C_SUBTEXT, C_SURFACE);
