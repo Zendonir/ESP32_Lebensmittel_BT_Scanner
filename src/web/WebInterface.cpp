@@ -43,6 +43,26 @@ static volatile int  _otaUrlPct  = 0;
 static volatile bool _otaUrlDone = true;   // true = idle (not running)
 static volatile bool _otaUrlOk   = false;
 
+// Manueller Datei-Upload auf /api/update bzw. /api/update-fs.
+// Der GitHub-OTA-Pfad legt das Gerät für die Dauer des Updates still; beim
+// manuellen Upload lief bisher alles normal weiter (Rendern, Drucken, Sync,
+// BLE) und konkurrierte um Heap und Funkzeit. Bricht ein Filesystem-Upload
+// dadurch ab, ist die spiffs-Partition halb beschrieben – sie mountet nicht
+// mehr und wird beim nächsten Start formatiert: die Web-Oberfläche ist weg.
+// _manualOtaLastMs wird bei jedem Chunk aktualisiert; bleibt der Upload
+// stehen (Client weg, kein `final`), gibt der Timeout die UI wieder frei,
+// statt das Gerät dauerhaft im OTA-Bildschirm festzuhalten.
+static volatile bool     _manualOtaActive = false;
+static volatile uint32_t _manualOtaLastMs = 0;
+static constexpr uint32_t MANUAL_OTA_STALL_MS = 30000;
+
+static inline void manualOtaBegin() {
+    _manualOtaLastMs = millis();
+    _manualOtaActive = true;
+}
+static inline void manualOtaProgress() { _manualOtaLastMs = millis(); }
+static inline void manualOtaEnd()      { _manualOtaActive = false; }
+
 // Resolve up to 3 HTTP redirects manually and perform OTA download.
 // GitHub release URLs redirect from github.com to objects.githubusercontent.com
 // (cross-domain HTTPS). HTTPC_FORCE_FOLLOW_REDIRECTS can fail to re-init SSL
@@ -799,7 +819,28 @@ align-items:center;justify-content:center;font-weight:700;flex-shrink:0}a{color:
 <div class="step"><div class="num">2</div>
 <div>oder Terminal:<code>pio run -e esp32-s3-devkitc1-n16r8 --target uploadfs</code></div></div>
 <div class="step"><div class="num">3</div><div>Danach Seite neu laden.</div></div>
-<p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a></p>
+<hr style="border:none;border-top:1px solid #2a2d3e;margin:24px 0">
+<p><strong>Ohne USB &ndash; littlefs.bin direkt hochladen:</strong><br>
+<span style="font-size:.9rem">Datei aus dem GitHub-Release waehlen. Das Geraet startet danach neu.</span></p>
+<form id="f"><input type="file" id="fi" accept=".bin" style="color:#8892b0;margin:10px 0;max-width:100%">
+<button style="background:#5c7cfa;color:#fff;border:0;border-radius:8px;padding:11px 18px;
+font-size:1rem;cursor:pointer;width:100%">Hochladen &amp; flashen</button></form>
+<p id="st" style="min-height:1.4em"></p>
+<script>
+document.getElementById('f').onsubmit=function(e){e.preventDefault();
+var f=document.getElementById('fi').files[0],s=document.getElementById('st');
+if(!f){s.textContent='Keine Datei gewaehlt';return;}
+var d=new FormData();d.append('file',f);var x=new XMLHttpRequest();
+x.upload.onprogress=function(ev){if(ev.lengthComputable)
+s.textContent='Uebertrage '+Math.round(ev.loaded/ev.total*100)+' %';};
+x.onload=function(){s.textContent=x.status==200?'Fertig \u2013 Geraet startet neu. In ca. 20 s neu laden.'
+:('Fehler: HTTP '+x.status);};
+x.onerror=function(){s.textContent='Verbindung abgebrochen';};
+x.open('POST','/api/update');x.send(d);s.textContent='Starte Upload...';};
+</script>
+<p style="margin-top:20px"><a href="/api/ping">Ping (JSON)</a> &middot;
+<a href="/api/logs">Logs (JSON)</a> &middot;
+<a href="/api/system-info">System-Info (JSON)</a></p>
 </div></body></html>)HTML";
 
 static void sendNoCacheFile(AsyncWebServerRequest *req, const char *path, const char *contentType) {
@@ -2690,6 +2731,8 @@ void WebInterface::registerApiRoutes() {
                 bool isFirmware = (len > 0 && data[0] == 0xE9);
                 Logger::info("OTA", String("Start: ") + filename
                              + (isFirmware ? " [firmware]" : " [filesystem]"));
+                // Gerät für die Dauer des Uploads stilllegen (wie GitHub-OTA)
+                manualOtaBegin();
                 // Internen SRAM defragmentieren: BLE trennen — exakt wie der
                 // GitHub-OTA-Pfad (siehe _otaDownloadFlash). Ohne das fehlt nach
                 // langer Laufzeit ein zusammenhängender Block für den OTA-Puffer
@@ -2710,9 +2753,11 @@ void WebInterface::registerApiRoutes() {
                                          + "): " + Update.errorString()
                                          + " internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL)
                                          + " largest=" + heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+                    manualOtaEnd();
                     return;
                 }
             }
+            manualOtaProgress();
             if (Update.isRunning()) {
                 if (Update.write(data, len) != len)
                     Logger::error("OTA", String("Write error at ") + index
@@ -2723,7 +2768,10 @@ void WebInterface::registerApiRoutes() {
                     Logger::error("OTA", String("End failed (") + Update.getError()
                                          + "): " + Update.errorString());
                 else
-                    Logger::info("OTA", "Done: " + String(index + len) + " bytes");
+                    // WARN statt INFO: die Größe landet damit auch auf der SD-Karte
+                    // und ein abgebrochener Upload ist im Nachhinein nachweisbar.
+                    Logger::warn("OTA", "Done: " + String(index + len) + " bytes");
+                manualOtaEnd();
             }
         });
 
@@ -2740,6 +2788,7 @@ void WebInterface::registerApiRoutes() {
            size_t index, uint8_t *data, size_t len, bool final) {
             if (!index) {
                 Logger::info("OTA", "FS start: " + filename);
+                manualOtaBegin();
                 // BLE trennen → internen SRAM defragmentieren (wie GitHub-OTA-Pfad),
                 // sonst schlägt Update.begin nach langer Laufzeit fehl.
                 ble_scanner.disconnect();
@@ -2751,9 +2800,11 @@ void WebInterface::registerApiRoutes() {
                                          + "): " + Update.errorString()
                                          + " internal=" + heap_caps_get_free_size(MALLOC_CAP_INTERNAL)
                                          + " largest=" + heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+                    manualOtaEnd();
                     return;
                 }
             }
+            manualOtaProgress();
             if (Update.isRunning()) {
                 if (Update.write(data, len) != len)
                     Logger::error("OTA", String("FS write error at offset ") + index
@@ -2764,20 +2815,25 @@ void WebInterface::registerApiRoutes() {
                     Logger::error("OTA", String("FS end failed (") + Update.getError()
                                          + "): " + Update.errorString());
                 else
-                    Logger::info("OTA", "FS done: " + String(index + len) + " bytes");
+                    Logger::warn("OTA", "FS done: " + String(index + len) + " bytes");
+                manualOtaEnd();
             }
         });
 }
 
 bool WebInterface::isOtaActive() const {
-    return (_otaCombo.active && !_otaCombo.done) || !_otaUrlDone;
+    bool manual = _manualOtaActive
+               && (millis() - _manualOtaLastMs) < MANUAL_OTA_STALL_MS;
+    return (_otaCombo.active && !_otaCombo.done) || !_otaUrlDone || manual;
 }
 int WebInterface::otaPct() const {
     if (!_otaUrlDone) return (int)_otaUrlPct;
+    if (_manualOtaActive) return -1;   // Upload-Größe unbekannt → kein Prozentwert
     return _otaCombo.pct;
 }
 const char *WebInterface::otaPhase() const {
     if (!_otaUrlDone) return "Firmware-Download...";
+    if (_manualOtaActive) return "Update wird uebertragen...";
     return _otaCombo.phase;
 }
 const char *WebInterface::otaTargetVersion() const {
